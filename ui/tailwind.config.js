@@ -6,19 +6,19 @@ export default {
       // Toss 스타일 컬러 팔레트
       colors: {
         brand: {
-          DEFAULT: "#3182F6",  // Toss 파란색
-          50:  "#EFF6FF",
-          100: "#DBEAFE",
-          500: "#3182F6",
-          600: "#2563EB",
-          700: "#1D4ED8",
+          DEFAULT: "#0019FF",
+          50: "#EAF1FF",
+          100: "#DDE7FF",
+          500: "#0019FF",
+          600: "#0013CC",
+          700: "#000E99",
         },
-        positive: "#00B894",   // 수익 녹색
-        negative: "#FF3B30",   // 손실 빨간색
+        positive: "#0019FF",
+        negative: "#E03131",
         surface: {
           DEFAULT: "#FFFFFF",
-          muted: "#F9FAFB",
-          border: "#E5E7EB",
+          muted: "#F2F4F6",
+          border: "#E8EBEF",
         },
       },
       fontFamily: {
