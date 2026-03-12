@@ -29,6 +29,7 @@ from src.utils.config import get_settings
 from src.utils.logging import get_logger, setup_logging
 from src.utils.performance import compute_trade_performance
 from src.utils.redis_client import TOPIC_ALERTS, set_heartbeat, get_redis
+from src.utils.secret_validation import is_placeholder_secret
 
 setup_logging()
 logger = get_logger(__name__)
@@ -42,18 +43,27 @@ class NotifierAgent:
     async def send(self, event_type: str, message: str) -> bool:
         success = False
         error_msg = None
+        delivery_mode = "telegram"
 
-        if not self.settings.telegram_bot_token or not self.settings.telegram_chat_id:
-            error_msg = "TELEGRAM_BOT_TOKEN 또는 TELEGRAM_CHAT_ID 미설정"
-            logger.warning("Telegram 미설정: 메시지를 DB에만 기록합니다.")
+        token = self.settings.telegram_bot_token
+        chat_id = self.settings.telegram_chat_id
+        if (
+            is_placeholder_secret(token)
+            or is_placeholder_secret(chat_id)
+        ):
+            # Telegram 비활성화 운영에서는 DB 기록만으로도 정상 처리로 간주
+            success = True
+            delivery_mode = "db_only"
+            error_msg = "telegram_placeholder_or_not_configured_db_only"
+            logger.info("Telegram placeholder/미설정: DB 기록 전용 모드로 처리합니다.")
         else:
-            url = f"https://api.telegram.org/bot{self.settings.telegram_bot_token}/sendMessage"
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.post(
                         url,
                         json={
-                            "chat_id": self.settings.telegram_chat_id,
+                            "chat_id": chat_id,
                             "text": message,
                         },
                     )
@@ -77,7 +87,7 @@ class NotifierAgent:
                 agent_id=self.agent_id,
                 status="healthy" if success else "degraded",
                 last_action=f"알림 처리: {event_type}",
-                metrics={"success": success, "error": error_msg},
+                metrics={"success": success, "error": error_msg, "delivery_mode": delivery_mode},
             )
         )
         return success

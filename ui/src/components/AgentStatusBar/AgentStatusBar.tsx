@@ -30,6 +30,12 @@ function activityBadgeClass(state: string): string {
   if (state === "degraded") {
     return "bg-yellow-100 text-yellow-700";
   }
+  if (state === "scheduled_wait") {
+    return "bg-sky-100 text-sky-700";
+  }
+  if (state === "on_demand") {
+    return "bg-indigo-100 text-indigo-700";
+  }
   if (state === "idle") {
     return "bg-gray-100 text-gray-600";
   }

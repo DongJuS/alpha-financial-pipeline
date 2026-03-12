@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 ACTIVE_WINDOW_SECONDS = 180
+SCHEDULED_WAIT_WINDOW_SECONDS = 900
 
 INVESTING_KEYWORDS = ("주문", "투자", "매수", "매도", "청산", "포지션")
 COLLECTING_KEYWORDS = ("수집", "collector")
@@ -53,9 +54,10 @@ def classify_agent_activity(
     now = now_utc or datetime.now(timezone.utc)
     updated = _parse_utc_timestamp(updated_at)
     is_recent = False
+    elapsed_seconds: int | None = None
     if updated:
-        seconds = max(0, int((now - updated).total_seconds()))
-        is_recent = seconds <= ACTIVE_WINDOW_SECONDS
+        elapsed_seconds = max(0, int((now - updated).total_seconds()))
+        is_recent = elapsed_seconds <= ACTIVE_WINDOW_SECONDS
 
     action_text = (last_action or "").lower()
 
@@ -77,4 +79,6 @@ def classify_agent_activity(
 
     if is_alive and not updated:
         return "active", "활동 중"
+    if elapsed_seconds is not None and elapsed_seconds <= SCHEDULED_WAIT_WINDOW_SECONDS:
+        return "scheduled_wait", "주기 대기 중"
     return "idle", "대기 중"

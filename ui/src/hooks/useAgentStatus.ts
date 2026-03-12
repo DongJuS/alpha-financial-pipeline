@@ -16,6 +16,8 @@ export interface AgentStatus {
     | "analyzing"
     | "notifying"
     | "orchestrating"
+    | "scheduled_wait"
+    | "on_demand"
     | "active"
     | "degraded"
     | "idle";

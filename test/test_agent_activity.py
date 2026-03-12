@@ -27,8 +27,8 @@ class AgentActivityClassificationTest(unittest.TestCase):
             updated_at=(self.now - timedelta(minutes=6)).isoformat().replace("+00:00", "Z"),
             now_utc=self.now,
         )
-        self.assertEqual(state, "idle")
-        self.assertEqual(label, "대기 중")
+        self.assertEqual(state, "scheduled_wait")
+        self.assertEqual(label, "주기 대기 중")
 
     def test_investing_when_recent_trade_action(self) -> None:
         state, label = classify_agent_activity(
@@ -57,11 +57,22 @@ class AgentActivityClassificationTest(unittest.TestCase):
             status="healthy",
             is_alive=True,
             last_action="사이클 완료",
-            updated_at=(self.now - timedelta(minutes=10)).isoformat().replace("+00:00", "Z"),
+            updated_at=(self.now - timedelta(minutes=20)).isoformat().replace("+00:00", "Z"),
             now_utc=self.now,
         )
         self.assertEqual(state, "idle")
         self.assertEqual(label, "대기 중")
+
+    def test_scheduled_wait_when_recent_but_not_active_window(self) -> None:
+        state, label = classify_agent_activity(
+            status="healthy",
+            is_alive=True,
+            last_action="사이클 완료",
+            updated_at=(self.now - timedelta(minutes=8)).isoformat().replace("+00:00", "Z"),
+            now_utc=self.now,
+        )
+        self.assertEqual(state, "scheduled_wait")
+        self.assertEqual(label, "주기 대기 중")
 
     def test_degraded_when_stale_and_degraded(self) -> None:
         state, label = classify_agent_activity(

@@ -35,6 +35,7 @@ AGENT_IDS = [
     FAST_FLOW_AGENT_ID,
     SLOW_METICULOUS_AGENT_ID,
 ]
+ON_DEMAND_AGENT_IDS = {FAST_FLOW_AGENT_ID, SLOW_METICULOUS_AGENT_ID}
 
 
 class AgentMetrics(BaseModel):
@@ -147,6 +148,20 @@ async def get_agents_status(
     for agent_id in AGENT_IDS:
         is_alive = await check_heartbeat(agent_id)
         db_row = db_status.get(agent_id)
+        if db_row is None and agent_id in ON_DEMAND_AGENT_IDS:
+            items.append(
+                AgentStatusItem(
+                    agent_id=agent_id,
+                    status="healthy",
+                    is_alive=False,
+                    activity_state="on_demand",
+                    activity_label="요청 대기",
+                    last_action="API 요청 시 실행",
+                    metrics=None,
+                    updated_at=None,
+                )
+            )
+            continue
         status_value = db_row["status"] if db_row else ("healthy" if is_alive else "dead")
         updated_at = db_row["updated_at"] if db_row else None
         last_action = db_row["last_action"] if db_row else None
