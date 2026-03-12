@@ -30,7 +30,14 @@ from src.db.queries import (
     today_trade_totals,
 )
 from src.utils.logging import get_logger, setup_logging
-from src.utils.redis_client import TOPIC_ALERTS, TOPIC_ORDERS, publish_message, set_heartbeat
+from src.utils.redis_client import (
+    KEY_LATEST_TICKS,
+    TOPIC_ALERTS,
+    TOPIC_ORDERS,
+    get_redis,
+    publish_message,
+    set_heartbeat,
+)
 
 setup_logging()
 logger = get_logger(__name__)
@@ -41,11 +48,28 @@ class PortfolioManagerAgent:
         self.agent_id = agent_id
 
     async def _resolve_name_and_price(self, ticker: str, target_price: Optional[int]) -> tuple[str, int]:
+        if target_price:
+            candles = await fetch_recent_ohlcv(ticker, days=5)
+            name = candles[0]["name"] if candles else ticker
+            return name, int(target_price)
+
+        # 실시간 거래 시 Redis 최신 시세를 우선 사용
+        try:
+            redis = await get_redis()
+            raw = await redis.get(KEY_LATEST_TICKS.format(ticker=ticker))
+            if raw:
+                payload = json.loads(raw)
+                rt_name = str(payload.get("name") or ticker)
+                rt_price = int(payload.get("current_price") or 0)
+                if rt_price > 0:
+                    return rt_name, rt_price
+        except Exception as e:
+            logger.debug("실시간 시세 조회 실패 [%s]: %s", ticker, e)
+
         candles = await fetch_recent_ohlcv(ticker, days=5)
         name = candles[0]["name"] if candles else ticker
         latest_close = int(candles[0]["close"]) if candles else 0
-        price = int(target_price) if target_price else latest_close
-        return name, price
+        return name, latest_close
 
     async def process_signal(
         self,

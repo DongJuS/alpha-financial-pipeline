@@ -31,6 +31,7 @@ KEY_HEARTBEAT = "heartbeat:{agent_id}"
 KEY_KIS_OAUTH_TOKEN = "kis:oauth_token"
 KEY_KRX_HOLIDAYS = "krx:holidays:{year}"
 KEY_LATEST_TICKS = "redis:cache:latest_ticks:{ticker}"
+KEY_REALTIME_SERIES = "redis:cache:realtime_series:{ticker}"
 KEY_MACRO_CONTEXT = "memory:macro_context"
 
 # ── TTL 상수 (초) ────────────────────────────────────────────────────────────
@@ -38,6 +39,7 @@ TTL_HEARTBEAT = 90          # 90초 — 에이전트 생존 신호
 TTL_KIS_TOKEN = 23 * 3600   # 23시간 — KIS OAuth 토큰
 TTL_KRX_HOLIDAYS = 24 * 3600  # 24시간 — KRX 휴장일
 TTL_LATEST_TICKS = 60       # 60초 — 실시간 시세 캐시
+TTL_REALTIME_SERIES = 3600  # 1시간 — 실시간 시계열 캐시
 TTL_MACRO_CONTEXT = 4 * 3600  # 4시간 — 거시경제 컨텍스트
 
 

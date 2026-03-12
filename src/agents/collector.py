@@ -32,7 +32,9 @@ from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import (
     KEY_KIS_OAUTH_TOKEN,
     KEY_LATEST_TICKS,
+    KEY_REALTIME_SERIES,
     TOPIC_MARKET_DATA,
+    TTL_REALTIME_SERIES,
     get_redis,
     publish_message,
     set_heartbeat,
@@ -144,6 +146,11 @@ class CollectorAgent:
             json.dumps(payload, ensure_ascii=False),
             ex=60,
         )
+        series_key = KEY_REALTIME_SERIES.format(ticker=point.ticker)
+        encoded = json.dumps(payload, ensure_ascii=False)
+        await redis.lpush(series_key, encoded)
+        await redis.ltrim(series_key, 0, 299)
+        await redis.expire(series_key, TTL_REALTIME_SERIES)
 
     async def _get_access_token(self) -> Optional[str]:
         redis = await get_redis()

@@ -2,16 +2,20 @@
 src/api/routers/market.py — 시장 데이터 조회 라우터
 """
 
+import asyncio
+from datetime import datetime, time, timedelta
 from typing import Annotated, Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from src.api.deps import get_current_user
 from src.utils.db_client import fetch, fetchrow
-from src.utils.redis_client import KEY_LATEST_TICKS, get_redis
+from src.utils.redis_client import KEY_LATEST_TICKS, KEY_REALTIME_SERIES, get_redis
 
 router = APIRouter()
+KST = ZoneInfo("Asia/Seoul")
 
 
 class OHLCVItem(BaseModel):
@@ -43,6 +47,20 @@ class QuoteResponse(BaseModel):
 class IndexResponse(BaseModel):
     kospi: dict
     kosdaq: dict
+
+
+class RealtimePoint(BaseModel):
+    timestamp_kst: str
+    current_price: int
+    volume: Optional[int] = None
+    change_pct: Optional[float] = None
+    source: Optional[str] = None
+
+
+class RealtimeSeriesResponse(BaseModel):
+    ticker: str
+    name: str
+    points: list[RealtimePoint]
 
 
 @router.get("/tickers")
@@ -129,6 +147,65 @@ async def get_ohlcv(
     )
 
 
+def _fetch_fdr_ohlcv_sync(ticker: str, days: int) -> tuple[str, list[dict]]:
+    import FinanceDataReader as fdr
+
+    start = (datetime.now(KST).date() - timedelta(days=max(1, days))).isoformat()
+    df = fdr.DataReader(ticker, start)
+    if df is None or df.empty:
+        return ticker, []
+
+    listing = fdr.StockListing("KRX")
+    found = listing.loc[listing["Code"] == ticker]
+    name = str(found.iloc[0]["Name"]) if not found.empty else ticker
+
+    rows: list[dict] = []
+    for ts, row in df.tail(200).iloc[::-1].iterrows():
+        date_value = ts.date() if hasattr(ts, "date") else datetime.now(KST).date()
+        ts_kst = datetime.combine(date_value, time(15, 30), tzinfo=KST)
+        change = row.get("Change")
+        rows.append(
+            {
+                "timestamp_kst": ts_kst.isoformat(),
+                "open": int(row.get("Open", 0)),
+                "high": int(row.get("High", 0)),
+                "low": int(row.get("Low", 0)),
+                "close": int(row.get("Close", 0)),
+                "volume": int(row.get("Volume", 0)),
+                "change_pct": float(change * 100.0) if change is not None else 0.0,
+            }
+        )
+    return name, rows
+
+
+@router.get("/opensource/ohlcv/{ticker}", response_model=OHLCVResponse)
+async def get_opensource_ohlcv(
+    ticker: str,
+    _: Annotated[dict, Depends(get_current_user)],
+    days: int = Query(default=120, ge=5, le=365),
+) -> OHLCVResponse:
+    """FinanceDataReader 기반 오픈소스 OHLCV 데이터를 반환합니다."""
+    try:
+        name, rows = await asyncio.to_thread(_fetch_fdr_ohlcv_sync, ticker, days)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"오픈소스 데이터 조회 실패: {e}",
+        ) from e
+
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"종목 '{ticker}'의 오픈소스 데이터가 없습니다.",
+        )
+
+    return OHLCVResponse(
+        ticker=ticker,
+        name=name,
+        data=[OHLCVItem(**r) for r in rows],
+    )
+
+
 @router.get("/quote/{ticker}", response_model=QuoteResponse)
 async def get_quote(
     ticker: str,
@@ -172,6 +249,75 @@ async def get_quote(
         change_pct=float(row["change_pct"]) if row["change_pct"] else None,
         volume=row["volume"],
         updated_at=row["updated_at"],
+    )
+
+
+@router.get("/realtime/{ticker}", response_model=RealtimeSeriesResponse)
+async def get_realtime_series(
+    ticker: str,
+    _: Annotated[dict, Depends(get_current_user)],
+    limit: int = Query(default=120, ge=10, le=300),
+) -> RealtimeSeriesResponse:
+    """Redis에 저장된 실시간 시세 시계열(최신 우선 캐시)을 반환합니다."""
+    import json
+
+    redis = await get_redis()
+    key = KEY_REALTIME_SERIES.format(ticker=ticker)
+    cached = await redis.lrange(key, 0, limit - 1)
+
+    if cached:
+        points_raw = [json.loads(x) for x in cached]
+        name = str(points_raw[0].get("name") or ticker)
+        points = [
+            RealtimePoint(
+                timestamp_kst=str(p.get("updated_at") or ""),
+                current_price=int(p.get("current_price") or 0),
+                volume=int(p.get("volume") or 0) if p.get("volume") is not None else None,
+                change_pct=float(p.get("change_pct")) if p.get("change_pct") is not None else None,
+                source=p.get("source"),
+            )
+            for p in reversed(points_raw)
+            if p.get("current_price") is not None
+        ]
+        return RealtimeSeriesResponse(ticker=ticker, name=name, points=points)
+
+    # 캐시가 비어 있으면 DB 최신 일봉으로 최소 시계열 구성
+    rows = await fetch(
+        """
+        SELECT
+            name,
+            close AS current_price,
+            volume,
+            COALESCE(change_pct, 0)::float AS change_pct,
+            to_char(timestamp_kst AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD"T"HH24:MI:SS+09:00') AS ts
+        FROM market_data
+        WHERE ticker = $1 AND interval = 'daily'
+        ORDER BY timestamp_kst DESC
+        LIMIT $2
+        """,
+        ticker,
+        min(limit, 60),
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"종목 '{ticker}'의 시계열 데이터가 없습니다.",
+        )
+
+    data = [dict(r) for r in rows]
+    return RealtimeSeriesResponse(
+        ticker=ticker,
+        name=str(data[0]["name"]),
+        points=[
+            RealtimePoint(
+                timestamp_kst=r["ts"],
+                current_price=int(r["current_price"]),
+                volume=int(r["volume"]) if r["volume"] is not None else None,
+                change_pct=float(r["change_pct"]) if r["change_pct"] is not None else None,
+                source="market_data_daily",
+            )
+            for r in reversed(data)
+        ],
     )
 
 

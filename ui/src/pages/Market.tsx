@@ -7,6 +7,8 @@ import {
   Area,
   AreaChart,
   Bar,
+  Line,
+  LineChart,
   ComposedChart,
   ResponsiveContainer,
   Tooltip,
@@ -37,6 +39,22 @@ type OhlcvItem = {
   change_pct: number;
 };
 
+type RealtimePoint = {
+  timestamp_kst: string;
+  current_price: number;
+  volume: number | null;
+  change_pct: number | null;
+  source: string | null;
+};
+
+type RealtimePayload = {
+  ticker: string;
+  name: string;
+  points: RealtimePoint[];
+};
+
+type ChartSource = "db" | "opensource";
+
 function useMarketIndex() {
   return useQuery({
     queryKey: ["market", "index"],
@@ -61,15 +79,32 @@ function useTickerList() {
   });
 }
 
-function useOhlcv(ticker: string | null) {
+function useOhlcv(ticker: string | null, source: ChartSource) {
   return useQuery({
-    queryKey: ["market", "ohlcv", ticker],
+    queryKey: ["market", "ohlcv", source, ticker],
     enabled: !!ticker,
     queryFn: async () => {
-      const { data } = await api.get<{ ticker: string; name: string; data: OhlcvItem[] }>(`/market/ohlcv/${ticker}`);
+      const path = source === "opensource" ? `/market/opensource/ohlcv/${ticker}` : `/market/ohlcv/${ticker}`;
+      const { data } = await api.get<{ ticker: string; name: string; data: OhlcvItem[] }>(path, {
+        params: source === "opensource" ? { days: 120 } : {},
+      });
       return data;
     },
-    refetchInterval: 30_000,
+    refetchInterval: source === "opensource" ? 60_000 : 30_000,
+  });
+}
+
+function useRealtimeSeries(ticker: string | null) {
+  return useQuery({
+    queryKey: ["market", "realtime", ticker],
+    enabled: !!ticker,
+    queryFn: async () => {
+      const { data } = await api.get<RealtimePayload>(`/market/realtime/${ticker}`, {
+        params: { limit: 120 },
+      });
+      return data;
+    },
+    refetchInterval: 5_000,
   });
 }
 
@@ -77,14 +112,29 @@ function shortTime(ts: string): string {
   return ts.slice(5, 16).replace("T", " ");
 }
 
+function shortClock(ts: string): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) {
+    return ts.slice(11, 19);
+  }
+  return d.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
 export default function Market() {
   const { data: index, isLoading: indexLoading } = useMarketIndex();
   const { data: tickers, isLoading: tickersLoading } = useTickerList();
 
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [chartSource, setChartSource] = useState<ChartSource>("db");
   const activeTicker = selectedTicker ?? tickers?.[0]?.ticker ?? null;
 
-  const { data: ohlcv, isLoading: ohlcvLoading } = useOhlcv(activeTicker);
+  const { data: ohlcv, isLoading: ohlcvLoading } = useOhlcv(activeTicker, chartSource);
+  const { data: realtime, isLoading: realtimeLoading } = useRealtimeSeries(activeTicker);
 
   const chartData = useMemo(
     () =>
@@ -99,6 +149,15 @@ export default function Market() {
           is_up: item.close >= item.open,
         })),
     [ohlcv]
+  );
+
+  const realtimeData = useMemo(
+    () =>
+      (realtime?.points ?? []).map((item) => ({
+        ...item,
+        label: shortClock(item.timestamp_kst),
+      })),
+    [realtime]
   );
 
   return (
@@ -130,20 +189,32 @@ export default function Market() {
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-semibold text-gray-800">종목 OHLCV 차트</h2>
-            <p className="text-xs text-gray-500 mt-1">{ohlcv?.name ? `${ohlcv.name} (${ohlcv.ticker})` : "종목 선택"}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {ohlcv?.name ? `${ohlcv.name} (${ohlcv.ticker})` : "종목 선택"} · {chartSource === "db" ? "내부 수집 DB" : "오픈소스 API(FDR)"}
+            </p>
           </div>
-          <select
-            className="border border-surface-border rounded-xl px-3 py-2 text-sm"
-            value={activeTicker ?? ""}
-            onChange={(e) => setSelectedTicker(e.target.value)}
-            disabled={tickersLoading || !tickers?.length}
-          >
-            {(tickers ?? []).map((item) => (
-              <option key={item.ticker} value={item.ticker}>
-                {item.ticker} · {item.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <select
+              className="border border-surface-border rounded-xl px-3 py-2 text-sm"
+              value={activeTicker ?? ""}
+              onChange={(e) => setSelectedTicker(e.target.value)}
+              disabled={tickersLoading || !tickers?.length}
+            >
+              {(tickers ?? []).map((item) => (
+                <option key={item.ticker} value={item.ticker}>
+                  {item.ticker} · {item.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="border border-surface-border rounded-xl px-3 py-2 text-sm"
+              value={chartSource}
+              onChange={(e) => setChartSource(e.target.value as ChartSource)}
+            >
+              <option value="db">내부 DB</option>
+              <option value="opensource">오픈소스 API</option>
+            </select>
+          </div>
         </div>
 
         {ohlcvLoading || chartData.length === 0 ? (
@@ -181,6 +252,34 @@ export default function Market() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+          </div>
+        )}
+      </div>
+
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-800">실시간 가격 추이</h2>
+          <p className="text-xs text-gray-500">5초 폴링 · Redis 실시간 캐시</p>
+        </div>
+        {realtimeLoading || realtimeData.length === 0 ? (
+          <div className="h-56 bg-gray-50 rounded-xl animate-pulse" />
+        ) : (
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={realtimeData} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} minTickGap={16} />
+                <YAxis tick={{ fontSize: 10 }} orientation="right" domain={["auto", "auto"]} />
+                <Tooltip
+                  formatter={(value: number, name: string) => {
+                    if (name === "current_price") {
+                      return [Number(value).toLocaleString("ko-KR"), "현재가"];
+                    }
+                    return [Number(value).toLocaleString("ko-KR"), name];
+                  }}
+                />
+                <Line type="monotone" dataKey="current_price" stroke="#0EA5E9" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         )}
       </div>

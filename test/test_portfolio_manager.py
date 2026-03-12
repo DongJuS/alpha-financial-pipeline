@@ -1,4 +1,5 @@
 from datetime import date
+import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -7,6 +8,26 @@ from src.db.models import PredictionSignal
 
 
 class PortfolioManagerRiskGuardTest(unittest.IsolatedAsyncioTestCase):
+    async def test_resolve_name_and_price_prefers_realtime_cache(self) -> None:
+        agent = PortfolioManagerAgent()
+        fake_redis = AsyncMock()
+        fake_redis.get = AsyncMock(
+            return_value=json.dumps(
+                {"name": "삼성전자", "current_price": 123456},
+                ensure_ascii=False,
+            )
+        )
+
+        with (
+            patch("src.agents.portfolio_manager.get_redis", new=AsyncMock(return_value=fake_redis)),
+            patch("src.agents.portfolio_manager.fetch_recent_ohlcv", new=AsyncMock()) as ohlcv_mock,
+        ):
+            name, price = await agent._resolve_name_and_price("005930", None)
+
+        self.assertEqual(name, "삼성전자")
+        self.assertEqual(price, 123456)
+        ohlcv_mock.assert_not_called()
+
     async def test_process_signal_skips_buy_when_max_position_exceeded(self) -> None:
         agent = PortfolioManagerAgent()
         signal = PredictionSignal(
