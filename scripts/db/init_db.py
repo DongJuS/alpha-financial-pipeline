@@ -269,6 +269,9 @@ async def create_schema(drop_first: bool = False) -> None:
             await conn.execute(DROP_TABLES_SQL)
             logger.info("테이블 삭제 완료")
 
+        # users.id 기본값 gen_random_uuid()를 위해 pgcrypto 확장을 보장합니다.
+        await conn.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
+
         logger.info("테이블 생성 시작...")
         for ddl in CREATE_TABLES:
             # 여러 SQL 문이 하나의 문자열에 있을 수 있으므로 ;로 분리 실행

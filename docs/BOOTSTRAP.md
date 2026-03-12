@@ -11,7 +11,7 @@
 [ ] Node.js 20+
 [ ] PostgreSQL 15+
 [ ] Redis 7+
-[ ] Docker (선택, 로컬 개발환경용)
+[ ] Docker (권장, 컨테이너 실행용)
 [ ] KIS Developers 계좌 및 앱 등록 완료
 [ ] Anthropic API 키 발급
 [ ] OpenAI API 키 발급
@@ -69,6 +69,31 @@ LOG_LEVEL=INFO
 ```
 
 > ⚠️ `.env` 파일은 절대 git에 커밋하지 마세요.
+
+---
+
+## 2A. Docker 기반 부팅 (권장)
+
+```bash
+# 1) 컨테이너 실행
+docker compose up -d --build postgres redis api ui
+
+# 2) DB 스키마 생성 (최초 1회)
+docker compose run --rm api python scripts/db/init_db.py
+
+# 3) 상태 확인
+docker compose ps
+curl http://localhost:8000/health
+```
+
+접속 URL:
+- Frontend: `http://localhost:5173`
+- Backend API Docs: `http://localhost:8000/docs`
+
+중지:
+```bash
+docker compose down
+```
 
 ---
 

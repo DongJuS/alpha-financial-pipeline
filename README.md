@@ -73,32 +73,29 @@
 
 ---
 
-## 🚀 빠른 시작 (페이퍼 트레이딩)
+## 🚀 빠른 시작 (Docker 기반 권장)
 
 ```bash
 # 1. 환경변수 설정
 cp .env.example .env
 # .env 파일에 API 키 입력 (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, KIS_*, TELEGRAM_*)
 
-# 2. Python 의존성 설치
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+# 2. 컨테이너 빌드 및 실행
+docker compose up -d --build postgres redis api ui
 
-# 3. DB 초기화
-python scripts/db/init_db.py
+# 3. DB 스키마 초기화 (최초 1회)
+docker compose run --rm api python scripts/db/init_db.py
 
-# 4. KIS OAuth 설정
-python scripts/kis_auth.py --init
-
-# 5. 시스템 시작
-python -m src.agents.collector &
-python -m src.agents.orchestrator &
-
-# 6. 대시보드 시작
-cd ui && npm install && npm run dev
+# 4. 상태 확인
+docker compose ps
+curl http://localhost:8000/health
 ```
 
-자세한 설치 절차는 [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md)를 참조하세요.
+접속:
+- Dashboard: `http://localhost:5173`
+- API Docs: `http://localhost:8000/docs`
+
+로컬(비컨테이너) 실행 절차는 [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md)를 참조하세요.
 
 ---
 
