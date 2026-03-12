@@ -16,6 +16,7 @@ from src.agents import (
     record_dual_execution_heartbeat,
 )
 from src.api.deps import get_admin_user, get_current_user
+from src.utils.agent_activity import classify_agent_activity
 from src.utils.db_client import fetch
 from src.utils.redis_client import check_heartbeat
 
@@ -45,6 +46,8 @@ class AgentStatusItem(BaseModel):
     agent_id: str
     status: str
     is_alive: bool
+    activity_state: str
+    activity_label: str
     last_action: Optional[str] = None
     metrics: Optional[AgentMetrics] = None
     updated_at: Optional[str] = None
@@ -144,15 +147,26 @@ async def get_agents_status(
     for agent_id in AGENT_IDS:
         is_alive = await check_heartbeat(agent_id)
         db_row = db_status.get(agent_id)
+        status_value = db_row["status"] if db_row else ("healthy" if is_alive else "dead")
+        updated_at = db_row["updated_at"] if db_row else None
+        last_action = db_row["last_action"] if db_row else None
+        activity_state, activity_label = classify_agent_activity(
+            status=status_value,
+            is_alive=is_alive,
+            last_action=last_action,
+            updated_at=updated_at,
+        )
 
         items.append(
             AgentStatusItem(
                 agent_id=agent_id,
-                status=db_row["status"] if db_row else ("healthy" if is_alive else "dead"),
+                status=status_value,
                 is_alive=is_alive,
-                last_action=db_row["last_action"] if db_row else None,
+                activity_state=activity_state,
+                activity_label=activity_label,
+                last_action=last_action,
                 metrics=_parse_agent_metrics(db_row["metrics"]) if db_row else None,
-                updated_at=db_row["updated_at"] if db_row else None,
+                updated_at=updated_at,
             )
         )
 
