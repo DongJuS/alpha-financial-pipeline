@@ -2,13 +2,18 @@
 src/api/routers/portfolio.py — 포트폴리오 조회 및 설정 라우터
 """
 
-from typing import Annotated, Optional
+from datetime import datetime
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from src.api.deps import get_admin_user, get_current_settings, get_current_user
-from src.db.queries import insert_real_trading_audit
+from src.db.queries import (
+    fetch_operational_audits,
+    fetch_real_trading_audits,
+    insert_real_trading_audit,
+)
 from src.utils.config import Settings
 from src.utils.db_client import execute, fetch, fetchrow
 from src.utils.performance import compute_trade_performance
@@ -68,6 +73,34 @@ class ReadinessResponse(BaseModel):
     critical_ok: bool
     high_ok: bool
     checks: list[ReadinessCheckItem]
+
+
+class OperationalAuditItem(BaseModel):
+    id: int
+    audit_type: str
+    passed: bool
+    summary: str
+    details: Optional[dict[str, Any]] = None
+    executed_by: Optional[str] = None
+    created_at: datetime
+
+
+class TradingModeAuditItem(BaseModel):
+    id: int
+    requested_at: datetime
+    requested_by_email: Optional[str] = None
+    requested_by_user_id: Optional[str] = None
+    requested_mode_is_paper: bool
+    confirmation_code_ok: bool
+    readiness_passed: bool
+    readiness_summary: Optional[dict[str, Any]] = None
+    applied: bool
+    message: Optional[str] = None
+
+
+class ReadinessAuditResponse(BaseModel):
+    operational_audits: list[OperationalAuditItem]
+    mode_switch_audits: list[TradingModeAuditItem]
 
 
 @router.get("/positions", response_model=PortfolioResponse)
@@ -279,4 +312,20 @@ async def get_readiness(
         critical_ok=bool(result["critical_ok"]),
         high_ok=bool(result["high_ok"]),
         checks=[ReadinessCheckItem(**c) for c in result["checks"]],
+    )
+
+
+@router.get("/readiness/audits", response_model=ReadinessAuditResponse)
+async def get_readiness_audits(
+    _: Annotated[dict, Depends(get_admin_user)],
+    limit: int = Query(default=20, ge=1, le=200),
+    audit_type: Optional[str] = Query(default=None, pattern="^(security|risk_rules)$"),
+) -> ReadinessAuditResponse:
+    """운영 감사/실거래 모드 전환 감사 이력을 반환합니다."""
+    operational_rows = await fetch_operational_audits(limit=limit, audit_type=audit_type)
+    mode_switch_rows = await fetch_real_trading_audits(limit=limit)
+
+    return ReadinessAuditResponse(
+        operational_audits=[OperationalAuditItem(**row) for row in operational_rows],
+        mode_switch_audits=[TradingModeAuditItem(**row) for row in mode_switch_rows],
     )

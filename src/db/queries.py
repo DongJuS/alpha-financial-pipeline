@@ -459,3 +459,44 @@ async def fetch_latest_operational_audit(audit_type: str) -> Optional[dict]:
         audit_type,
     )
     return dict(row) if row else None
+
+
+async def fetch_operational_audits(limit: int = 20, audit_type: str | None = None) -> list[dict]:
+    if audit_type:
+        rows = await fetch(
+            """
+            SELECT id, audit_type, passed, summary, details, executed_by, created_at
+            FROM operational_audits
+            WHERE audit_type = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+            """,
+            audit_type,
+            limit,
+        )
+    else:
+        rows = await fetch(
+            """
+            SELECT id, audit_type, passed, summary, details, executed_by, created_at
+            FROM operational_audits
+            ORDER BY created_at DESC
+            LIMIT $1
+            """,
+            limit,
+        )
+    return [dict(r) for r in rows]
+
+
+async def fetch_real_trading_audits(limit: int = 20) -> list[dict]:
+    rows = await fetch(
+        """
+        SELECT id, requested_at, requested_by_email, requested_by_user_id,
+               requested_mode_is_paper, confirmation_code_ok, readiness_passed,
+               readiness_summary, applied, message
+        FROM real_trading_audit
+        ORDER BY requested_at DESC
+        LIMIT $1
+        """,
+        limit,
+    )
+    return [dict(r) for r in rows]

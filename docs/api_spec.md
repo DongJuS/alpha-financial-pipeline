@@ -293,6 +293,40 @@
   }
   ```
 
+### GET `/portfolio/readiness/audits`
+- **설명:** 운영 감사(`operational_audits`) 및 실거래 모드 전환 감사(`real_trading_audit`) 최근 이력 조회 (관리자 전용)
+- **Query Params:** `limit`(1~200), `audit_type=security|risk_rules`(선택)
+- **Response (200):**
+  ```json
+  {
+    "operational_audits": [
+      {
+        "id": 12,
+        "audit_type": "security",
+        "passed": true,
+        "summary": "보안 감사 통과",
+        "details": {"passed": true},
+        "executed_by": "scripts/preflight_real_trading.py",
+        "created_at": "2026-03-12T13:41:25.000000+00:00"
+      }
+    ],
+    "mode_switch_audits": [
+      {
+        "id": 7,
+        "requested_at": "2026-03-12T13:15:00.000000+00:00",
+        "requested_by_email": "admin@example.com",
+        "requested_by_user_id": "uuid-or-sub",
+        "requested_mode_is_paper": false,
+        "confirmation_code_ok": true,
+        "readiness_passed": false,
+        "readiness_summary": {"ready": false},
+        "applied": false,
+        "message": "실거래 전환 차단: 확인 코드 또는 readiness 점검 실패"
+      }
+    ]
+  }
+  ```
+
 ### POST `/portfolio/config`
 - **설명:** 전략 블렌드 비율, 리스크 한도 설정
 - **Request Body:**

@@ -76,6 +76,7 @@ Strategy A/B 기본 실행기와 블렌딩 실행 경로를 구현했고, 남은
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
+| 2026-03-12 | readiness 감사 가시성 강화 — `/portfolio/readiness/audits` API 추가(운영 감사 + 모드 전환 감사 이력 통합 조회), `queries.py`에 감사 조회 헬퍼 추가, API 명세 업데이트 | ✅ 완료 |
 | 2026-03-12 | 실거래 준비 자동화 강화 — `operational_audits` 테이블 추가, `security_audit.py`(시크릿/`.env` 추적 감사) 및 `validate_risk_rules.py`(서킷브레이커/포지션 한도 검증) 추가, `preflight_real_trading.py`에서 운영 감사 자동 실행/기록, readiness에 `paper:track_record` + 감사 최신성 체크 반영, 관련 테스트/문서 업데이트 | ✅ 완료 |
 | 2026-03-12 | 실거래 전환 가드/감사 체계 추가 — readiness 유틸(`utils/readiness.py`), `/portfolio/readiness` API, `/portfolio/trading-mode` 전환 전 readiness+확인코드 강제 및 `real_trading_audit` 기록, `preflight_real_trading.py` 스크립트/테스트 반영 | ✅ 완료 |
 | 2026-03-12 | 페이퍼 운용 자동 리포트 추가 — 공통 성과 계산 유틸(`utils/performance.py`) 분리, Notifier `send_paper_daily_report`, worker 일일 스케줄(ORCH_ENABLE_DAILY_REPORT/시각 env) 연동, 관련 테스트 추가 | ✅ 완료 |
@@ -110,7 +111,7 @@ Phase 3 Strategy A    ██████░░░░   60% (우승자 선정 규
 Phase 4 Strategy B    ███████░░░   70% (다라운드/합의 임계치 반영)
 Phase 5 대시보드       █████░░░░░   50% (토론 이력/라운드 상세 뷰 추가)
 Phase 6 페이퍼 운용    ████░░░░░░   40% (자동 루프 + 성과 지표 + 일일 리포트)
-Phase 7 실거래 준비    ██████░░░░   60% (전환 가드 + readiness + 운영 감사 자동화)
+Phase 7 실거래 준비    ███████░░░   65% (전환 가드 + readiness + 운영 감사 + 감사 조회 API)
 ```
 
 ## 🚀 다음 실행 명령어
