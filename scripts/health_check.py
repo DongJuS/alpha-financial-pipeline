@@ -49,6 +49,7 @@ async def check_db() -> tuple[bool, str]:
             "users", "market_data", "predictions", "predictor_tournament_scores",
             "debate_transcripts", "portfolio_config", "portfolio_positions",
             "trade_history", "agent_heartbeats", "collector_errors", "notification_history",
+            "real_trading_audit",
         }
         missing = expected - set(table_names)
         await close_pool()

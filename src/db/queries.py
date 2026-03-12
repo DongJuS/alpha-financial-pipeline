@@ -390,3 +390,37 @@ async def insert_notification(record: NotificationRecord) -> None:
         record.success,
         record.error_msg,
     )
+
+
+async def insert_real_trading_audit(
+    requested_by_email: str | None,
+    requested_by_user_id: str | None,
+    requested_mode_is_paper: bool,
+    confirmation_code_ok: bool,
+    readiness_passed: bool,
+    readiness_summary: dict,
+    applied: bool,
+    message: str,
+) -> None:
+    await execute(
+        """
+        INSERT INTO real_trading_audit (
+            requested_by_email,
+            requested_by_user_id,
+            requested_mode_is_paper,
+            confirmation_code_ok,
+            readiness_passed,
+            readiness_summary,
+            applied,
+            message
+        ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+        """,
+        requested_by_email,
+        requested_by_user_id,
+        requested_mode_is_paper,
+        confirmation_code_ok,
+        readiness_passed,
+        json.dumps(readiness_summary, ensure_ascii=False),
+        applied,
+        message,
+    )

@@ -245,6 +245,7 @@ python scripts/smoke_test.py
 | `scripts/health_check.py` | 에이전트 헬스 확인 |
 | `scripts/run_dual_execution.py` | Fast/Slow 2-에이전트 자동 실행 계획 생성 |
 | `scripts/run_orchestrator_worker.py` | Docker/운영 Orchestrator 루프 실행기 |
+| `scripts/preflight_real_trading.py` | 실거래 전환 readiness 사전 점검 |
 | `scripts/test_llm_connections.py` | LLM API 연결 테스트 |
 | `scripts/smoke_test.py` | 전체 플로우 스모크 테스트 |
 

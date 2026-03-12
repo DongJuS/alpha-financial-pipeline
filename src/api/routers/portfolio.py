@@ -7,9 +7,12 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from src.api.deps import get_admin_user, get_current_user
+from src.api.deps import get_admin_user, get_current_settings, get_current_user
+from src.db.queries import insert_real_trading_audit
+from src.utils.config import Settings
 from src.utils.db_client import execute, fetch, fetchrow
 from src.utils.performance import compute_trade_performance
+from src.utils.readiness import evaluate_real_trading_readiness
 
 router = APIRouter()
 
@@ -51,6 +54,20 @@ class PortfolioConfigRequest(BaseModel):
 class TradingModeRequest(BaseModel):
     is_paper: bool
     confirmation_code: str
+
+
+class ReadinessCheckItem(BaseModel):
+    key: str
+    ok: bool
+    message: str
+    severity: str
+
+
+class ReadinessResponse(BaseModel):
+    ready: bool
+    critical_ok: bool
+    high_ok: bool
+    checks: list[ReadinessCheckItem]
 
 
 @router.get("/positions", response_model=PortfolioResponse)
@@ -161,7 +178,7 @@ async def get_performance(
         SELECT ticker, side, price, quantity, amount, executed_at
         FROM trade_history
         WHERE is_paper = TRUE
-          AND executed_at >= NOW() - ($1 || ' days')::interval
+          AND executed_at >= NOW() - ($1 * INTERVAL '1 day')
         ORDER BY executed_at
         """,
         days,
@@ -203,21 +220,63 @@ async def update_config(
 @router.post("/trading-mode")
 async def update_trading_mode(
     body: TradingModeRequest,
-    _: Annotated[dict, Depends(get_admin_user)],
+    admin_user: Annotated[dict, Depends(get_admin_user)],
+    settings: Annotated[Settings, Depends(get_current_settings)],
 ) -> dict:
     """페이퍼/실거래 모드를 전환합니다 (관리자 전용)."""
-    CONFIRMATION_CODE = "CONFIRM_REAL_TRADING_2026"
+    confirmation_code_ok = body.confirmation_code == settings.real_trading_confirmation_code
+    readiness = {"ready": True, "critical_ok": True, "high_ok": True, "checks": []}
 
-    if not body.is_paper and body.confirmation_code != CONFIRMATION_CODE:
-        return {
-            "error": "실거래 전환을 위해 올바른 확인 코드가 필요합니다.",
-            "hint": "관리자 매뉴얼을 확인하세요.",
-        }
+    if not body.is_paper:
+        readiness = await evaluate_real_trading_readiness()
+        if (not confirmation_code_ok) or (not readiness["ready"]):
+            message = "실거래 전환 차단: 확인 코드 또는 readiness 점검 실패"
+            await insert_real_trading_audit(
+                requested_by_email=admin_user.get("email"),
+                requested_by_user_id=admin_user.get("sub"),
+                requested_mode_is_paper=body.is_paper,
+                confirmation_code_ok=confirmation_code_ok,
+                readiness_passed=bool(readiness.get("ready")),
+                readiness_summary=readiness,
+                applied=False,
+                message=message,
+            )
+            return {
+                "error": message,
+                "confirmation_code_ok": confirmation_code_ok,
+                "readiness": readiness,
+            }
 
     await execute(
         "UPDATE portfolio_config SET is_paper_trading = $1, updated_at = NOW()",
         body.is_paper,
     )
 
+    message = f"트레이딩 모드 변경 성공: {'paper' if body.is_paper else 'real'}"
+    await insert_real_trading_audit(
+        requested_by_email=admin_user.get("email"),
+        requested_by_user_id=admin_user.get("sub"),
+        requested_mode_is_paper=body.is_paper,
+        confirmation_code_ok=confirmation_code_ok,
+        readiness_passed=bool(readiness.get("ready")),
+        readiness_summary=readiness,
+        applied=True,
+        message=message,
+    )
+
     mode = "페이퍼 트레이딩" if body.is_paper else "실거래"
-    return {"message": f"트레이딩 모드가 '{mode}'으로 변경되었습니다."}
+    return {"message": f"트레이딩 모드가 '{mode}'으로 변경되었습니다.", "readiness": readiness}
+
+
+@router.get("/readiness", response_model=ReadinessResponse)
+async def get_readiness(
+    _: Annotated[dict, Depends(get_admin_user)],
+) -> ReadinessResponse:
+    """실거래 전환 readiness 점검 결과를 반환합니다."""
+    result = await evaluate_real_trading_readiness()
+    return ReadinessResponse(
+        ready=bool(result["ready"]),
+        critical_ok=bool(result["critical_ok"]),
+        high_ok=bool(result["high_ok"]),
+        checks=[ReadinessCheckItem(**c) for c in result["checks"]],
+    )

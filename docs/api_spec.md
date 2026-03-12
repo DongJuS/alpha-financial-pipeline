@@ -276,6 +276,20 @@
   }
   ```
 
+### GET `/portfolio/readiness`
+- **설명:** 실거래 전환 readiness 점검 결과 조회 (관리자 전용)
+- **Response (200):**
+  ```json
+  {
+    "ready": false,
+    "critical_ok": false,
+    "high_ok": false,
+    "checks": [
+      {"key":"cred:KIS_APP_KEY","ok":true,"message":"KIS_APP_KEY 설정 정상","severity":"critical"}
+    ]
+  }
+  ```
+
 ### POST `/portfolio/config`
 - **설명:** 전략 블렌드 비율, 리스크 한도 설정
 - **Request Body:**
@@ -286,6 +300,7 @@
 ### POST `/portfolio/trading-mode`
 - **설명:** 페이퍼/실거래 모드 전환 (관리자 전용)
 - **Request Body:** `{ "is_paper": false, "confirmation_code": "string" }`
+- **동작:** 실거래(`is_paper=false`) 전환 시 confirmation_code + readiness 점검을 모두 통과해야 적용됩니다.
 
 ---
 

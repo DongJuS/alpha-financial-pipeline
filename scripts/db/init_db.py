@@ -248,10 +248,29 @@ CREATE_TABLES: list[str] = [
     CREATE INDEX IF NOT EXISTS idx_notification_ts
         ON notification_history (sent_at DESC);
     """,
+
+    # 12. 실거래 전환 감사 로그
+    """
+    CREATE TABLE IF NOT EXISTS real_trading_audit (
+        id                      BIGSERIAL PRIMARY KEY,
+        requested_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        requested_by_email      TEXT,
+        requested_by_user_id    TEXT,
+        requested_mode_is_paper BOOLEAN NOT NULL,
+        confirmation_code_ok    BOOLEAN NOT NULL,
+        readiness_passed        BOOLEAN NOT NULL,
+        readiness_summary       JSONB,
+        applied                 BOOLEAN NOT NULL DEFAULT FALSE,
+        message                 TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_real_trading_audit_ts
+        ON real_trading_audit (requested_at DESC);
+    """,
 ]
 
 DROP_TABLES_SQL = """
 DROP TABLE IF EXISTS
+    real_trading_audit,
     notification_history,
     collector_errors,
     agent_heartbeats,

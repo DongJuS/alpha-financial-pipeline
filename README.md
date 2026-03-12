@@ -145,6 +145,9 @@ docker compose restart worker
 # ORCH_ENABLE_DAILY_REPORT=true
 # ORCH_DAILY_REPORT_HOUR=17
 # ORCH_DAILY_REPORT_MINUTE=10
+
+# 실거래 전환 사전 점검
+docker compose run --rm api python scripts/preflight_real_trading.py
 ```
 
 ## ✅ 테스트 실행
@@ -163,6 +166,7 @@ python3 scripts/smoke_test.py --skip-telegram
 docker compose up -d --build postgres redis api worker ui
 docker compose run --rm api python scripts/db/init_db.py
 docker compose exec -T api python scripts/smoke_test.py --skip-telegram
+docker compose run --rm api python scripts/preflight_real_trading.py
 docker compose run --rm api python -m unittest discover -s test -p 'test_*.py' -v
 docker compose run --rm ui npm run build
 ```

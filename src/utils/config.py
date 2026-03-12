@@ -59,6 +59,10 @@ class Settings(BaseSettings):
         le=1.0,
         alias="STRATEGY_B_CONSENSUS_THRESHOLD",
     )
+    real_trading_confirmation_code: str = Field(
+        default="CONFIRM_REAL_TRADING_2026",
+        alias="REAL_TRADING_CONFIRMATION_CODE",
+    )
 
     # ── Logging ──────────────────────────────────────────────────────────────
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
