@@ -111,24 +111,9 @@ CREATE_TABLES: list[str] = [
         updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE (agent_id, trading_date)
     );
-    -- 과거 스키마 호환: is_winner -> is_current_winner
-    DO $$
-    BEGIN
-        IF EXISTS (
-            SELECT 1
-            FROM information_schema.columns
-            WHERE table_name = 'predictor_tournament_scores'
-              AND column_name = 'is_winner'
-        ) AND NOT EXISTS (
-            SELECT 1
-            FROM information_schema.columns
-            WHERE table_name = 'predictor_tournament_scores'
-              AND column_name = 'is_current_winner'
-        ) THEN
-            ALTER TABLE predictor_tournament_scores
-            RENAME COLUMN is_winner TO is_current_winner;
-        END IF;
-    END $$;
+    -- 과거 스키마 호환: is_current_winner 컬럼이 없으면 추가
+    ALTER TABLE predictor_tournament_scores
+        ADD COLUMN IF NOT EXISTS is_current_winner BOOLEAN NOT NULL DEFAULT FALSE;
     CREATE INDEX IF NOT EXISTS idx_tournament_date
         ON predictor_tournament_scores (trading_date DESC, rolling_accuracy DESC);
     """,
@@ -219,11 +204,17 @@ CREATE_TABLES: list[str] = [
     CREATE TABLE IF NOT EXISTS agent_heartbeats (
         id          BIGSERIAL PRIMARY KEY,
         agent_id    VARCHAR(30) NOT NULL,
-        status      VARCHAR(10) NOT NULL CHECK (status IN ('healthy', 'degraded', 'dead')),
+        status      VARCHAR(10) NOT NULL CHECK (status IN ('healthy', 'degraded', 'error', 'dead')),
         last_action TEXT,
         metrics     JSONB,
         recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- status 체크 제약을 최신 값(healthy/degraded/error/dead)으로 재적용
+    ALTER TABLE agent_heartbeats
+        DROP CONSTRAINT IF EXISTS agent_heartbeats_status_check;
+    ALTER TABLE agent_heartbeats
+        ADD CONSTRAINT agent_heartbeats_status_check
+        CHECK (status IN ('healthy', 'degraded', 'error', 'dead'));
     CREATE INDEX IF NOT EXISTS idx_heartbeat_agent_ts
         ON agent_heartbeats (agent_id, recorded_at DESC);
     -- 7일 이상 오래된 헬스비트 자동 정리를 위한 파티셔닝 힌트 (수동 vacuum 가능)
@@ -295,7 +286,12 @@ async def create_schema(drop_first: bool = False) -> None:
             # 여러 SQL 문이 하나의 문자열에 있을 수 있으므로 ;로 분리 실행
             statements = [s.strip() for s in ddl.split(";") if s.strip()]
             for stmt in statements:
-                await conn.execute(stmt)
+                # 주석만 있는 조각은 건너뜁니다.
+                cleaned_lines = [ln for ln in stmt.splitlines() if not ln.strip().startswith("--")]
+                cleaned_stmt = "\n".join(cleaned_lines).strip()
+                if not cleaned_stmt:
+                    continue
+                await conn.execute(cleaned_stmt)
 
         # 생성된 테이블 목록 확인
         rows = await conn.fetch(

@@ -87,7 +87,7 @@ async def fetch_recent_ohlcv(ticker: str, days: int = 30) -> list[dict]:
         FROM market_data
         WHERE ticker = $1
           AND interval = 'daily'
-          AND timestamp_kst >= NOW() - ($2 || ' days')::interval
+          AND timestamp_kst >= NOW() - ($2 * INTERVAL '1 day')
         ORDER BY timestamp_kst DESC
         """,
         ticker,

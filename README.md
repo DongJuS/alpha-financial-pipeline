@@ -152,6 +152,13 @@ PYTHONPYCACHEPREFIX=/tmp/pycache python3 -m compileall src scripts test
 
 # 3) 통합 스모크 테스트 (Redis/API 실행 필요)
 python3 scripts/smoke_test.py --skip-telegram
+
+# 4) Docker 런타임 기준 스모크 테스트
+docker compose up -d --build postgres redis api worker ui
+docker compose run --rm api python scripts/db/init_db.py
+docker compose exec -T api python scripts/smoke_test.py --skip-telegram
+docker compose run --rm api python -m unittest discover -s test -p 'test_*.py' -v
+docker compose run --rm ui npm run build
 ```
 
 ---

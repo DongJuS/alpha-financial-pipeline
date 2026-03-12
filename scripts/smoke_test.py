@@ -79,7 +79,18 @@ async def test_redis_pubsub() -> tuple[bool, str]:
         async def subscriber() -> None:
             async with sub_client.pubsub() as ps:
                 await ps.subscribe(TOPIC_ALERTS)
-                async for msg in ps:
+                for _ in range(50):
+                    msg = await ps.get_message(
+                        ignore_subscribe_messages=True,
+                        timeout=0.1,
+                    )
+                    if msg and msg.get("type") == "message":
+                        received.append(msg["data"])
+                        break
+                    await asyncio.sleep(0.05)
+                if received:
+                    return
+                async for msg in ps.listen():
                     if msg["type"] == "message":
                         received.append(msg["data"])
                         break
@@ -105,17 +116,34 @@ async def test_redis_pubsub() -> tuple[bool, str]:
 async def test_fastapi_health() -> tuple[bool, str]:
     """FastAPI /health 엔드포인트 테스트."""
     import httpx
+    from src.utils.config import get_settings
 
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get("http://localhost:8000/health")
-            data = resp.json()
+    settings = get_settings()
+    health_paths = [
+        f"{settings.app_url.rstrip('/')}/health",
+        "http://localhost:8000/health",
+        "http://api:8000/health",
+    ]
+    tried: list[str] = []
+    last_err = "unknown"
 
-        if resp.status_code == 200 and data.get("status") in ("healthy", "degraded"):
-            return True, f"HTTP 200, status={data['status']}"
-        return False, f"예상치 못한 응답: {resp.status_code} {data}"
-    except Exception as e:
-        return False, f"FastAPI 미실행 또는 연결 오류: {e}"
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        for url in health_paths:
+            if url in tried:
+                continue
+            tried.append(url)
+            try:
+                resp = await client.get(url)
+                data = resp.json()
+            except Exception as e:
+                last_err = str(e)
+                continue
+
+            if resp.status_code == 200 and data.get("status") in ("healthy", "degraded"):
+                return True, f"{url} HTTP 200, status={data['status']}"
+            last_err = f"{url} -> 예상치 못한 응답: {resp.status_code} {data}"
+
+    return False, f"FastAPI 미실행 또는 연결 오류: {last_err}"
 
 
 async def test_fdr_data() -> tuple[bool, str]:
