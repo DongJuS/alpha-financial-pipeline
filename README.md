@@ -118,6 +118,9 @@ python -m src.agents.portfolio_manager --signals-json '[{"ticker":"005930","sign
 
 # Orchestrator 단일 사이클 (수집 -> 예측 -> 주문 -> 알림)
 python -m src.agents.orchestrator --tickers 005930,000660
+
+# Orchestrator 토너먼트 모드 (Predictor 5개 인스턴스)
+python -m src.agents.orchestrator --tournament --tickers 005930,000660
 ```
 
 ---

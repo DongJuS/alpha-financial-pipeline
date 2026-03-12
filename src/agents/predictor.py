@@ -27,6 +27,8 @@ from src.db.queries import (
     upsert_tournament_score,
 )
 from src.llm.claude_client import ClaudeClient
+from src.llm.gemini_client import GeminiClient
+from src.llm.gpt_client import GPTClient
 from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import TOPIC_SIGNALS, publish_message, set_heartbeat
 
@@ -46,7 +48,9 @@ class PredictorAgent:
         self.strategy = strategy
         self.llm_model = llm_model
         self.persona = persona
-        self.claude = ClaudeClient(model=llm_model)
+        self.claude = ClaudeClient(model=llm_model if "claude" in llm_model.lower() else "claude-3-5-sonnet-latest")
+        self.gpt = GPTClient(model=llm_model if "gpt" in llm_model.lower() else "gpt-4o-mini")
+        self.gemini = GeminiClient(model=llm_model if "gemini" in llm_model.lower() else "gemini-1.5-pro")
 
     @staticmethod
     def _rule_based_signal(candles: list[dict]) -> dict[str, Any]:
@@ -82,11 +86,17 @@ class PredictorAgent:
             "stop_loss": int(latest * 0.97) if signal == "BUY" else None,
         }
 
+    def _provider_name(self) -> str:
+        model = self.llm_model.lower()
+        if "gpt" in model:
+            return "gpt"
+        if "gemini" in model:
+            return "gemini"
+        return "claude"
+
     async def _llm_signal(self, ticker: str, candles: list[dict]) -> dict[str, Any]:
         fallback = self._rule_based_signal(candles)
-        if not self.claude.is_configured:
-            return fallback
-
+        provider = self._provider_name()
         compact = [
             {
                 "ts": str(c["timestamp_kst"]),
@@ -113,7 +123,15 @@ class PredictorAgent:
 }}
 """
         try:
-            raw = await self.claude.ask_json(prompt)
+            if provider == "gpt" and self.gpt.is_configured:
+                raw = await self.gpt.ask_json(prompt)
+            elif provider == "gemini" and self.gemini.is_configured:
+                raw = await self.gemini.ask_json(prompt)
+            elif provider == "claude" and self.claude.is_configured:
+                raw = await self.claude.ask_json(prompt)
+            else:
+                return fallback
+
             signal = str(raw.get("signal", "HOLD")).upper()
             if signal not in {"BUY", "SELL", "HOLD"}:
                 signal = "HOLD"
@@ -126,7 +144,7 @@ class PredictorAgent:
                 "reasoning_summary": raw.get("reasoning_summary") or fallback["reasoning_summary"],
             }
         except Exception as e:
-            logger.warning("Claude 신호 생성 실패 [%s]: %s", ticker, e)
+            logger.warning("%s 신호 생성 실패 [%s]: %s", provider, ticker, e)
             return fallback
 
     async def run_once(self, tickers: list[str] | None = None, limit: int = 10) -> list[PredictionSignal]:
