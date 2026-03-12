@@ -85,7 +85,6 @@ export default function AgentStatusBar() {
                 {agent.activity_label}
               </span>
             </div>
-            {agent.last_action && <p className="mt-2 truncate text-[11px] text-slate-500">{agent.last_action}</p>}
           </div>
         ))}
       </div>
