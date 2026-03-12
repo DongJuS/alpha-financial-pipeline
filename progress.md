@@ -76,6 +76,7 @@ Phase 1~7 전 구간 구현을 자동 검증 스크립트(`scripts/validate_all_
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
+| 2026-03-13 | 인증 UX 보강 — `Login` 페이지 추가, `RequireAuth` 보호 라우트 적용, `Layout` 로그아웃 버튼 추가, 401 인터셉터에서 로그인 요청은 강제 리다이렉트 제외 처리(오류 메시지 표시 가능), Docker UI 빌드/스모크 테스트 통과 | ✅ 완료 |
 | 2026-03-12 | Phase 5~6~7 마감 배치 — 대시보드/포트폴리오/마켓/설정 UI를 API 연동+차트 기반으로 완성, `/portfolio/performance-series`/`/portfolio/config`/`/notifications/preferences` API 추가, `paper_trading_runs` 스키마 및 `run_phase6_paper_validation.py`(30일/고변동성/부하) 추가, `validate_all_phases.py` 도입 후 Docker 기준 Phase 1~7 모두 100% 검증 통과 | ✅ 완료 |
 | 2026-03-12 | readiness 감사 가시성 강화 — `/portfolio/readiness/audits` API 추가(운영 감사 + 모드 전환 감사 이력 통합 조회), `queries.py`에 감사 조회 헬퍼 추가, API 명세 업데이트 | ✅ 완료 |
 | 2026-03-12 | 실거래 준비 자동화 강화 — `operational_audits` 테이블 추가, `security_audit.py`(시크릿/`.env` 추적 감사) 및 `validate_risk_rules.py`(서킷브레이커/포지션 한도 검증) 추가, `preflight_real_trading.py`에서 운영 감사 자동 실행/기록, readiness에 `paper:track_record` + 감사 최신성 체크 반영, 관련 테스트/문서 업데이트 | ✅ 완료 |

@@ -1,7 +1,7 @@
 /**
  * ui/src/components/Layout.tsx — 사이드바 + 메인 영역 레이아웃
  */
-import { Outlet, NavLink } from "react-router-dom";
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useAppStore } from "@/stores/useAppStore";
 
 const NAV_ITEMS = [
@@ -14,6 +14,12 @@ const NAV_ITEMS = [
 
 export default function Layout() {
   const { sidebarOpen, toggleSidebar } = useAppStore();
+  const navigate = useNavigate();
+
+  function handleLogout() {
+    localStorage.removeItem("alpha_token");
+    navigate("/login", { replace: true });
+  }
 
   return (
     <div className="flex h-screen bg-surface-muted">
@@ -54,13 +60,22 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* 사이드바 토글 */}
-        <button
-          onClick={toggleSidebar}
-          className="m-2 p-2 rounded-lg text-gray-400 hover:bg-gray-100 text-sm"
-        >
-          {sidebarOpen ? "◀" : "▶"}
-        </button>
+        <div className="px-2 pb-2 space-y-1">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 text-sm"
+          >
+            <span>🚪</span>
+            {sidebarOpen && <span>로그아웃</span>}
+          </button>
+          <button
+            onClick={toggleSidebar}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-gray-400 hover:bg-gray-100 text-sm"
+          >
+            <span>{sidebarOpen ? "◀" : "▶"}</span>
+            {sidebarOpen && <span>사이드바 접기</span>}
+          </button>
+        </div>
       </aside>
 
       {/* 메인 영역 */}
