@@ -268,20 +268,27 @@ async def get_combined_signals(
 
     rows = await fetch(
         """
-        WITH a AS (
-            SELECT ticker, signal AS signal_a, confidence AS conf_a
-            FROM predictions
-            WHERE strategy = 'A' AND trading_date = CURRENT_DATE
-              AND agent_id IN (
-                  SELECT agent_id FROM predictor_tournament_scores
-                  WHERE is_current_winner = TRUE
-                  ORDER BY trading_date DESC LIMIT 1
-              )
+        WITH winner AS (
+            SELECT agent_id
+            FROM predictor_tournament_scores
+            WHERE is_current_winner = TRUE
+            ORDER BY trading_date DESC, updated_at DESC, id DESC
+            LIMIT 1
+        ),
+        a AS (
+            SELECT DISTINCT ON (p.ticker)
+                p.ticker, p.signal AS signal_a, p.confidence AS conf_a
+            FROM predictions p
+            JOIN winner w ON p.agent_id = w.agent_id
+            WHERE p.strategy = 'A' AND p.trading_date = CURRENT_DATE
+            ORDER BY p.ticker, p.timestamp_utc DESC, p.id DESC
         ),
         b AS (
-            SELECT ticker, signal AS signal_b, confidence AS conf_b
-            FROM predictions
-            WHERE strategy = 'B' AND trading_date = CURRENT_DATE
+            SELECT DISTINCT ON (p.ticker)
+                p.ticker, p.signal AS signal_b, p.confidence AS conf_b
+            FROM predictions p
+            WHERE p.strategy = 'B' AND p.trading_date = CURRENT_DATE
+            ORDER BY p.ticker, p.timestamp_utc DESC, p.id DESC
         )
         SELECT
             COALESCE(a.ticker, b.ticker) AS ticker,
@@ -289,6 +296,7 @@ async def get_combined_signals(
             COALESCE(a.conf_a, 0)::float AS conf_a,
             COALESCE(b.conf_b, 0)::float AS conf_b
         FROM a FULL OUTER JOIN b ON a.ticker = b.ticker
+        ORDER BY COALESCE(a.ticker, b.ticker)
         """
     )
 

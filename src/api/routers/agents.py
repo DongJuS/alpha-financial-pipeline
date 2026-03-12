@@ -2,10 +2,12 @@
 src/api/routers/agents.py — 에이전트 상태 및 관리 라우터
 """
 
-from typing import Annotated, Optional
+import json
+from collections.abc import Mapping
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from src.agents import (
     FAST_FLOW_AGENT_ID,
@@ -96,6 +98,30 @@ class DualExecutionResponse(BaseModel):
     combined: CombinedExecutionPlanItem
 
 
+def _parse_agent_metrics(raw_metrics: Any) -> Optional[AgentMetrics]:
+    if raw_metrics is None:
+        return None
+
+    parsed: dict[str, Any]
+    if isinstance(raw_metrics, Mapping):
+        parsed = dict(raw_metrics)
+    elif isinstance(raw_metrics, str):
+        try:
+            decoded = json.loads(raw_metrics)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(decoded, Mapping):
+            return None
+        parsed = dict(decoded)
+    else:
+        return None
+
+    try:
+        return AgentMetrics(**parsed)
+    except (TypeError, ValidationError):
+        return None
+
+
 @router.get("/status", response_model=AgentsStatusResponse)
 async def get_agents_status(
     _: Annotated[dict, Depends(get_current_user)],
@@ -125,7 +151,7 @@ async def get_agents_status(
                 status=db_row["status"] if db_row else ("healthy" if is_alive else "dead"),
                 is_alive=is_alive,
                 last_action=db_row["last_action"] if db_row else None,
-                metrics=AgentMetrics(**(db_row["metrics"] or {})) if db_row and db_row["metrics"] else None,
+                metrics=_parse_agent_metrics(db_row["metrics"]) if db_row else None,
                 updated_at=db_row["updated_at"] if db_row else None,
             )
         )

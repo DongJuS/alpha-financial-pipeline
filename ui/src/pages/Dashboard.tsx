@@ -163,8 +163,8 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {signalData?.signals.map((signal) => (
-              <SignalCard key={signal.ticker} signal={signal} />
+            {signalData?.signals.map((signal, idx) => (
+              <SignalCard key={`${signal.ticker}-${idx}`} signal={signal} />
             ))}
           </div>
         )}
