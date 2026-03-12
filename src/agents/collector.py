@@ -94,41 +94,48 @@ class CollectorAgent:
             selected.extend((t, t, "KOSPI") for t in missing)
         return selected
 
-    def _fetch_latest_daily(self, ticker: str, name: str, market: str, lookback_days: int) -> MarketDataPoint | None:
+    def _fetch_daily_bars(
+        self,
+        ticker: str,
+        name: str,
+        market: str,
+        lookback_days: int,
+    ) -> list[MarketDataPoint]:
         fdr = self._load_fdr()
         start_date = (datetime.now(KST) - timedelta(days=lookback_days)).date().isoformat()
         df = fdr.DataReader(ticker, start_date)
         if df is None or df.empty:
-            return None
+            return []
 
-        row = df.iloc[-1]
-        index = df.index[-1]
-        trade_date = index.date() if hasattr(index, "date") else datetime.now(KST).date()
-        ts = datetime(
-            trade_date.year,
-            trade_date.month,
-            trade_date.day,
-            15,
-            30,
-            tzinfo=KST,
-        )
-
-        change_raw = row.get("Change")
-        change_pct = float(change_raw * 100.0) if change_raw is not None else None
-
-        return MarketDataPoint(
-            ticker=ticker,
-            name=name,
-            market=market if market in {"KOSPI", "KOSDAQ"} else "KOSPI",
-            timestamp_kst=ts,
-            interval="daily",
-            open=int(row.get("Open", 0)),
-            high=int(row.get("High", 0)),
-            low=int(row.get("Low", 0)),
-            close=int(row.get("Close", 0)),
-            volume=int(row.get("Volume", 0)),
-            change_pct=change_pct,
-        )
+        points: list[MarketDataPoint] = []
+        for index, row in df.iterrows():
+            trade_date = index.date() if hasattr(index, "date") else datetime.now(KST).date()
+            ts = datetime(
+                trade_date.year,
+                trade_date.month,
+                trade_date.day,
+                15,
+                30,
+                tzinfo=KST,
+            )
+            change_raw = row.get("Change")
+            change_pct = float(change_raw * 100.0) if change_raw is not None else None
+            points.append(
+                MarketDataPoint(
+                    ticker=ticker,
+                    name=name,
+                    market=market if market in {"KOSPI", "KOSDAQ"} else "KOSPI",
+                    timestamp_kst=ts,
+                    interval="daily",
+                    open=int(row.get("Open", 0)),
+                    high=int(row.get("High", 0)),
+                    low=int(row.get("Low", 0)),
+                    close=int(row.get("Close", 0)),
+                    volume=int(row.get("Volume", 0)),
+                    change_pct=change_pct,
+                )
+            )
+        return points
 
     async def _cache_latest_tick(self, point: MarketDataPoint, source: str) -> None:
         redis = await get_redis()
@@ -297,28 +304,30 @@ class CollectorAgent:
     async def collect_daily_bars(
         self,
         tickers: list[str] | None = None,
-        lookback_days: int = 7,
+        lookback_days: int = 120,
     ) -> list[MarketDataPoint]:
         selected = await asyncio.to_thread(self._resolve_tickers, tickers)
         points: list[MarketDataPoint] = []
+        latest_points: list[MarketDataPoint] = []
 
         for ticker, name, market in selected:
             try:
-                point = await asyncio.to_thread(
-                    self._fetch_latest_daily,
+                bars = await asyncio.to_thread(
+                    self._fetch_daily_bars,
                     ticker,
                     name,
                     market,
                     lookback_days,
                 )
-                if point:
-                    points.append(point)
+                if bars:
+                    points.extend(bars)
+                    latest_points.append(bars[-1])
             except Exception as e:
                 logger.warning("일봉 수집 실패 [%s]: %s", ticker, e)
 
         saved = await upsert_market_data(points)
 
-        for point in points:
+        for point in latest_points:
             await self._cache_latest_tick(point, source="fdr_daily")
 
         await publish_message(
@@ -328,7 +337,7 @@ class CollectorAgent:
                     "type": "data_ready",
                     "agent_id": self.agent_id,
                     "count": saved,
-                    "tickers": [p.ticker for p in points[:20]],
+                    "tickers": [p.ticker for p in latest_points[:20]],
                     "timestamp_utc": datetime.utcnow().isoformat() + "Z",
                 },
                 ensure_ascii=False,
@@ -514,7 +523,7 @@ async def _main_async(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="CollectorAgent")
     parser.add_argument("--tickers", default="", help="쉼표 구분 티커 목록 (예: 005930,000660)")
-    parser.add_argument("--lookback-days", type=int, default=7, help="일봉 수집 lookback 기간")
+    parser.add_argument("--lookback-days", type=int, default=120, help="일봉 수집 lookback 기간")
     parser.add_argument("--realtime", action="store_true", help="KIS WebSocket 실시간 틱 수집 모드")
     parser.add_argument("--duration-seconds", type=int, default=None, help="실시간 수집 실행 시간(초)")
     parser.add_argument("--tr-id", default="H0STCNT0", help="KIS WebSocket 구독 TR ID")

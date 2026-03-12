@@ -94,9 +94,13 @@ class PredictorAgent:
             return "gemini"
         return "claude"
 
+    def _provider_order(self) -> list[str]:
+        primary = self._provider_name()
+        rest = [p for p in ["claude", "gpt", "gemini"] if p != primary]
+        return [primary, *rest]
+
     async def _llm_signal(self, ticker: str, candles: list[dict]) -> dict[str, Any]:
         fallback = self._rule_based_signal(candles)
-        provider = self._provider_name()
         compact = [
             {
                 "ts": str(c["timestamp_kst"]),
@@ -122,30 +126,32 @@ class PredictorAgent:
   "reasoning_summary": "한 줄 요약"
 }}
 """
-        try:
-            if provider == "gpt" and self.gpt.is_configured:
-                raw = await self.gpt.ask_json(prompt)
-            elif provider == "gemini" and self.gemini.is_configured:
-                raw = await self.gemini.ask_json(prompt)
-            elif provider == "claude" and self.claude.is_configured:
-                raw = await self.claude.ask_json(prompt)
-            else:
-                return fallback
+        for provider in self._provider_order():
+            try:
+                if provider == "gpt" and self.gpt.is_configured:
+                    raw = await self.gpt.ask_json(prompt)
+                elif provider == "gemini" and self.gemini.is_configured:
+                    raw = await self.gemini.ask_json(prompt)
+                elif provider == "claude" and self.claude.is_configured:
+                    raw = await self.claude.ask_json(prompt)
+                else:
+                    continue
 
-            signal = str(raw.get("signal", "HOLD")).upper()
-            if signal not in {"BUY", "SELL", "HOLD"}:
-                signal = "HOLD"
-            confidence = raw.get("confidence", fallback["confidence"])
-            return {
-                "signal": signal,
-                "confidence": float(confidence) if confidence is not None else fallback["confidence"],
-                "target_price": raw.get("target_price"),
-                "stop_loss": raw.get("stop_loss"),
-                "reasoning_summary": raw.get("reasoning_summary") or fallback["reasoning_summary"],
-            }
-        except Exception as e:
-            logger.warning("%s 신호 생성 실패 [%s]: %s", provider, ticker, e)
-            return fallback
+                signal = str(raw.get("signal", "HOLD")).upper()
+                if signal not in {"BUY", "SELL", "HOLD"}:
+                    signal = "HOLD"
+                confidence = raw.get("confidence", fallback["confidence"])
+                return {
+                    "signal": signal,
+                    "confidence": float(confidence) if confidence is not None else fallback["confidence"],
+                    "target_price": raw.get("target_price"),
+                    "stop_loss": raw.get("stop_loss"),
+                    "reasoning_summary": raw.get("reasoning_summary") or fallback["reasoning_summary"],
+                }
+            except Exception as e:
+                logger.warning("%s 신호 생성 실패 [%s]: %s", provider, ticker, e)
+
+        return fallback
 
     async def run_once(self, tickers: list[str] | None = None, limit: int = 10) -> list[PredictionSignal]:
         if tickers is None:

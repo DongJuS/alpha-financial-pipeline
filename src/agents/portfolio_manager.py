@@ -91,12 +91,17 @@ class PortfolioManagerAgent:
         if signal.signal == "BUY":
             order_qty = 1
             max_position_pct = int(cfg.get("max_position_pct", 20))
+            paper_seed_capital = int(cfg.get("paper_seed_capital", 10_000_000))
+            is_paper = bool(cfg.get("is_paper_trading", True))
             total_value = await portfolio_total_value()
             current_value = (
                 int(position["quantity"]) * int(position["current_price"]) if position else 0
             )
             next_value = current_value + (order_qty * price)
-            denominator = max(total_value + (order_qty * price), 1)
+            if is_paper:
+                denominator = max(total_value, paper_seed_capital, 1)
+            else:
+                denominator = max(total_value + (order_qty * price), 1)
             next_weight_pct = (next_value / denominator) * 100
             if next_weight_pct > max_position_pct:
                 logger.warning(
@@ -111,7 +116,6 @@ class PortfolioManagerAgent:
             prev_avg = int(position["avg_price"]) if position else 0
             new_qty = prev_qty + order_qty
             new_avg = int(((prev_qty * prev_avg) + (order_qty * price)) / new_qty)
-            is_paper = bool(cfg.get("is_paper_trading", True))
 
             await save_position(
                 ticker=signal.ticker,

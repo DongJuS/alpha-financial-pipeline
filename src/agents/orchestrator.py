@@ -155,7 +155,7 @@ class OrchestratorAgent:
         started = datetime.utcnow()
         try:
             collected_points = await self.collector.collect_daily_bars(tickers=tickers)
-            cycle_tickers = [p.ticker for p in collected_points] or (tickers or [])
+            cycle_tickers = list(dict.fromkeys([p.ticker for p in collected_points])) or (tickers or [])
 
             winner = None
             if self.use_blend:

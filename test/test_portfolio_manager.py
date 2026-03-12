@@ -56,12 +56,53 @@ class PortfolioManagerRiskGuardTest(unittest.IsolatedAsyncioTestCase):
         ):
             result = await agent.process_signal(
                 signal,
-                risk_config={"max_position_pct": 50, "is_paper_trading": True},
+                risk_config={
+                    "max_position_pct": 50,
+                    "is_paper_trading": True,
+                    "paper_seed_capital": 10_000,
+                },
             )
 
         self.assertIsNone(result)
         save_mock.assert_not_called()
         trade_mock.assert_not_called()
+
+    async def test_process_signal_allows_first_buy_with_seed_capital(self) -> None:
+        agent = PortfolioManagerAgent()
+        signal = PredictionSignal(
+            agent_id="predictor_1",
+            llm_model="manual",
+            strategy="A",
+            ticker="005930",
+            signal="BUY",
+            confidence=0.7,
+            trading_date=date.today(),
+        )
+
+        with (
+            patch.object(
+                agent,
+                "_resolve_name_and_price",
+                new=AsyncMock(return_value=("삼성전자", 1_000)),
+            ),
+            patch("src.agents.portfolio_manager.get_position", new=AsyncMock(return_value=None)),
+            patch("src.agents.portfolio_manager.portfolio_total_value", new=AsyncMock(return_value=0)),
+            patch("src.agents.portfolio_manager.save_position", new=AsyncMock()) as save_mock,
+            patch("src.agents.portfolio_manager.insert_trade", new=AsyncMock()) as trade_mock,
+        ):
+            result = await agent.process_signal(
+                signal,
+                risk_config={
+                    "max_position_pct": 20,
+                    "is_paper_trading": True,
+                    "paper_seed_capital": 10_000_000,
+                },
+            )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["side"], "BUY")
+        save_mock.assert_awaited_once()
+        trade_mock.assert_awaited_once()
 
     async def test_process_predictions_stops_on_daily_loss_limit(self) -> None:
         agent = PortfolioManagerAgent()

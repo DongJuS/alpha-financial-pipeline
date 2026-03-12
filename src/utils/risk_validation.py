@@ -44,7 +44,11 @@ async def validate_max_position_limit() -> dict[str, Any]:
     ):
         result = await agent.process_signal(
             signal,
-            risk_config={"max_position_pct": 50, "is_paper_trading": True},
+            risk_config={
+                "max_position_pct": 50,
+                "is_paper_trading": True,
+                "paper_seed_capital": 10_000,
+            },
         )
 
     ok = result is None and save_mock.await_count == 0 and trade_mock.await_count == 0

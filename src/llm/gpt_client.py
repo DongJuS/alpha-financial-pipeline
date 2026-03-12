@@ -20,6 +20,7 @@ class GPTClient:
         settings = get_settings()
         self.api_key = settings.openai_api_key
         self._client: Optional[Any] = None
+        self._quota_exhausted = False
 
         if is_placeholder_secret(self.api_key):
             return
@@ -34,18 +35,30 @@ class GPTClient:
 
     @property
     def is_configured(self) -> bool:
-        return self._client is not None
+        return self._client is not None and not self._quota_exhausted
+
+    def _is_quota_error(self, error: Exception) -> bool:
+        text = str(error).lower()
+        return "insufficient_quota" in text or "exceeded your current quota" in text
 
     async def ask(self, prompt: str, temperature: float = 0.2) -> str:
         if not self._client:
             raise RuntimeError("GPT client is not configured.")
+        if self._quota_exhausted:
+            raise RuntimeError("GPT quota exhausted.")
 
-        resp = await self._client.chat.completions.create(
-            model=self.model,
-            temperature=temperature,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return (resp.choices[0].message.content or "").strip()
+        try:
+            resp = await self._client.chat.completions.create(
+                model=self.model,
+                temperature=temperature,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return (resp.choices[0].message.content or "").strip()
+        except Exception as e:
+            if self._is_quota_error(e):
+                self._quota_exhausted = True
+                logger.warning("OpenAI quota exhausted: GPT 호출을 세션 동안 비활성화합니다.")
+            raise
 
     async def ask_json(self, prompt: str) -> dict:
         text = await self.ask(prompt + "\n\nJSON 객체 하나만 출력하세요.")

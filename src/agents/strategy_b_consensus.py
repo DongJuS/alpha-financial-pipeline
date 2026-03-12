@@ -149,13 +149,17 @@ Proposer 주장: {json.dumps(proposer, ensure_ascii=False)}
 반론을 2~3문장으로 작성해라.
 """
 
-        try:
-            if use_client == "gpt" and self.gpt.is_configured:
-                return await self.gpt.ask(prompt)
-            if use_client == "gemini" and self.gemini.is_configured:
-                return await self.gemini.ask(prompt)
-        except Exception as e:
-            logger.warning("%s challenger 실패 [%s]: %s", use_client, ticker, e)
+        provider_order = [use_client] + [p for p in ("gpt", "gemini", "claude") if p != use_client]
+        for provider in provider_order:
+            try:
+                if provider == "gpt" and self.gpt.is_configured:
+                    return await self.gpt.ask(prompt)
+                if provider == "gemini" and self.gemini.is_configured:
+                    return await self.gemini.ask(prompt)
+                if provider == "claude" and self.claude.is_configured:
+                    return await self.claude.ask(prompt)
+            except Exception as e:
+                logger.warning("%s challenger 실패 [%s]: %s", provider, ticker, e)
 
         return (
             f"[round {round_no} fallback-{role}] proposer 신호({proposer['signal']})는 "
