@@ -92,7 +92,7 @@ kosdaq = fdr.StockListing('KOSDAQ') # KOSDAQ 전체 종목
 - **설명:** KIS WebSocket을 통해 장중 실시간 틱 데이터 수신
 - **접근 권한:** CollectorAgent
 - **연결 URL:**
-  - 페이퍼: `ws://ops.koreainvestment.com:21000`
+  - 페이퍼: `ws://ops.koreainvestment.com:31000`
   - 실거래: `ws://ops.koreainvestment.com:21000`
 - **제약:** 계좌당 WebSocket 연결 1개
 - **사용 시간:** 장중 (09:00–15:30 KST)만 활성화

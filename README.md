@@ -107,6 +107,9 @@ curl http://localhost:8000/health
 # Collector 일봉 수집 (MVP)
 python -m src.agents.collector --tickers 005930,000660
 
+# Collector 실시간 틱 수집 (KIS WebSocket)
+python -m src.agents.collector --realtime --tickers 005930,000660 --duration-seconds 300
+
 # Predictor (Claude 단일 인스턴스 + 규칙 폴백)
 python -m src.agents.predictor --agent-id predictor_1 --strategy A --tickers 005930,000660
 

@@ -1,9 +1,9 @@
 """
-src/agents/collector.py — CollectorAgent MVP
+src/agents/collector.py — CollectorAgent
 
-- FinanceDataReader로 일봉 데이터를 수집해 PostgreSQL에 upsert
-- 최신 가격을 Redis 캐시에 반영
-- data_ready 이벤트 발행 + heartbeat 기록
+- FinanceDataReader 일봉 수집
+- KIS WebSocket 실시간 틱 수집 (본연동)
+- Redis 캐시/메시지 발행 + heartbeat 기록
 """
 
 from __future__ import annotations
@@ -14,8 +14,11 @@ from datetime import datetime, timedelta
 import json
 import sys
 from pathlib import Path
+from typing import Optional
 from zoneinfo import ZoneInfo
 
+import httpx
+import websockets
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,13 +27,15 @@ load_dotenv(ROOT / ".env")
 
 from src.db.models import AgentHeartbeatRecord, MarketDataPoint
 from src.db.queries import insert_heartbeat, upsert_market_data
+from src.utils.config import get_settings
 from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import (
+    KEY_KIS_OAUTH_TOKEN,
     KEY_LATEST_TICKS,
     TOPIC_MARKET_DATA,
+    get_redis,
     publish_message,
     set_heartbeat,
-    get_redis,
 )
 
 setup_logging()
@@ -42,12 +47,28 @@ KST = ZoneInfo("Asia/Seoul")
 class CollectorAgent:
     def __init__(self, agent_id: str = "collector_agent") -> None:
         self.agent_id = agent_id
+        self.settings = get_settings()
+        self._last_hb_db_at: Optional[datetime] = None
 
     @staticmethod
     def _load_fdr():
         import FinanceDataReader as fdr
 
         return fdr
+
+    async def _beat(self, status: str, last_action: str, metrics: dict, force_db: bool = False) -> None:
+        await set_heartbeat(self.agent_id)
+        now = datetime.utcnow()
+        if force_db or self._last_hb_db_at is None or (now - self._last_hb_db_at).total_seconds() >= 30:
+            await insert_heartbeat(
+                AgentHeartbeatRecord(
+                    agent_id=self.agent_id,
+                    status=status,
+                    last_action=last_action,
+                    metrics=metrics,
+                )
+            )
+            self._last_hb_db_at = now
 
     def _resolve_tickers(self, requested: list[str] | None, limit: int = 20) -> list[tuple[str, str, str]]:
         fdr = self._load_fdr()
@@ -67,7 +88,6 @@ class CollectorAgent:
                 break
 
         if requested:
-            # 요청 티커가 listing에 없으면 UNKNOWN으로라도 포함해 수집 시도
             missing = [t for t in requested if t not in {x[0] for x in selected}]
             selected.extend((t, t, "KOSPI") for t in missing)
         return selected
@@ -108,6 +128,165 @@ class CollectorAgent:
             change_pct=change_pct,
         )
 
+    async def _cache_latest_tick(self, point: MarketDataPoint, source: str) -> None:
+        redis = await get_redis()
+        payload = {
+            "ticker": point.ticker,
+            "name": point.name,
+            "current_price": point.close,
+            "change_pct": point.change_pct,
+            "volume": point.volume,
+            "updated_at": point.timestamp_kst.isoformat(),
+            "source": source,
+        }
+        await redis.set(
+            KEY_LATEST_TICKS.format(ticker=point.ticker),
+            json.dumps(payload, ensure_ascii=False),
+            ex=60,
+        )
+
+    async def _get_access_token(self) -> Optional[str]:
+        redis = await get_redis()
+        raw = await redis.get(KEY_KIS_OAUTH_TOKEN)
+        if not raw:
+            return None
+        try:
+            return json.loads(raw).get("access_token")
+        except Exception:
+            return None
+
+    async def _issue_ws_approval_key(self) -> str:
+        """
+        KIS WebSocket 접속용 approval_key 발급.
+        """
+        if not self.settings.kis_app_key or not self.settings.kis_app_secret:
+            raise RuntimeError("KIS_APP_KEY/KIS_APP_SECRET 미설정")
+
+        url = f"{self.settings.kis_base_url}/oauth2/Approval"
+        payload = {
+            "grant_type": "client_credentials",
+            "appkey": self.settings.kis_app_key,
+            "secretkey": self.settings.kis_app_secret,
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+
+        approval_key = data.get("approval_key")
+        if not approval_key:
+            raise RuntimeError(f"KIS approval_key 발급 실패: {data}")
+        return approval_key
+
+    async def _fetch_quote(self, ticker: str) -> Optional[dict]:
+        """
+        WebSocket 메시지 파싱 실패 시 REST 시세를 보정용으로 조회합니다.
+        """
+        token = await self._get_access_token()
+        if not token:
+            return None
+
+        headers = {
+            "authorization": f"Bearer {token}",
+            "appkey": self.settings.kis_app_key,
+            "appsecret": self.settings.kis_app_secret,
+            "tr_id": "FHKST01010100",
+            "custtype": "P",
+        }
+        params = {
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_INPUT_ISCD": ticker,
+        }
+        url = f"{self.settings.kis_base_url}/uapi/domestic-stock/v1/quotations/inquire-price"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+            output = data.get("output") or {}
+            price = int(output.get("stck_prpr") or 0)
+            volume = int(output.get("acml_vol") or 0)
+            name = output.get("hts_kor_isnm") or ticker
+            return {"ticker": ticker, "name": name, "price": price, "volume": volume}
+        except Exception as e:
+            logger.debug("REST 시세 보정 실패 [%s]: %s", ticker, e)
+            return None
+
+    @staticmethod
+    def _extract_price(fields: list[str]) -> Optional[int]:
+        # H0STCNT0 기준 stck_prpr가 일반적으로 index 2에 위치
+        if len(fields) > 2 and fields[2].isdigit():
+            return int(fields[2])
+        for value in fields:
+            if value.isdigit():
+                num = int(value)
+                if 100 <= num <= 2_000_000:
+                    return num
+        return None
+
+    @staticmethod
+    def _extract_volume(fields: list[str]) -> Optional[int]:
+        # H0STCNT0 기준 누적거래량 index가 대체로 13 근방이므로 우선 시도
+        candidate_idx = [13, 12, 11, 18]
+        for idx in candidate_idx:
+            if idx < len(fields) and fields[idx].isdigit():
+                return int(fields[idx])
+        return None
+
+    @staticmethod
+    def _extract_ticker(fields: list[str], subscribed: set[str]) -> Optional[str]:
+        if fields and fields[0] in subscribed:
+            return fields[0]
+        for value in fields:
+            if value in subscribed:
+                return value
+        return None
+
+    def _parse_ws_tick_packet(self, raw: str, subscribed: set[str]) -> Optional[dict]:
+        """
+        KIS 실시간 체결 패킷을 파싱합니다.
+        예상 포맷: 0|TR_ID|COUNT|field1^field2^...
+        """
+        if not raw:
+            return None
+
+        # 구독 ACK/오류는 JSON으로 오는 경우가 많음
+        if raw.startswith("{"):
+            try:
+                msg = json.loads(raw)
+                header = msg.get("header") or {}
+                body = msg.get("body") or {}
+                if header.get("tr_id") or body.get("rt_cd"):
+                    logger.info("KIS WS 제어메시지: %s", raw)
+            except Exception:
+                logger.debug("알 수 없는 JSON 패킷: %s", raw)
+            return None
+
+        if not raw.startswith("0|"):
+            return None
+
+        parts = raw.split("|", 3)
+        if len(parts) < 4:
+            return None
+
+        tr_id = parts[1]
+        payload = parts[3]
+        fields = payload.split("^")
+        ticker = self._extract_ticker(fields, subscribed)
+        price = self._extract_price(fields)
+        volume = self._extract_volume(fields)
+
+        if not ticker:
+            return None
+
+        return {
+            "tr_id": tr_id,
+            "ticker": ticker,
+            "price": price,
+            "volume": volume,
+            "raw": raw,
+        }
+
     async def collect_daily_bars(
         self,
         tickers: list[str] | None = None,
@@ -128,25 +307,12 @@ class CollectorAgent:
                 if point:
                     points.append(point)
             except Exception as e:
-                logger.warning("수집 실패 [%s]: %s", ticker, e)
+                logger.warning("일봉 수집 실패 [%s]: %s", ticker, e)
 
         saved = await upsert_market_data(points)
 
-        redis = await get_redis()
         for point in points:
-            payload = {
-                "ticker": point.ticker,
-                "name": point.name,
-                "current_price": point.close,
-                "change_pct": point.change_pct,
-                "volume": point.volume,
-                "updated_at": point.timestamp_kst.isoformat(),
-            }
-            await redis.set(
-                KEY_LATEST_TICKS.format(ticker=point.ticker),
-                json.dumps(payload, ensure_ascii=False),
-                ex=60,
-            )
+            await self._cache_latest_tick(point, source="fdr_daily")
 
         await publish_message(
             TOPIC_MARKET_DATA,
@@ -162,14 +328,11 @@ class CollectorAgent:
             ),
         )
 
-        await set_heartbeat(self.agent_id)
-        await insert_heartbeat(
-            AgentHeartbeatRecord(
-                agent_id=self.agent_id,
-                status="healthy",
-                last_action=f"일봉 수집 완료 ({saved}건)",
-                metrics={"collected_count": saved},
-            )
+        await self._beat(
+            status="healthy",
+            last_action=f"일봉 수집 완료 ({saved}건)",
+            metrics={"collected_count": saved, "mode": "daily"},
+            force_db=True,
         )
 
         logger.info("CollectorAgent 일봉 수집 완료: %d건", saved)
@@ -178,41 +341,178 @@ class CollectorAgent:
     async def collect_realtime_ticks(
         self,
         tickers: list[str],
-        cycles: int = 3,
-        interval_seconds: int = 30,
+        duration_seconds: Optional[int] = None,
+        tr_id: str = "H0STCNT0",
+        reconnect_max: int = 3,
+        fallback_on_error: bool = True,
     ) -> None:
-        """
-        MVP 폴백 모드:
-        - KIS WebSocket 본연동 전, 짧은 주기로 최신 가격 스냅샷을 재수집해 tick 캐시를 갱신합니다.
-        """
-        for cycle in range(1, cycles + 1):
-            await self.collect_daily_bars(tickers=tickers, lookback_days=2)
-            logger.info("실시간 폴백 사이클 %d/%d 완료", cycle, cycles)
-            if cycle < cycles:
-                await asyncio.sleep(interval_seconds)
+        if not tickers:
+            raise ValueError("realtime 모드는 --tickers 지정이 필요합니다.")
+
+        selected = await asyncio.to_thread(self._resolve_tickers, tickers)
+        meta = {t: {"name": n, "market": m} for t, n, m in selected}
+        subscribed = list(meta.keys())
+        subscribed_set = set(subscribed)
+        started = asyncio.get_running_loop().time()
+        reconnects = 0
+        received = 0
+
+        while True:
+            try:
+                approval_key = await self._issue_ws_approval_key()
+                async with websockets.connect(
+                    self.settings.kis_websocket_url,
+                    ping_interval=20,
+                    ping_timeout=20,
+                    close_timeout=5,
+                    max_size=2**20,
+                ) as ws:
+                    logger.info("KIS WebSocket 연결 성공: %s", self.settings.kis_websocket_url)
+
+                    for ticker in subscribed:
+                        subscribe_payload = {
+                            "header": {
+                                "approval_key": approval_key,
+                                "custtype": "P",
+                                "tr_type": "1",
+                                "content-type": "utf-8",
+                            },
+                            "body": {
+                                "input": {
+                                    "tr_id": tr_id,
+                                    "tr_key": ticker,
+                                }
+                            },
+                        }
+                        await ws.send(json.dumps(subscribe_payload, ensure_ascii=False))
+                        await asyncio.sleep(0.05)
+
+                    reconnects = 0
+                    while True:
+                        if duration_seconds is not None:
+                            elapsed = asyncio.get_running_loop().time() - started
+                            if elapsed >= duration_seconds:
+                                logger.info("KIS WebSocket 수집 종료 (duration=%ss)", duration_seconds)
+                                await self._beat(
+                                    status="healthy",
+                                    last_action=f"실시간 수집 종료 ({received}건)",
+                                    metrics={"received_ticks": received, "mode": "kis_ws"},
+                                    force_db=True,
+                                )
+                                return
+
+                        try:
+                            raw = await asyncio.wait_for(ws.recv(), timeout=30)
+                        except asyncio.TimeoutError:
+                            await self._beat(
+                                status="healthy",
+                                last_action=f"실시간 수집 대기중 ({received}건)",
+                                metrics={"received_ticks": received, "mode": "kis_ws"},
+                            )
+                            continue
+
+                        if not isinstance(raw, str):
+                            continue
+
+                        packet = self._parse_ws_tick_packet(raw, subscribed_set)
+                        if not packet:
+                            continue
+
+                        ticker = packet["ticker"]
+                        price = packet.get("price")
+                        volume = packet.get("volume") or 0
+                        name = meta.get(ticker, {}).get("name", ticker)
+                        market = meta.get(ticker, {}).get("market", "KOSPI")
+
+                        if not price:
+                            quote = await self._fetch_quote(ticker)
+                            if quote:
+                                price = quote.get("price")
+                                volume = quote.get("volume") or volume
+                                name = quote.get("name") or name
+
+                        if not price:
+                            continue
+
+                        now_kst = datetime.now(KST)
+                        point = MarketDataPoint(
+                            ticker=ticker,
+                            name=name,
+                            market=market if market in {"KOSPI", "KOSDAQ"} else "KOSPI",
+                            timestamp_kst=now_kst,
+                            interval="tick",
+                            open=int(price),
+                            high=int(price),
+                            low=int(price),
+                            close=int(price),
+                            volume=int(volume),
+                            change_pct=None,
+                        )
+                        await upsert_market_data([point])
+                        await self._cache_latest_tick(point, source="kis_ws")
+                        await publish_message(
+                            TOPIC_MARKET_DATA,
+                            json.dumps(
+                                {
+                                    "type": "tick",
+                                    "agent_id": self.agent_id,
+                                    "ticker": ticker,
+                                    "price": int(price),
+                                    "volume": int(volume),
+                                    "timestamp_utc": datetime.utcnow().isoformat() + "Z",
+                                },
+                                ensure_ascii=False,
+                            ),
+                        )
+
+                        received += 1
+                        await self._beat(
+                            status="healthy",
+                            last_action=f"KIS 틱 수집중 ({received}건)",
+                            metrics={"received_ticks": received, "mode": "kis_ws"},
+                        )
+            except Exception as e:
+                reconnects += 1
+                logger.warning("KIS WebSocket 오류 (%d/%d): %s", reconnects, reconnect_max, e)
+                if reconnects > reconnect_max:
+                    logger.error("KIS WebSocket 재연결 한도 초과")
+                    break
+                await asyncio.sleep(min(reconnects * 2, 10))
+
+        if fallback_on_error:
+            logger.warning("WebSocket 실패로 폴백: FDR 스냅샷 수집 모드")
+            for _ in range(3):
+                await self.collect_daily_bars(tickers=subscribed, lookback_days=2)
+                await asyncio.sleep(10)
+        else:
+            raise RuntimeError("KIS WebSocket 수집 실패")
 
 
 async def _main_async(args: argparse.Namespace) -> None:
     agent = CollectorAgent()
     tickers = args.tickers.split(",") if args.tickers else None
 
-    if args.realtime and tickers:
+    if args.realtime:
         await agent.collect_realtime_ticks(
-            tickers=tickers,
-            cycles=args.cycles,
-            interval_seconds=args.interval_seconds,
+            tickers=tickers or [],
+            duration_seconds=args.duration_seconds,
+            tr_id=args.tr_id,
+            reconnect_max=args.reconnect_max,
+            fallback_on_error=not args.no_fallback,
         )
     else:
         await agent.collect_daily_bars(tickers=tickers, lookback_days=args.lookback_days)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="CollectorAgent MVP")
+    parser = argparse.ArgumentParser(description="CollectorAgent")
     parser.add_argument("--tickers", default="", help="쉼표 구분 티커 목록 (예: 005930,000660)")
     parser.add_argument("--lookback-days", type=int, default=7, help="일봉 수집 lookback 기간")
-    parser.add_argument("--realtime", action="store_true", help="폴백 실시간 스냅샷 모드")
-    parser.add_argument("--cycles", type=int, default=3, help="realtime 모드 반복 횟수")
-    parser.add_argument("--interval-seconds", type=int, default=30, help="realtime 모드 주기(초)")
+    parser.add_argument("--realtime", action="store_true", help="KIS WebSocket 실시간 틱 수집 모드")
+    parser.add_argument("--duration-seconds", type=int, default=None, help="실시간 수집 실행 시간(초)")
+    parser.add_argument("--tr-id", default="H0STCNT0", help="KIS WebSocket 구독 TR ID")
+    parser.add_argument("--reconnect-max", type=int, default=3, help="WebSocket 최대 재연결 횟수")
+    parser.add_argument("--no-fallback", action="store_true", help="WebSocket 실패 시 폴백 수집 비활성화")
     args = parser.parse_args()
     asyncio.run(_main_async(args))
 

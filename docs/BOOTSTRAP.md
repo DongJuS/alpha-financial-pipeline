@@ -192,7 +192,11 @@ redis-server &
 pg_isready
 
 # Step 2: CollectorAgent 시작
-python -m src.agents.collector
+# (권장) KIS WebSocket 실시간 틱 수집
+python -m src.agents.collector --realtime --tickers 005930,000660 --duration-seconds 600
+
+# 또는 일봉 수집만 수행
+python -m src.agents.collector --tickers 005930,000660
 
 # Step 3: 헬스 확인
 python scripts/health_check.py --agent collector
