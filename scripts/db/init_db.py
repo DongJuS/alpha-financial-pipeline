@@ -266,10 +266,26 @@ CREATE_TABLES: list[str] = [
     CREATE INDEX IF NOT EXISTS idx_real_trading_audit_ts
         ON real_trading_audit (requested_at DESC);
     """,
+
+    # 13. 운영 감사 로그 (보안/리스크 규칙 검증)
+    """
+    CREATE TABLE IF NOT EXISTS operational_audits (
+        id          BIGSERIAL PRIMARY KEY,
+        audit_type  VARCHAR(30) NOT NULL CHECK (audit_type IN ('security', 'risk_rules')),
+        passed      BOOLEAN NOT NULL,
+        summary     TEXT NOT NULL,
+        details     JSONB,
+        executed_by TEXT,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_operational_audits_type_ts
+        ON operational_audits (audit_type, created_at DESC);
+    """,
 ]
 
 DROP_TABLES_SQL = """
 DROP TABLE IF EXISTS
+    operational_audits,
     real_trading_audit,
     notification_history,
     collector_errors,

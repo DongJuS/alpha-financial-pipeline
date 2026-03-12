@@ -147,7 +147,12 @@ docker compose restart worker
 # ORCH_DAILY_REPORT_MINUTE=10
 
 # 실거래 전환 사전 점검
+# (security/risk 운영 감사 자동 실행 + readiness 평가)
 docker compose run --rm api python scripts/preflight_real_trading.py
+
+# 운영 감사만 개별 실행
+docker compose run --rm api python scripts/security_audit.py
+docker compose run --rm api python scripts/validate_risk_rules.py
 ```
 
 ## ✅ 테스트 실행
@@ -165,6 +170,8 @@ python3 scripts/smoke_test.py --skip-telegram
 # 4) Docker 런타임 기준 스모크 테스트
 docker compose up -d --build postgres redis api worker ui
 docker compose run --rm api python scripts/db/init_db.py
+docker compose run --rm api python scripts/security_audit.py
+docker compose run --rm api python scripts/validate_risk_rules.py
 docker compose exec -T api python scripts/smoke_test.py --skip-telegram
 docker compose run --rm api python scripts/preflight_real_trading.py
 docker compose run --rm api python -m unittest discover -s test -p 'test_*.py' -v
@@ -185,6 +192,7 @@ docker compose run --rm ui npm run build
 | [docs/SOUL.md](docs/SOUL.md) | 핵심 가치관 및 행동 철학 |
 | [docs/TOOLS.md](docs/TOOLS.md) | 에이전트 도구 목록 및 접근 제어 |
 | [docs/USER.md](docs/USER.md) | 사용자 페르소나 및 대시보드 UX 기대치 |
+| [docs/REAL_TRADING_GUIDE.md](docs/REAL_TRADING_GUIDE.md) | 실거래 전환/롤백 운영 절차 |
 | [docs/api_spec.md](docs/api_spec.md) | REST API 엔드포인트 명세 |
 | [.agent/tech_stack.md](.agent/tech_stack.md) | 허용된 기술 스택 제약 |
 | [.agent/roadmap.md](.agent/roadmap.md) | 프로젝트 로드맵 |

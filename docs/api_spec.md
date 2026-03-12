@@ -278,6 +278,7 @@
 
 ### GET `/portfolio/readiness`
 - **설명:** 실거래 전환 readiness 점검 결과 조회 (관리자 전용)
+- **주요 체크 항목:** 자격증명, DB/Redis, 리스크 한도, 페이퍼 운용 일수, 운영 감사(`security`, `risk_rules`) 최신 통과 여부
 - **Response (200):**
   ```json
   {
@@ -285,7 +286,9 @@
     "critical_ok": false,
     "high_ok": false,
     "checks": [
-      {"key":"cred:KIS_APP_KEY","ok":true,"message":"KIS_APP_KEY 설정 정상","severity":"critical"}
+      {"key":"cred:KIS_APP_KEY","ok":true,"message":"KIS_APP_KEY 설정 정상","severity":"critical"},
+      {"key":"paper:track_record","ok":false,"message":"페이퍼 운용 일수 부족(active_days=7, required=30, trades=14)","severity":"critical"},
+      {"key":"audit:security","ok":true,"message":"보안 감사 정상(passed=true, age_hours=3.1, max_age_days=7)","severity":"critical"}
     ]
   }
   ```

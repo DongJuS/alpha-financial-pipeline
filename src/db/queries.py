@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from typing import Optional
+from typing import Any, Optional
 
 from src.db.models import (
     AgentHeartbeatRecord,
@@ -424,3 +424,38 @@ async def insert_real_trading_audit(
         applied,
         message,
     )
+
+
+async def insert_operational_audit(
+    audit_type: str,
+    passed: bool,
+    summary: str,
+    details: dict[str, Any] | None = None,
+    executed_by: str | None = None,
+) -> None:
+    await execute(
+        """
+        INSERT INTO operational_audits (
+            audit_type, passed, summary, details, executed_by
+        ) VALUES ($1, $2, $3, $4::jsonb, $5)
+        """,
+        audit_type,
+        passed,
+        summary,
+        json.dumps(details or {}, ensure_ascii=False),
+        executed_by,
+    )
+
+
+async def fetch_latest_operational_audit(audit_type: str) -> Optional[dict]:
+    row = await fetchrow(
+        """
+        SELECT audit_type, passed, summary, details, executed_by, created_at
+        FROM operational_audits
+        WHERE audit_type = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        audit_type,
+    )
+    return dict(row) if row else None

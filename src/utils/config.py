@@ -63,6 +63,18 @@ class Settings(BaseSettings):
         default="CONFIRM_REAL_TRADING_2026",
         alias="REAL_TRADING_CONFIRMATION_CODE",
     )
+    readiness_required_paper_days: int = Field(
+        default=30,
+        ge=1,
+        le=365,
+        alias="READINESS_REQUIRED_PAPER_DAYS",
+    )
+    readiness_audit_max_age_days: int = Field(
+        default=7,
+        ge=1,
+        le=30,
+        alias="READINESS_AUDIT_MAX_AGE_DAYS",
+    )
 
     # ── Logging ──────────────────────────────────────────────────────────────
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")

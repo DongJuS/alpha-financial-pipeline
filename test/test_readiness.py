@@ -1,5 +1,6 @@
 import types
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 from src.utils.readiness import evaluate_real_trading_readiness
@@ -18,8 +19,11 @@ class RealTradingReadinessTest(unittest.IsolatedAsyncioTestCase):
             anthropic_api_key="ant-real-key",
             openai_api_key="sk-real-key",
             gemini_api_key="gem-real-key",
+            readiness_audit_max_age_days=7,
+            readiness_required_paper_days=30,
         )
         redis_client = types.SimpleNamespace(ping=AsyncMock(return_value=True))
+        now = datetime.now(timezone.utc)
 
         with (
             patch("src.utils.readiness.get_settings", return_value=settings),
@@ -27,7 +31,21 @@ class RealTradingReadinessTest(unittest.IsolatedAsyncioTestCase):
             patch("src.utils.readiness.get_redis", new=AsyncMock(return_value=redis_client)),
             patch(
                 "src.utils.readiness.fetchrow",
-                new=AsyncMock(return_value={"max_position_pct": 20, "daily_loss_limit_pct": 3}),
+                new=AsyncMock(
+                    side_effect=[
+                        {"max_position_pct": 20, "daily_loss_limit_pct": 3},
+                        {"active_days": 35, "trade_count": 140},
+                    ]
+                ),
+            ),
+            patch(
+                "src.utils.readiness.fetch_latest_operational_audit",
+                new=AsyncMock(
+                    side_effect=[
+                        {"passed": True, "created_at": now - timedelta(hours=2)},
+                        {"passed": True, "created_at": now - timedelta(hours=1)},
+                    ]
+                ),
             ),
         ):
             result = await evaluate_real_trading_readiness()
@@ -48,8 +66,11 @@ class RealTradingReadinessTest(unittest.IsolatedAsyncioTestCase):
             anthropic_api_key="",
             openai_api_key="",
             gemini_api_key="",
+            readiness_audit_max_age_days=7,
+            readiness_required_paper_days=30,
         )
         redis_client = types.SimpleNamespace(ping=AsyncMock(return_value=True))
+        old_time = datetime.now(timezone.utc) - timedelta(days=15)
 
         with (
             patch("src.utils.readiness.get_settings", return_value=settings),
@@ -57,7 +78,21 @@ class RealTradingReadinessTest(unittest.IsolatedAsyncioTestCase):
             patch("src.utils.readiness.get_redis", new=AsyncMock(return_value=redis_client)),
             patch(
                 "src.utils.readiness.fetchrow",
-                new=AsyncMock(return_value={"max_position_pct": 80, "daily_loss_limit_pct": 20}),
+                new=AsyncMock(
+                    side_effect=[
+                        {"max_position_pct": 80, "daily_loss_limit_pct": 20},
+                        {"active_days": 3, "trade_count": 6},
+                    ]
+                ),
+            ),
+            patch(
+                "src.utils.readiness.fetch_latest_operational_audit",
+                new=AsyncMock(
+                    side_effect=[
+                        {"passed": False, "created_at": old_time},
+                        None,
+                    ]
+                ),
             ),
         ):
             result = await evaluate_real_trading_readiness()

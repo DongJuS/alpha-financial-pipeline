@@ -68,7 +68,7 @@ Strategy A/B 기본 실행기와 블렌딩 실행 경로를 구현했고, 남은
 - [~] **Phase 4:** Strategy B Consensus/Debate — 다라운드/합의 임계치 고도화 반영, 운영 안정화 잔여
 - [ ] **Phase 5:** Toss 스타일 대시보드 완성 (캔들차트, 토론 뷰어 등)
 - [ ] **Phase 6:** 30일 페이퍼 트레이딩 운용
-- [ ] **Phase 7:** 실거래 준비 및 보안 감사
+- [~] **Phase 7:** 실거래 준비 및 보안 감사 — 보안/리스크 운영 감사 자동화 및 전환 가드 완료, 장기 페이퍼 실적 축적 단계 잔여
 
 ---
 
@@ -76,6 +76,7 @@ Strategy A/B 기본 실행기와 블렌딩 실행 경로를 구현했고, 남은
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
+| 2026-03-12 | 실거래 준비 자동화 강화 — `operational_audits` 테이블 추가, `security_audit.py`(시크릿/`.env` 추적 감사) 및 `validate_risk_rules.py`(서킷브레이커/포지션 한도 검증) 추가, `preflight_real_trading.py`에서 운영 감사 자동 실행/기록, readiness에 `paper:track_record` + 감사 최신성 체크 반영, 관련 테스트/문서 업데이트 | ✅ 완료 |
 | 2026-03-12 | 실거래 전환 가드/감사 체계 추가 — readiness 유틸(`utils/readiness.py`), `/portfolio/readiness` API, `/portfolio/trading-mode` 전환 전 readiness+확인코드 강제 및 `real_trading_audit` 기록, `preflight_real_trading.py` 스크립트/테스트 반영 | ✅ 완료 |
 | 2026-03-12 | 페이퍼 운용 자동 리포트 추가 — 공통 성과 계산 유틸(`utils/performance.py`) 분리, Notifier `send_paper_daily_report`, worker 일일 스케줄(ORCH_ENABLE_DAILY_REPORT/시각 env) 연동, 관련 테스트 추가 | ✅ 완료 |
 | 2026-03-12 | Docker 실런타임 안정화 핫픽스 — `email-validator` 의존성 추가, `fetch_recent_ohlcv` interval 타입 버그 수정, `agent_heartbeats` status 제약식(error 포함) 및 스키마 실행기 주석 처리 보강, `smoke_test` Redis Pub/Sub/헬스체크 보강 후 Docker 기준 스모크/유닛/UI 빌드 통과 | ✅ 완료 |
@@ -109,7 +110,7 @@ Phase 3 Strategy A    ██████░░░░   60% (우승자 선정 규
 Phase 4 Strategy B    ███████░░░   70% (다라운드/합의 임계치 반영)
 Phase 5 대시보드       █████░░░░░   50% (토론 이력/라운드 상세 뷰 추가)
 Phase 6 페이퍼 운용    ████░░░░░░   40% (자동 루프 + 성과 지표 + 일일 리포트)
-Phase 7 실거래 준비    ███░░░░░░░   30% (전환 가드 + readiness + 감사로그)
+Phase 7 실거래 준비    ██████░░░░   60% (전환 가드 + readiness + 운영 감사 자동화)
 ```
 
 ## 🚀 다음 실행 명령어
