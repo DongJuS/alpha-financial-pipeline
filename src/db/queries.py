@@ -578,6 +578,25 @@ async def latest_account_snapshot(account_scope: AccountScope = "paper") -> Opti
     return dict(row) if row else None
 
 
+async def list_account_snapshots(account_scope: AccountScope = "paper", limit: int = 30) -> list[dict]:
+    scope = normalize_account_scope(account_scope)
+    rows = await fetch(
+        """
+        SELECT
+            account_scope, cash_balance, buying_power, position_market_value,
+            total_equity, realized_pnl, unrealized_pnl, position_count,
+            snapshot_source, snapshot_at
+        FROM account_snapshots
+        WHERE account_scope = $1
+        ORDER BY snapshot_at DESC
+        LIMIT $2
+        """,
+        scope,
+        limit,
+    )
+    return [dict(r) for r in rows]
+
+
 async def get_trading_account(account_scope: AccountScope = "paper") -> Optional[dict]:
     scope = normalize_account_scope(account_scope)
     row = await fetchrow(

@@ -86,34 +86,27 @@ class PaperBrokerTest(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(broker, "_ensure_account", new=AsyncMock()),
             patch(
-                "src.brokers.paper.get_trading_account",
+                "src.brokers.paper.recompute_account_state",
                 new=AsyncMock(
                     return_value={
-                        "broker_name": "한국투자증권 KIS",
-                        "account_label": "KIS 모의투자 계좌",
-                        "base_currency": "KRW",
-                        "seed_capital": 10_000_000,
-                        "is_active": True,
+                        "account_scope": "paper",
+                        "cash_balance": 9_800_000,
+                        "buying_power": 9_800_000,
+                        "position_market_value": 9_800_000,
+                        "total_equity": 19_600_000,
+                        "realized_pnl": 40_000,
+                        "unrealized_pnl": 120_000,
+                        "position_count": 3,
                     }
                 ),
-            ),
-            patch("src.brokers.paper.trade_cash_totals", new=AsyncMock(return_value={"buy_total": 250_000, "sell_total": 50_000})),
-            patch(
-                "src.brokers.paper.portfolio_position_stats",
-                new=AsyncMock(return_value={"market_value": 9_800_000, "unrealized_pnl": 120_000, "position_count": 3}),
-            ),
-            patch("src.brokers.paper.fetch_all_trade_rows", new=AsyncMock(return_value=[])),
-            patch("src.brokers.paper.compute_trade_performance", return_value={"realized_pnl": 40_000}),
-            patch("src.brokers.paper.upsert_trading_account", new=AsyncMock()) as upsert_account_mock,
-            patch("src.brokers.paper.record_account_snapshot", new=AsyncMock()) as snapshot_mock,
+            ) as recompute_mock,
         ):
             state = await broker.sync_account_state("paper")
 
         self.assertEqual(state["cash_balance"], 9_800_000)
         self.assertEqual(state["total_equity"], 19_600_000)
         self.assertEqual(state["realized_pnl"], 40_000)
-        upsert_account_mock.assert_awaited_once()
-        snapshot_mock.assert_awaited_once()
+        recompute_mock.assert_awaited_once_with("paper", persist_snapshot=True, snapshot_source="broker")
 
 
 if __name__ == "__main__":

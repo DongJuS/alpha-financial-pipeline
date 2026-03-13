@@ -106,6 +106,58 @@ export interface PaperTradingOverview {
   latest_run: PaperTradingRun | null;
 }
 
+export interface TradingAccountOverview {
+  account_scope: TradingScope;
+  broker_name: string;
+  account_label: string;
+  base_currency: string;
+  seed_capital: number;
+  cash_balance: number;
+  buying_power: number;
+  position_market_value: number;
+  total_equity: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  total_pnl: number;
+  total_pnl_pct: number;
+  position_count: number;
+  last_snapshot_at: string | null;
+}
+
+export interface BrokerOrderItem {
+  client_order_id: string;
+  account_scope: TradingScope;
+  broker_name: string;
+  ticker: string;
+  name: string;
+  side: "BUY" | "SELL";
+  order_type: string;
+  requested_quantity: number;
+  requested_price: number;
+  filled_quantity: number;
+  avg_fill_price: number | null;
+  status: "PENDING" | "FILLED" | "REJECTED" | "CANCELLED";
+  signal_source: "A" | "B" | "BLEND" | null;
+  agent_id: string | null;
+  broker_order_id: string | null;
+  rejection_reason: string | null;
+  requested_at: string;
+  filled_at: string | null;
+}
+
+export interface AccountSnapshotPoint {
+  account_scope: TradingScope;
+  cash_balance: number;
+  buying_power: number;
+  position_market_value: number;
+  total_equity: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  position_count: number;
+  snapshot_source: string;
+  snapshot_at: string | null;
+}
+
 async function fetchPortfolio(mode: TradingScope = "current"): Promise<PortfolioSummary> {
   const { data } = await api.get<PortfolioSummary>("/portfolio/positions", {
     params: { mode },
@@ -151,6 +203,27 @@ async function fetchReadiness(): Promise<ReadinessResult> {
 
 async function fetchPaperTradingOverview(): Promise<PaperTradingOverview> {
   const { data } = await api.get<PaperTradingOverview>("/portfolio/paper-overview");
+  return data;
+}
+
+async function fetchTradingAccountOverview(mode: TradingScope = "current"): Promise<TradingAccountOverview> {
+  const { data } = await api.get<TradingAccountOverview>("/portfolio/account-overview", { params: { mode } });
+  return data;
+}
+
+async function fetchBrokerOrders(mode: TradingScope = "current", limit = 50): Promise<{
+  account_scope: TradingScope;
+  data: BrokerOrderItem[];
+}> {
+  const { data } = await api.get("/portfolio/orders", { params: { mode, limit } });
+  return data;
+}
+
+async function fetchAccountSnapshots(mode: TradingScope = "current", limit = 30): Promise<{
+  account_scope: TradingScope;
+  points: AccountSnapshotPoint[];
+}> {
+  const { data } = await api.get("/portfolio/account-snapshots", { params: { mode, limit } });
   return data;
 }
 
@@ -210,6 +283,30 @@ export function usePaperTradingOverview() {
     queryKey: ["portfolio", "paper-overview"],
     queryFn: fetchPaperTradingOverview,
     refetchInterval: 60_000,
+  });
+}
+
+export function useTradingAccountOverview(mode: TradingScope = "current") {
+  return useQuery({
+    queryKey: ["portfolio", "account-overview", mode],
+    queryFn: () => fetchTradingAccountOverview(mode),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useBrokerOrders(mode: TradingScope = "current", limit = 50) {
+  return useQuery({
+    queryKey: ["portfolio", "orders", mode, limit],
+    queryFn: () => fetchBrokerOrders(mode, limit),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useAccountSnapshots(mode: TradingScope = "current", limit = 30) {
+  return useQuery({
+    queryKey: ["portfolio", "account-snapshots", mode, limit],
+    queryFn: () => fetchAccountSnapshots(mode, limit),
+    refetchInterval: 30_000,
   });
 }
 

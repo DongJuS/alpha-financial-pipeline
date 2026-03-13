@@ -15,6 +15,11 @@ from src.db.queries import (
     fetch_real_trading_audits,
     insert_real_trading_audit,
 )
+from src.services.paper_trading import (
+    build_account_overview,
+    build_account_snapshot_series,
+    build_broker_order_activity,
+)
 from src.utils.account_scope import is_paper_scope, normalize_account_scope
 from src.utils.config import Settings
 from src.utils.db_client import execute, fetch, fetchrow
@@ -88,6 +93,68 @@ class PaperTradingOverviewResponse(BaseModel):
     traded_tickers_120d: int
     last_executed_at: Optional[str] = None
     latest_run: Optional[PaperTradingRunItem] = None
+
+
+class AccountOverviewResponse(BaseModel):
+    account_scope: str
+    broker_name: str
+    account_label: str
+    base_currency: str
+    seed_capital: int
+    cash_balance: int
+    buying_power: int
+    position_market_value: int
+    total_equity: int
+    realized_pnl: int
+    unrealized_pnl: int
+    total_pnl: int
+    total_pnl_pct: float
+    position_count: int
+    last_snapshot_at: Optional[datetime] = None
+
+
+class BrokerOrderItem(BaseModel):
+    client_order_id: str
+    account_scope: str
+    broker_name: str
+    ticker: str
+    name: str
+    side: str
+    order_type: str
+    requested_quantity: int
+    requested_price: int
+    filled_quantity: int
+    avg_fill_price: Optional[int] = None
+    status: str
+    signal_source: Optional[str] = None
+    agent_id: Optional[str] = None
+    broker_order_id: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    requested_at: datetime
+    filled_at: Optional[datetime] = None
+
+
+class BrokerOrderListResponse(BaseModel):
+    account_scope: str
+    data: list[BrokerOrderItem]
+
+
+class AccountSnapshotItem(BaseModel):
+    account_scope: str
+    cash_balance: int
+    buying_power: int
+    position_market_value: int
+    total_equity: int
+    realized_pnl: int
+    unrealized_pnl: int
+    position_count: int
+    snapshot_source: str
+    snapshot_at: Optional[datetime] = None
+
+
+class AccountSnapshotSeriesResponse(BaseModel):
+    account_scope: str
+    points: list[AccountSnapshotItem]
 
 
 class PortfolioConfigRequest(BaseModel):
@@ -428,6 +495,44 @@ async def get_paper_trading_overview(
         traded_tickers_120d=int(paper_stats["traded_tickers"] or 0) if paper_stats else 0,
         last_executed_at=paper_stats["last_executed_at"] if paper_stats else None,
         latest_run=latest_run_item,
+    )
+
+
+@router.get("/account-overview", response_model=AccountOverviewResponse)
+async def get_account_overview(
+    _: Annotated[dict, Depends(get_current_user)],
+    mode: str = Query(default="current", pattern=MODE_PATTERN),
+) -> AccountOverviewResponse:
+    account_scope = await _resolve_mode_account_scope(mode)
+    payload = await build_account_overview(account_scope)
+    return AccountOverviewResponse(**payload)
+
+
+@router.get("/orders", response_model=BrokerOrderListResponse)
+async def get_broker_orders(
+    _: Annotated[dict, Depends(get_current_user)],
+    mode: str = Query(default="current", pattern=MODE_PATTERN),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> BrokerOrderListResponse:
+    account_scope = await _resolve_mode_account_scope(mode)
+    rows = await build_broker_order_activity(account_scope, limit=limit)
+    return BrokerOrderListResponse(
+        account_scope=account_scope,
+        data=[BrokerOrderItem(**row) for row in rows],
+    )
+
+
+@router.get("/account-snapshots", response_model=AccountSnapshotSeriesResponse)
+async def get_account_snapshots(
+    _: Annotated[dict, Depends(get_current_user)],
+    mode: str = Query(default="current", pattern=MODE_PATTERN),
+    limit: int = Query(default=30, ge=1, le=365),
+) -> AccountSnapshotSeriesResponse:
+    account_scope = await _resolve_mode_account_scope(mode)
+    rows = await build_account_snapshot_series(account_scope, limit=limit)
+    return AccountSnapshotSeriesResponse(
+        account_scope=account_scope,
+        points=[AccountSnapshotItem(**row) for row in rows],
     )
 
 

@@ -8,21 +8,9 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from src.db.models import PaperOrderRequest
-from src.db.queries import (
-    fetch_all_trade_rows,
-    get_position,
-    get_trading_account,
-    insert_broker_order,
-    insert_trade,
-    portfolio_position_stats,
-    record_account_snapshot,
-    save_position,
-    trade_cash_totals,
-    update_broker_order_status,
-    upsert_trading_account,
-)
+from src.db.queries import get_position, get_trading_account, insert_broker_order, insert_trade, save_position, update_broker_order_status, upsert_trading_account
+from src.services.account_state import recompute_account_state
 from src.utils.account_scope import AccountScope, normalize_account_scope
-from src.utils.performance import compute_trade_performance
 
 
 @dataclass
@@ -142,52 +130,7 @@ class PaperBroker:
     ) -> dict:
         scope = normalize_account_scope(account_scope)
         await self._ensure_account(scope)
-
-        account = await get_trading_account(scope)
-        trade_totals = await trade_cash_totals(scope)
-        position_stats = await portfolio_position_stats(scope)
-        performance_rows = await fetch_all_trade_rows(scope)
-        performance = compute_trade_performance(performance_rows)
-
-        seed_capital = int(account["seed_capital"]) if account else 10_000_000
-        cash_balance = max(seed_capital - trade_totals["buy_total"] + trade_totals["sell_total"], 0)
-        buying_power = cash_balance
-        total_equity = cash_balance + position_stats["market_value"]
-
-        await upsert_trading_account(
-            account_scope=scope,
-            broker_name=str(account["broker_name"]) if account else "한국투자증권 KIS",
-            account_label=str(account["account_label"]) if account else "KIS 모의투자 계좌",
-            base_currency=str(account["base_currency"]) if account else "KRW",
-            seed_capital=seed_capital,
-            cash_balance=cash_balance,
-            buying_power=buying_power,
-            total_equity=total_equity,
-            is_active=bool(account["is_active"]) if account else (scope == "paper"),
-        )
-        await record_account_snapshot(
-            account_scope=scope,
-            cash_balance=cash_balance,
-            buying_power=buying_power,
-            position_market_value=position_stats["market_value"],
-            total_equity=total_equity,
-            realized_pnl=int(performance["realized_pnl"]),
-            unrealized_pnl=position_stats["unrealized_pnl"],
-            position_count=position_stats["position_count"],
-            snapshot_source=snapshot_source,
-        )
-
-        return {
-            "account_scope": scope,
-            "seed_capital": seed_capital,
-            "cash_balance": cash_balance,
-            "buying_power": buying_power,
-            "position_market_value": position_stats["market_value"],
-            "total_equity": total_equity,
-            "realized_pnl": int(performance["realized_pnl"]),
-            "unrealized_pnl": position_stats["unrealized_pnl"],
-            "position_count": position_stats["position_count"],
-        }
+        return await recompute_account_state(scope, persist_snapshot=True, snapshot_source=snapshot_source)
 
     async def _ensure_account(self, scope: AccountScope) -> None:
         account = await get_trading_account(scope)
