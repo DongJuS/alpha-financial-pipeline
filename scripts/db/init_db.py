@@ -271,7 +271,68 @@ CREATE_TABLES: list[str] = [
         ON trade_history (account_scope, ticker, executed_at DESC);
     """,
 
-    # 10. 에이전트 헬스비트 (7일 롤링)
+    # 10. 브로커 주문 이력 (internal paper / KIS mock 공용)
+    """
+    CREATE TABLE IF NOT EXISTS broker_orders (
+        id                  BIGSERIAL PRIMARY KEY,
+        client_order_id     TEXT NOT NULL UNIQUE,
+        account_scope       VARCHAR(10) NOT NULL DEFAULT 'paper',
+        broker_name         TEXT NOT NULL,
+        ticker              VARCHAR(10) NOT NULL,
+        name                TEXT NOT NULL,
+        side                VARCHAR(4) NOT NULL CHECK (side IN ('BUY', 'SELL')),
+        order_type          VARCHAR(10) NOT NULL DEFAULT 'MARKET' CHECK (order_type IN ('MARKET', 'LIMIT')),
+        requested_quantity  INTEGER NOT NULL CHECK (requested_quantity > 0),
+        requested_price     INTEGER NOT NULL CHECK (requested_price >= 0),
+        filled_quantity     INTEGER NOT NULL DEFAULT 0 CHECK (filled_quantity >= 0),
+        avg_fill_price      INTEGER,
+        status              VARCHAR(16) NOT NULL DEFAULT 'PENDING'
+                                CHECK (status IN ('PENDING', 'FILLED', 'REJECTED', 'CANCELLED')),
+        signal_source       VARCHAR(10) CHECK (signal_source IN ('A', 'B', 'BLEND')),
+        agent_id            VARCHAR(30),
+        broker_order_id     TEXT,
+        rejection_reason    TEXT,
+        requested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        filled_at           TIMESTAMPTZ,
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    ALTER TABLE broker_orders
+        DROP CONSTRAINT IF EXISTS broker_orders_account_scope_check;
+    ALTER TABLE broker_orders
+        ADD CONSTRAINT broker_orders_account_scope_check
+        CHECK (account_scope IN ('paper', 'real'));
+    CREATE INDEX IF NOT EXISTS idx_broker_orders_scope_ts
+        ON broker_orders (account_scope, requested_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_broker_orders_scope_status_ts
+        ON broker_orders (account_scope, status, requested_at DESC);
+    """,
+
+    # 11. 계좌 스냅샷
+    """
+    CREATE TABLE IF NOT EXISTS account_snapshots (
+        id                      BIGSERIAL PRIMARY KEY,
+        account_scope           VARCHAR(10) NOT NULL DEFAULT 'paper',
+        cash_balance            BIGINT NOT NULL DEFAULT 0,
+        buying_power            BIGINT NOT NULL DEFAULT 0,
+        position_market_value   BIGINT NOT NULL DEFAULT 0,
+        total_equity            BIGINT NOT NULL DEFAULT 0,
+        realized_pnl            BIGINT NOT NULL DEFAULT 0,
+        unrealized_pnl          BIGINT NOT NULL DEFAULT 0,
+        position_count          INTEGER NOT NULL DEFAULT 0,
+        snapshot_source         VARCHAR(20) NOT NULL DEFAULT 'broker',
+        snapshot_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    ALTER TABLE account_snapshots
+        DROP CONSTRAINT IF EXISTS account_snapshots_account_scope_check;
+    ALTER TABLE account_snapshots
+        ADD CONSTRAINT account_snapshots_account_scope_check
+        CHECK (account_scope IN ('paper', 'real'));
+    CREATE INDEX IF NOT EXISTS idx_account_snapshots_scope_ts
+        ON account_snapshots (account_scope, snapshot_at DESC);
+    """,
+
+    # 12. 에이전트 헬스비트 (7일 롤링)
     """
     CREATE TABLE IF NOT EXISTS agent_heartbeats (
         id          BIGSERIAL PRIMARY KEY,
@@ -292,7 +353,7 @@ CREATE_TABLES: list[str] = [
     -- 7일 이상 오래된 헬스비트 자동 정리를 위한 파티셔닝 힌트 (수동 vacuum 가능)
     """,
 
-    # 10. 수집 오류 로그
+    # 13. 수집 오류 로그
     """
     CREATE TABLE IF NOT EXISTS collector_errors (
         id          BIGSERIAL PRIMARY KEY,
@@ -307,7 +368,7 @@ CREATE_TABLES: list[str] = [
         ON collector_errors (occurred_at DESC);
     """,
 
-    # 11. 알림 발송 이력
+    # 14. 알림 발송 이력
     """
     CREATE TABLE IF NOT EXISTS notification_history (
         id          BIGSERIAL PRIMARY KEY,
@@ -321,7 +382,7 @@ CREATE_TABLES: list[str] = [
         ON notification_history (sent_at DESC);
     """,
 
-    # 12. 실거래 전환 감사 로그
+    # 15. 실거래 전환 감사 로그
     """
     CREATE TABLE IF NOT EXISTS real_trading_audit (
         id                      BIGSERIAL PRIMARY KEY,
@@ -339,7 +400,7 @@ CREATE_TABLES: list[str] = [
         ON real_trading_audit (requested_at DESC);
     """,
 
-    # 13. 운영 감사 로그 (보안/리스크 규칙 검증)
+    # 16. 운영 감사 로그 (보안/리스크 규칙 검증)
     """
     CREATE TABLE IF NOT EXISTS operational_audits (
         id          BIGSERIAL PRIMARY KEY,
@@ -354,7 +415,7 @@ CREATE_TABLES: list[str] = [
         ON operational_audits (audit_type, created_at DESC);
     """,
 
-    # 14. 페이퍼 트레이딩 장기 검증 이력
+    # 17. 페이퍼 트레이딩 장기 검증 이력
     """
     CREATE TABLE IF NOT EXISTS paper_trading_runs (
         id                      BIGSERIAL PRIMARY KEY,
@@ -387,6 +448,8 @@ DROP TABLE IF EXISTS
     notification_history,
     collector_errors,
     agent_heartbeats,
+    account_snapshots,
+    broker_orders,
     trade_history,
     portfolio_positions,
     trading_accounts,

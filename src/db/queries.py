@@ -256,6 +256,42 @@ async def portfolio_total_value(account_scope: AccountScope = "paper") -> int:
     return int(value or 0)
 
 
+async def list_positions(account_scope: AccountScope = "paper") -> list[dict]:
+    scope = normalize_account_scope(account_scope)
+    rows = await fetch(
+        """
+        SELECT ticker, name, quantity, avg_price, current_price, is_paper, account_scope
+        FROM portfolio_positions
+        WHERE quantity > 0
+          AND account_scope = $1
+        ORDER BY (quantity * current_price) DESC, ticker
+        """,
+        scope,
+    )
+    return [dict(r) for r in rows]
+
+
+async def portfolio_position_stats(account_scope: AccountScope = "paper") -> dict:
+    scope = normalize_account_scope(account_scope)
+    row = await fetchrow(
+        """
+        SELECT
+            COALESCE(SUM(quantity * current_price), 0) AS market_value,
+            COALESCE(SUM(quantity * (current_price - avg_price)), 0) AS unrealized_pnl,
+            COUNT(*) FILTER (WHERE quantity > 0) AS position_count
+        FROM portfolio_positions
+        WHERE quantity > 0
+          AND account_scope = $1
+        """,
+        scope,
+    )
+    return {
+        "market_value": int(row["market_value"]) if row else 0,
+        "unrealized_pnl": int(row["unrealized_pnl"]) if row else 0,
+        "position_count": int(row["position_count"]) if row else 0,
+    }
+
+
 async def get_portfolio_config() -> dict:
     row = await fetchrow(
         """
@@ -293,6 +329,24 @@ async def today_trade_totals(account_scope: AccountScope = "paper") -> dict:
     }
 
 
+async def trade_cash_totals(account_scope: AccountScope = "paper") -> dict:
+    scope = normalize_account_scope(account_scope)
+    row = await fetchrow(
+        """
+        SELECT
+            COALESCE(SUM(CASE WHEN side = 'BUY' THEN amount ELSE 0 END), 0) AS buy_total,
+            COALESCE(SUM(CASE WHEN side = 'SELL' THEN amount ELSE 0 END), 0) AS sell_total
+        FROM trade_history
+        WHERE account_scope = $1
+        """,
+        scope,
+    )
+    return {
+        "buy_total": int(row["buy_total"]) if row else 0,
+        "sell_total": int(row["sell_total"]) if row else 0,
+    }
+
+
 async def fetch_trade_rows(
     days: int,
     is_paper: bool = True,
@@ -309,6 +363,20 @@ async def fetch_trade_rows(
         """,
         scope,
         days,
+    )
+    return [dict(r) for r in rows]
+
+
+async def fetch_all_trade_rows(account_scope: AccountScope = "paper") -> list[dict]:
+    scope = normalize_account_scope(account_scope)
+    rows = await fetch(
+        """
+        SELECT ticker, side, price, quantity, amount, executed_at
+        FROM trade_history
+        WHERE account_scope = $1
+        ORDER BY executed_at
+        """,
+        scope,
     )
     return [dict(r) for r in rows]
 
@@ -357,6 +425,157 @@ async def insert_trade(order: PaperOrderRequest, circuit_breaker: bool = False) 
         scope,
         circuit_breaker,
     )
+
+
+async def insert_broker_order(
+    client_order_id: str,
+    account_scope: AccountScope,
+    broker_name: str,
+    ticker: str,
+    name: str,
+    side: str,
+    requested_quantity: int,
+    requested_price: int,
+    signal_source: str,
+    agent_id: str,
+    status: str = "PENDING",
+    broker_order_id: str | None = None,
+    rejection_reason: str | None = None,
+) -> None:
+    scope = normalize_account_scope(account_scope)
+    await execute(
+        """
+        INSERT INTO broker_orders (
+            client_order_id, account_scope, broker_name, ticker, name, side,
+            order_type, requested_quantity, requested_price,
+            filled_quantity, avg_fill_price, status,
+            signal_source, agent_id, broker_order_id, rejection_reason,
+            requested_at, created_at, updated_at
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            'MARKET', $7, $8,
+            0, NULL, $9,
+            $10, $11, $12, $13,
+            NOW(), NOW(), NOW()
+        )
+        """,
+        client_order_id,
+        scope,
+        broker_name,
+        ticker,
+        name,
+        side,
+        requested_quantity,
+        requested_price,
+        status,
+        signal_source,
+        agent_id,
+        broker_order_id,
+        rejection_reason,
+    )
+
+
+async def update_broker_order_status(
+    client_order_id: str,
+    status: str,
+    filled_quantity: int = 0,
+    avg_fill_price: int | None = None,
+    broker_order_id: str | None = None,
+    rejection_reason: str | None = None,
+) -> None:
+    await execute(
+        """
+        UPDATE broker_orders
+        SET status = $2,
+            filled_quantity = $3,
+            avg_fill_price = $4,
+            broker_order_id = COALESCE($5, broker_order_id),
+            rejection_reason = $6,
+            filled_at = CASE WHEN $2 = 'FILLED' THEN NOW() ELSE filled_at END,
+            updated_at = NOW()
+        WHERE client_order_id = $1
+        """,
+        client_order_id,
+        status,
+        filled_quantity,
+        avg_fill_price,
+        broker_order_id,
+        rejection_reason,
+    )
+
+
+async def list_broker_orders(account_scope: AccountScope = "paper", limit: int = 50) -> list[dict]:
+    scope = normalize_account_scope(account_scope)
+    rows = await fetch(
+        """
+        SELECT
+            client_order_id, account_scope, broker_name, ticker, name, side, order_type,
+            requested_quantity, requested_price, filled_quantity, avg_fill_price, status,
+            signal_source, agent_id, broker_order_id, rejection_reason,
+            requested_at, filled_at
+        FROM broker_orders
+        WHERE account_scope = $1
+        ORDER BY requested_at DESC
+        LIMIT $2
+        """,
+        scope,
+        limit,
+    )
+    return [dict(r) for r in rows]
+
+
+async def record_account_snapshot(
+    account_scope: AccountScope,
+    cash_balance: int,
+    buying_power: int,
+    position_market_value: int,
+    total_equity: int,
+    realized_pnl: int,
+    unrealized_pnl: int,
+    position_count: int,
+    snapshot_source: str = "broker",
+) -> None:
+    scope = normalize_account_scope(account_scope)
+    await execute(
+        """
+        INSERT INTO account_snapshots (
+            account_scope, cash_balance, buying_power, position_market_value,
+            total_equity, realized_pnl, unrealized_pnl, position_count,
+            snapshot_source, snapshot_at
+        ) VALUES (
+            $1, $2, $3, $4,
+            $5, $6, $7, $8,
+            $9, NOW()
+        )
+        """,
+        scope,
+        cash_balance,
+        buying_power,
+        position_market_value,
+        total_equity,
+        realized_pnl,
+        unrealized_pnl,
+        position_count,
+        snapshot_source,
+    )
+
+
+async def latest_account_snapshot(account_scope: AccountScope = "paper") -> Optional[dict]:
+    scope = normalize_account_scope(account_scope)
+    row = await fetchrow(
+        """
+        SELECT
+            account_scope, cash_balance, buying_power, position_market_value,
+            total_equity, realized_pnl, unrealized_pnl, position_count,
+            snapshot_source, snapshot_at
+        FROM account_snapshots
+        WHERE account_scope = $1
+        ORDER BY snapshot_at DESC
+        LIMIT 1
+        """,
+        scope,
+    )
+    return dict(row) if row else None
 
 
 async def get_trading_account(account_scope: AccountScope = "paper") -> Optional[dict]:

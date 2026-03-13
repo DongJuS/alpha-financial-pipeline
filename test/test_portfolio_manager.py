@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from src.agents.portfolio_manager import PortfolioManagerAgent
+from src.brokers.paper import PaperBrokerExecution
 from src.db.models import PredictionSignal
 
 
@@ -86,9 +87,25 @@ class PortfolioManagerRiskGuardTest(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(return_value=("삼성전자", 1_000)),
             ),
             patch("src.agents.portfolio_manager.get_position", new=AsyncMock(return_value=None)),
+            patch("src.agents.portfolio_manager.get_trading_account", new=AsyncMock(return_value=None)),
             patch("src.agents.portfolio_manager.portfolio_total_value", new=AsyncMock(return_value=0)),
-            patch("src.agents.portfolio_manager.save_position", new=AsyncMock()) as save_mock,
-            patch("src.agents.portfolio_manager.insert_trade", new=AsyncMock()) as trade_mock,
+            patch.object(
+                agent.paper_broker,
+                "execute_order",
+                new=AsyncMock(
+                    return_value=PaperBrokerExecution(
+                        client_order_id="paper-test",
+                        account_scope="paper",
+                        status="FILLED",
+                        ticker="005930",
+                        side="BUY",
+                        quantity=1,
+                        price=1_000,
+                        cash_balance=9_999_000,
+                        total_equity=10_000_000,
+                    )
+                ),
+            ) as execute_order_mock,
         ):
             result = await agent.process_signal(
                 signal,
@@ -101,8 +118,7 @@ class PortfolioManagerRiskGuardTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(result)
         self.assertEqual(result["side"], "BUY")
-        save_mock.assert_awaited_once()
-        trade_mock.assert_awaited_once()
+        execute_order_mock.assert_awaited_once()
 
     async def test_process_predictions_stops_on_daily_loss_limit(self) -> None:
         agent = PortfolioManagerAgent()

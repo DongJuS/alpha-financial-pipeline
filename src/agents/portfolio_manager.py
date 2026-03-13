@@ -18,11 +18,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
+from src.brokers import PaperBroker
 from src.db.models import AgentHeartbeatRecord, PaperOrderRequest, PredictionSignal
 from src.db.queries import (
     fetch_recent_ohlcv,
     get_portfolio_config,
     get_position,
+    get_trading_account,
     insert_heartbeat,
     insert_trade,
     portfolio_total_value,
@@ -47,6 +49,7 @@ logger = get_logger(__name__)
 class PortfolioManagerAgent:
     def __init__(self, agent_id: str = "portfolio_manager_agent") -> None:
         self.agent_id = agent_id
+        self.paper_broker = PaperBroker()
 
     @staticmethod
     def _account_scope_from_config(cfg: dict) -> str:
@@ -97,8 +100,13 @@ class PortfolioManagerAgent:
         if signal.signal == "BUY":
             order_qty = 1
             max_position_pct = int(cfg.get("max_position_pct", 20))
-            paper_seed_capital = int(cfg.get("paper_seed_capital", 10_000_000))
             is_paper = account_scope == "paper"
+            paper_seed_capital_raw = cfg.get("paper_seed_capital")
+            if is_paper and paper_seed_capital_raw is None:
+                account = await get_trading_account(account_scope)
+                paper_seed_capital = int(account.get("seed_capital") or 10_000_000) if account else 10_000_000
+            else:
+                paper_seed_capital = int(paper_seed_capital_raw or 10_000_000)
             total_value = await portfolio_total_value(account_scope=account_scope)
             current_value = (
                 int(position["quantity"]) * int(position["current_price"]) if position else 0
@@ -118,21 +126,6 @@ class PortfolioManagerAgent:
                 )
                 return None
 
-            prev_qty = int(position["quantity"]) if position else 0
-            prev_avg = int(position["avg_price"]) if position else 0
-            new_qty = prev_qty + order_qty
-            new_avg = int(((prev_qty * prev_avg) + (order_qty * price)) / new_qty)
-
-            await save_position(
-                ticker=signal.ticker,
-                name=name,
-                quantity=new_qty,
-                avg_price=new_avg,
-                current_price=price,
-                is_paper=is_paper,
-                account_scope=account_scope,
-            )
-
             order = PaperOrderRequest(
                 ticker=signal.ticker,
                 name=name,
@@ -143,7 +136,26 @@ class PortfolioManagerAgent:
                 agent_id=self.agent_id,
                 account_scope=account_scope,
             )
-            await insert_trade(order)
+            if is_paper:
+                execution = await self.paper_broker.execute_order(order)
+                if execution.status != "FILLED":
+                    logger.warning("페이퍼 주문 거절: %s (%s)", signal.ticker, execution.rejection_reason)
+                    return None
+            else:
+                prev_qty = int(position["quantity"]) if position else 0
+                prev_avg = int(position["avg_price"]) if position else 0
+                new_qty = prev_qty + order_qty
+                new_avg = int(((prev_qty * prev_avg) + (order_qty * price)) / new_qty)
+                await save_position(
+                    ticker=signal.ticker,
+                    name=name,
+                    quantity=new_qty,
+                    avg_price=new_avg,
+                    current_price=price,
+                    is_paper=is_paper,
+                    account_scope=account_scope,
+                )
+                await insert_trade(order)
             return {
                 "ticker": order.ticker,
                 "side": order.signal,
@@ -156,15 +168,6 @@ class PortfolioManagerAgent:
             return None
 
         sell_qty = int(position["quantity"])
-        await save_position(
-            ticker=signal.ticker,
-            name=name,
-            quantity=0,
-            avg_price=0,
-            current_price=price,
-            is_paper=account_scope == "paper",
-            account_scope=account_scope,
-        )
 
         order = PaperOrderRequest(
             ticker=signal.ticker,
@@ -176,7 +179,22 @@ class PortfolioManagerAgent:
             agent_id=self.agent_id,
             account_scope=account_scope,
         )
-        await insert_trade(order)
+        if account_scope == "paper":
+                execution = await self.paper_broker.execute_order(order)
+                if execution.status != "FILLED":
+                    logger.warning("페이퍼 주문 거절: %s (%s)", signal.ticker, execution.rejection_reason)
+                    return None
+        else:
+            await save_position(
+                ticker=signal.ticker,
+                name=name,
+                quantity=0,
+                avg_price=0,
+                current_price=price,
+                is_paper=False,
+                account_scope=account_scope,
+            )
+            await insert_trade(order)
         return {
             "ticker": order.ticker,
             "side": order.signal,
