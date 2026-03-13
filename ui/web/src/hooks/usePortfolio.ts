@@ -4,6 +4,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/utils/api";
 
+export type TradingScope = "current" | "paper" | "real";
+
 export interface Position {
   ticker: string;
   name: string;
@@ -80,30 +82,59 @@ export interface ReadinessResult {
   checks: ReadinessCheckItem[];
 }
 
-async function fetchPortfolio(): Promise<PortfolioSummary> {
-  const { data } = await api.get<PortfolioSummary>("/portfolio/positions");
+export interface PaperTradingRun {
+  scenario: string;
+  simulated_days: number;
+  trade_count: number;
+  return_pct: number;
+  benchmark_return_pct: number | null;
+  max_drawdown_pct: number | null;
+  sharpe_ratio: number | null;
+  passed: boolean;
+  summary: string | null;
+  created_at: string;
+}
+
+export interface PaperTradingOverview {
+  broker: string;
+  account_label: string;
+  current_mode_is_paper: boolean;
+  active_days_120d: number;
+  trade_count_120d: number;
+  traded_tickers_120d: number;
+  last_executed_at: string | null;
+  latest_run: PaperTradingRun | null;
+}
+
+async function fetchPortfolio(mode: TradingScope = "current"): Promise<PortfolioSummary> {
+  const { data } = await api.get<PortfolioSummary>("/portfolio/positions", {
+    params: { mode },
+  });
   return data;
 }
 
-async function fetchPerformance(period: PerformanceMetrics["period"]): Promise<PerformanceMetrics> {
-  const { data } = await api.get<PerformanceMetrics>("/portfolio/performance", { params: { period } });
+async function fetchPerformance(
+  period: PerformanceMetrics["period"],
+  mode: TradingScope = "current"
+): Promise<PerformanceMetrics> {
+  const { data } = await api.get<PerformanceMetrics>("/portfolio/performance", { params: { period, mode } });
   return data;
 }
 
-async function fetchPerformanceSeries(period: PerformanceMetrics["period"]): Promise<{
+async function fetchPerformanceSeries(period: PerformanceMetrics["period"], mode: TradingScope = "current"): Promise<{
   period: PerformanceMetrics["period"];
   points: PerformanceSeriesPoint[];
 }> {
-  const { data } = await api.get("/portfolio/performance-series", { params: { period } });
+  const { data } = await api.get("/portfolio/performance-series", { params: { period, mode } });
   return data;
 }
 
-async function fetchTradeHistory(page = 1, perPage = 30): Promise<{
+async function fetchTradeHistory(page = 1, perPage = 30, mode: TradingScope = "current"): Promise<{
   data: TradeHistoryItem[];
   meta: { page: number; per_page: number };
 }> {
   const { data } = await api.get("/portfolio/history", {
-    params: { page, per_page: perPage },
+    params: { page, per_page: perPage, mode },
   });
   return data;
 }
@@ -118,34 +149,42 @@ async function fetchReadiness(): Promise<ReadinessResult> {
   return data;
 }
 
-export function usePortfolio() {
+async function fetchPaperTradingOverview(): Promise<PaperTradingOverview> {
+  const { data } = await api.get<PaperTradingOverview>("/portfolio/paper-overview");
+  return data;
+}
+
+export function usePortfolio(mode: TradingScope = "current") {
   return useQuery({
-    queryKey: ["portfolio", "positions"],
-    queryFn: fetchPortfolio,
+    queryKey: ["portfolio", "positions", mode],
+    queryFn: () => fetchPortfolio(mode),
     refetchInterval: 30_000,
   });
 }
 
-export function usePerformance(period: PerformanceMetrics["period"] = "monthly") {
+export function usePerformance(period: PerformanceMetrics["period"] = "monthly", mode: TradingScope = "current") {
   return useQuery({
-    queryKey: ["portfolio", "performance", period],
-    queryFn: () => fetchPerformance(period),
+    queryKey: ["portfolio", "performance", period, mode],
+    queryFn: () => fetchPerformance(period, mode),
     refetchInterval: 30_000,
   });
 }
 
-export function usePerformanceSeries(period: PerformanceMetrics["period"] = "monthly") {
+export function usePerformanceSeries(
+  period: PerformanceMetrics["period"] = "monthly",
+  mode: TradingScope = "current"
+) {
   return useQuery({
-    queryKey: ["portfolio", "performance-series", period],
-    queryFn: () => fetchPerformanceSeries(period),
+    queryKey: ["portfolio", "performance-series", period, mode],
+    queryFn: () => fetchPerformanceSeries(period, mode),
     refetchInterval: 30_000,
   });
 }
 
-export function useTradeHistory(page = 1, perPage = 30) {
+export function useTradeHistory(page = 1, perPage = 30, mode: TradingScope = "current") {
   return useQuery({
-    queryKey: ["portfolio", "history", page, perPage],
-    queryFn: () => fetchTradeHistory(page, perPage),
+    queryKey: ["portfolio", "history", page, perPage, mode],
+    queryFn: () => fetchTradeHistory(page, perPage, mode),
     refetchInterval: 30_000,
   });
 }
@@ -162,6 +201,14 @@ export function useReadiness() {
   return useQuery({
     queryKey: ["portfolio", "readiness"],
     queryFn: fetchReadiness,
+    refetchInterval: 60_000,
+  });
+}
+
+export function usePaperTradingOverview() {
+  return useQuery({
+    queryKey: ["portfolio", "paper-overview"],
+    queryFn: fetchPaperTradingOverview,
     refetchInterval: 60_000,
   });
 }

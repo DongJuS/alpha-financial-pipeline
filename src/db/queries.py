@@ -15,6 +15,7 @@ from src.db.models import (
     PaperOrderRequest,
     PredictionSignal,
 )
+from src.utils.account_scope import AccountScope, normalize_account_scope, scope_from_is_paper
 from src.utils.db_client import execute, fetch, fetchrow, fetchval
 
 
@@ -183,15 +184,18 @@ async def insert_debate_transcript(
     return int(transcript_id)
 
 
-async def get_position(ticker: str) -> Optional[dict]:
+async def get_position(ticker: str, account_scope: AccountScope = "paper") -> Optional[dict]:
+    scope = normalize_account_scope(account_scope)
     row = await fetchrow(
         """
-        SELECT ticker, name, quantity, avg_price, current_price, is_paper
+        SELECT ticker, name, quantity, avg_price, current_price, is_paper, account_scope
         FROM portfolio_positions
         WHERE ticker = $1
+          AND account_scope = $2
         LIMIT 1
         """,
         ticker,
+        scope,
     )
     return dict(row) if row else None
 
@@ -203,17 +207,23 @@ async def save_position(
     avg_price: int,
     current_price: int,
     is_paper: bool,
+    account_scope: AccountScope | None = None,
 ) -> None:
+    scope = normalize_account_scope(account_scope or scope_from_is_paper(is_paper))
     if quantity <= 0:
-        await execute("DELETE FROM portfolio_positions WHERE ticker = $1", ticker)
+        await execute(
+            "DELETE FROM portfolio_positions WHERE ticker = $1 AND account_scope = $2",
+            ticker,
+            scope,
+        )
         return
 
     await execute(
         """
         INSERT INTO portfolio_positions (
-            ticker, name, quantity, avg_price, current_price, is_paper, opened_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
-        ON CONFLICT (ticker)
+            ticker, name, quantity, avg_price, current_price, is_paper, account_scope, opened_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+        ON CONFLICT (ticker, account_scope)
         DO UPDATE SET
             name = EXCLUDED.name,
             quantity = EXCLUDED.quantity,
@@ -227,17 +237,21 @@ async def save_position(
         quantity,
         avg_price,
         current_price,
-        is_paper,
+        scope == "paper",
+        scope,
     )
 
 
-async def portfolio_total_value() -> int:
+async def portfolio_total_value(account_scope: AccountScope = "paper") -> int:
+    scope = normalize_account_scope(account_scope)
     value = await fetchval(
         """
         SELECT COALESCE(SUM(quantity * current_price), 0)
         FROM portfolio_positions
         WHERE quantity > 0
-        """
+          AND account_scope = $1
+        """,
+        scope,
     )
     return int(value or 0)
 
@@ -260,7 +274,8 @@ async def get_portfolio_config() -> dict:
     return dict(row)
 
 
-async def today_trade_totals() -> dict:
+async def today_trade_totals(account_scope: AccountScope = "paper") -> dict:
+    scope = normalize_account_scope(account_scope)
     row = await fetchrow(
         """
         SELECT
@@ -268,8 +283,9 @@ async def today_trade_totals() -> dict:
             COALESCE(SUM(CASE WHEN side = 'SELL' THEN amount ELSE 0 END), 0) AS sell_total
         FROM trade_history
         WHERE executed_at::date = CURRENT_DATE
-          AND is_paper = TRUE
-        """
+          AND account_scope = $1
+        """,
+        scope,
     )
     return {
         "buy_total": int(row["buy_total"]) if row else 0,
@@ -277,45 +293,56 @@ async def today_trade_totals() -> dict:
     }
 
 
-async def fetch_trade_rows(days: int, is_paper: bool = True) -> list[dict]:
+async def fetch_trade_rows(
+    days: int,
+    is_paper: bool = True,
+    account_scope: AccountScope | None = None,
+) -> list[dict]:
+    scope = normalize_account_scope(account_scope or scope_from_is_paper(is_paper))
     rows = await fetch(
         """
         SELECT ticker, side, price, quantity, amount, executed_at
         FROM trade_history
-        WHERE is_paper = $1
+        WHERE account_scope = $1
           AND executed_at >= NOW() - ($2 * INTERVAL '1 day')
         ORDER BY executed_at
         """,
-        is_paper,
+        scope,
         days,
     )
     return [dict(r) for r in rows]
 
 
-async def fetch_trade_rows_for_date(trade_date: date, is_paper: bool = True) -> list[dict]:
+async def fetch_trade_rows_for_date(
+    trade_date: date,
+    is_paper: bool = True,
+    account_scope: AccountScope | None = None,
+) -> list[dict]:
+    scope = normalize_account_scope(account_scope or scope_from_is_paper(is_paper))
     rows = await fetch(
         """
         SELECT ticker, side, price, quantity, amount, executed_at
         FROM trade_history
-        WHERE is_paper = $1
+        WHERE account_scope = $1
           AND executed_at::date = $2::date
         ORDER BY executed_at
         """,
-        is_paper,
+        scope,
         trade_date,
     )
     return [dict(r) for r in rows]
 
 
 async def insert_trade(order: PaperOrderRequest, circuit_breaker: bool = False) -> None:
+    scope = normalize_account_scope(order.account_scope)
     await execute(
         """
         INSERT INTO trade_history (
             ticker, name, side, quantity, price, amount,
-            signal_source, agent_id, is_paper, circuit_breaker
+            signal_source, agent_id, kis_order_id, is_paper, account_scope, circuit_breaker
         ) VALUES (
             $1, $2, $3, $4, $5, $6,
-            $7, $8, TRUE, $9
+            $7, $8, NULL, $9, $10, $11
         )
         """,
         order.ticker,
@@ -326,7 +353,70 @@ async def insert_trade(order: PaperOrderRequest, circuit_breaker: bool = False) 
         order.quantity * order.price,
         order.signal_source,
         order.agent_id,
+        scope == "paper",
+        scope,
         circuit_breaker,
+    )
+
+
+async def get_trading_account(account_scope: AccountScope = "paper") -> Optional[dict]:
+    scope = normalize_account_scope(account_scope)
+    row = await fetchrow(
+        """
+        SELECT account_scope, broker_name, account_label, base_currency, seed_capital,
+               cash_balance, buying_power, total_equity, is_active, last_synced_at
+        FROM trading_accounts
+        WHERE account_scope = $1
+        LIMIT 1
+        """,
+        scope,
+    )
+    return dict(row) if row else None
+
+
+async def upsert_trading_account(
+    account_scope: AccountScope,
+    broker_name: str,
+    account_label: str,
+    base_currency: str = "KRW",
+    seed_capital: int = 10_000_000,
+    cash_balance: int = 10_000_000,
+    buying_power: int = 10_000_000,
+    total_equity: int = 10_000_000,
+    is_active: bool = False,
+) -> None:
+    scope = normalize_account_scope(account_scope)
+    await execute(
+        """
+        INSERT INTO trading_accounts (
+            account_scope, broker_name, account_label, base_currency,
+            seed_capital, cash_balance, buying_power, total_equity, is_active, last_synced_at, updated_at
+        ) VALUES (
+            $1, $2, $3, $4,
+            $5, $6, $7, $8, $9, NOW(), NOW()
+        )
+        ON CONFLICT (account_scope)
+        DO UPDATE SET
+            broker_name = EXCLUDED.broker_name,
+            account_label = EXCLUDED.account_label,
+            base_currency = EXCLUDED.base_currency,
+            seed_capital = EXCLUDED.seed_capital,
+            cash_balance = EXCLUDED.cash_balance,
+            buying_power = EXCLUDED.buying_power,
+            total_equity = EXCLUDED.total_equity,
+            is_active = EXCLUDED.is_active,
+            last_synced_at = NOW(),
+            updated_at = NOW()
+        """,
+        scope,
+        broker_name,
+        account_label,
+        base_currency,
+        seed_capital,
+        cash_balance,
+        buying_power,
+        total_equity,
+        is_active,
     )
 
 

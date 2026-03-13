@@ -4,6 +4,8 @@ const NAV_ITEMS = [
   { to: "/dashboard", label: "홈", description: "자산 현황" },
   { to: "/strategy", label: "전략", description: "A/B 교차검증" },
   { to: "/market", label: "마켓", description: "실시간 데이터" },
+  { to: "/long-term", label: "장기투자", description: "준비 중인 화면" },
+  { to: "/paper-trading", label: "모의 투자", description: "KIS 페이퍼 계좌" },
   { to: "/portfolio", label: "내 계좌", description: "성과와 리스크" },
   { to: "/settings", label: "설정", description: "운영 정책" },
 ];

@@ -10,16 +10,19 @@ from pydantic import BaseModel, Field
 
 from src.api.deps import get_admin_user, get_current_settings, get_current_user
 from src.db.queries import (
+    fetch_latest_paper_trading_run,
     fetch_operational_audits,
     fetch_real_trading_audits,
     insert_real_trading_audit,
 )
+from src.utils.account_scope import is_paper_scope, normalize_account_scope
 from src.utils.config import Settings
 from src.utils.db_client import execute, fetch, fetchrow
 from src.utils.performance import compute_trade_performance
 from src.utils.readiness import evaluate_real_trading_readiness
 
 router = APIRouter()
+MODE_PATTERN = "^(current|paper|real)$"
 
 
 class PositionItem(BaseModel):
@@ -61,6 +64,30 @@ class PerformanceSeriesItem(BaseModel):
 class PerformanceSeriesResponse(BaseModel):
     period: str
     points: list[PerformanceSeriesItem]
+
+
+class PaperTradingRunItem(BaseModel):
+    scenario: str
+    simulated_days: int
+    trade_count: int
+    return_pct: float
+    benchmark_return_pct: Optional[float] = None
+    max_drawdown_pct: Optional[float] = None
+    sharpe_ratio: Optional[float] = None
+    passed: bool
+    summary: Optional[str] = None
+    created_at: datetime
+
+
+class PaperTradingOverviewResponse(BaseModel):
+    broker: str
+    account_label: str
+    current_mode_is_paper: bool
+    active_days_120d: int
+    trade_count_120d: int
+    traded_tickers_120d: int
+    last_executed_at: Optional[str] = None
+    latest_run: Optional[PaperTradingRunItem] = None
 
 
 class PortfolioConfigRequest(BaseModel):
@@ -116,22 +143,43 @@ class ReadinessAuditResponse(BaseModel):
     mode_switch_audits: list[TradingModeAuditItem]
 
 
+async def _resolve_mode_is_paper(mode: str) -> bool:
+    return is_paper_scope(await _resolve_mode_account_scope(mode))
+
+
+async def _resolve_mode_account_scope(mode: str) -> str:
+    if mode == "paper":
+        return "paper"
+    if mode == "real":
+        return "real"
+
+    config = await fetchrow("SELECT is_paper_trading FROM portfolio_config LIMIT 1")
+    return normalize_account_scope("paper" if (bool(config["is_paper_trading"]) if config else True) else "real")
+
+
+def _period_to_days(period: str) -> int:
+    period_days_map = {"daily": 1, "weekly": 7, "monthly": 30, "all": 99999}
+    return period_days_map[period]
+
+
 @router.get("/positions", response_model=PortfolioResponse)
 async def get_positions(
     _: Annotated[dict, Depends(get_current_user)],
+    mode: str = Query(default="current", pattern=MODE_PATTERN),
 ) -> PortfolioResponse:
     """현재 보유 포지션과 포트폴리오 요약을 반환합니다."""
+    account_scope = await _resolve_mode_account_scope(mode)
+    is_paper = account_scope == "paper"
     rows = await fetch(
         """
-        SELECT ticker, name, quantity, avg_price, current_price, is_paper
+        SELECT ticker, name, quantity, avg_price, current_price, is_paper, account_scope
         FROM portfolio_positions
         WHERE quantity > 0
+          AND account_scope = $1
         ORDER BY (quantity * current_price) DESC
-        """
+        """,
+        account_scope,
     )
-
-    config = await fetchrow("SELECT is_paper_trading FROM portfolio_config LIMIT 1")
-    is_paper = config["is_paper_trading"] if config else True
 
     total_value = sum(r["quantity"] * r["current_price"] for r in rows)
     total_cost = sum(r["quantity"] * r["avg_price"] for r in rows)
@@ -167,13 +215,15 @@ async def get_trade_history(
     _: Annotated[dict, Depends(get_current_user)],
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
+    mode: str = Query(default="current", pattern=MODE_PATTERN),
     from_date: Optional[str] = Query(default=None, alias="from"),
     to_date: Optional[str] = Query(default=None, alias="to"),
     ticker: Optional[str] = Query(default=None),
 ) -> dict:
     """거래 이력을 조회합니다."""
-    params: list = []
-    where_clauses: list[str] = []
+    account_scope = await _resolve_mode_account_scope(mode)
+    params: list = [account_scope]
+    where_clauses: list[str] = [f"account_scope = ${len(params)}"]
 
     if ticker:
         params.append(ticker)
@@ -192,7 +242,7 @@ async def get_trade_history(
     rows = await fetch(
         f"""
         SELECT ticker, name, side, quantity, price, amount, signal_source,
-               agent_id, is_paper, circuit_breaker,
+               agent_id, is_paper, account_scope, circuit_breaker,
                to_char(executed_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD"T"HH24:MI:SS+09:00') AS executed_at
         FROM trade_history
         {where}
@@ -214,19 +264,21 @@ async def get_performance(
     period: str = Query(
         default="monthly", pattern="^(daily|weekly|monthly|all)$"
     ),
+    mode: str = Query(default="current", pattern=MODE_PATTERN),
 ) -> PerformanceResponse:
     """성과 지표 (수익률, MDD, Sharpe 등)를 반환합니다."""
-    period_days_map = {"daily": 1, "weekly": 7, "monthly": 30, "all": 99999}
-    days = period_days_map[period]
+    days = _period_to_days(period)
+    account_scope = await _resolve_mode_account_scope(mode)
 
     rows = await fetch(
         """
         SELECT ticker, side, price, quantity, amount, executed_at
         FROM trade_history
-        WHERE is_paper = TRUE
-          AND executed_at >= NOW() - ($1 * INTERVAL '1 day')
+        WHERE account_scope = $1
+          AND executed_at >= NOW() - ($2 * INTERVAL '1 day')
         ORDER BY executed_at
         """,
+        account_scope,
         days,
     )
     metrics = compute_trade_performance([dict(r) for r in rows])
@@ -268,21 +320,23 @@ async def get_performance_series(
     period: str = Query(
         default="monthly", pattern="^(daily|weekly|monthly|all)$"
     ),
+    mode: str = Query(default="current", pattern=MODE_PATTERN),
 ) -> PerformanceSeriesResponse:
     """일자별 누적 성과 시계열(포트폴리오 vs KOSPI 대용 벤치마크)을 반환합니다."""
     from src.utils.performance import compute_benchmark_series, compute_trade_performance_series
 
-    period_days_map = {"daily": 1, "weekly": 7, "monthly": 30, "all": 99999}
-    days = period_days_map[period]
+    days = _period_to_days(period)
+    account_scope = await _resolve_mode_account_scope(mode)
 
     trade_rows = await fetch(
         """
         SELECT ticker, side, price, quantity, amount, executed_at
         FROM trade_history
-        WHERE is_paper = TRUE
-          AND executed_at >= NOW() - ($1 * INTERVAL '1 day')
+        WHERE account_scope = $1
+          AND executed_at >= NOW() - ($2 * INTERVAL '1 day')
         ORDER BY executed_at
         """,
+        account_scope,
         days,
     )
     benchmark_rows = await fetch(
@@ -315,6 +369,66 @@ async def get_performance_series(
         for item in portfolio_series
     ]
     return PerformanceSeriesResponse(period=period, points=points)
+
+
+@router.get("/paper-overview", response_model=PaperTradingOverviewResponse)
+async def get_paper_trading_overview(
+    _: Annotated[dict, Depends(get_current_user)],
+) -> PaperTradingOverviewResponse:
+    """한국투자증권 모의투자 운영 개요를 반환합니다."""
+    current_mode_is_paper = await _resolve_mode_is_paper("current")
+    account_row = await fetchrow(
+        """
+        SELECT broker_name, account_label
+        FROM trading_accounts
+        WHERE account_scope = 'paper'
+        LIMIT 1
+        """
+    )
+    paper_stats = await fetchrow(
+        """
+        SELECT
+            COUNT(DISTINCT (executed_at AT TIME ZONE 'Asia/Seoul')::date) AS active_days,
+            COUNT(*) AS trade_count,
+            COUNT(DISTINCT ticker) AS traded_tickers,
+            to_char(
+                MAX(executed_at) AT TIME ZONE 'Asia/Seoul',
+                'YYYY-MM-DD"T"HH24:MI:SS+09:00'
+            ) AS last_executed_at
+        FROM trade_history
+        WHERE account_scope = 'paper'
+          AND executed_at >= NOW() - INTERVAL '120 day'
+        """
+    )
+    latest_run = await fetch_latest_paper_trading_run("baseline")
+
+    latest_run_item = (
+        PaperTradingRunItem(
+            scenario=str(latest_run["scenario"]),
+            simulated_days=int(latest_run["simulated_days"] or 0),
+            trade_count=int(latest_run["trade_count"] or 0),
+            return_pct=float(latest_run["return_pct"] or 0),
+            benchmark_return_pct=float(latest_run["benchmark_return_pct"]) if latest_run.get("benchmark_return_pct") is not None else None,
+            max_drawdown_pct=float(latest_run["max_drawdown_pct"]) if latest_run.get("max_drawdown_pct") is not None else None,
+            sharpe_ratio=float(latest_run["sharpe_ratio"]) if latest_run.get("sharpe_ratio") is not None else None,
+            passed=bool(latest_run["passed"]),
+            summary=latest_run.get("summary"),
+            created_at=latest_run["created_at"],
+        )
+        if latest_run
+        else None
+    )
+
+    return PaperTradingOverviewResponse(
+        broker=str(account_row["broker_name"]) if account_row else "한국투자증권 KIS",
+        account_label=str(account_row["account_label"]) if account_row else "KIS 모의투자 계좌",
+        current_mode_is_paper=current_mode_is_paper,
+        active_days_120d=int(paper_stats["active_days"] or 0) if paper_stats else 0,
+        trade_count_120d=int(paper_stats["trade_count"] or 0) if paper_stats else 0,
+        traded_tickers_120d=int(paper_stats["traded_tickers"] or 0) if paper_stats else 0,
+        last_executed_at=paper_stats["last_executed_at"] if paper_stats else None,
+        latest_run=latest_run_item,
+    )
 
 
 @router.get("/config")

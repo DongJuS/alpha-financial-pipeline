@@ -1,9 +1,24 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { useAgentStatus } from "@/hooks/useAgentStatus";
-import { usePortfolioConfig, type PortfolioSummary } from "@/hooks/usePortfolio";
+import {
+  usePerformance,
+  usePerformanceSeries,
+  usePortfolioConfig,
+  type PortfolioSummary,
+  type TradingScope,
+} from "@/hooks/usePortfolio";
 import { api, formatPct } from "@/utils/api";
 
 type TickerItem = {
@@ -49,6 +64,12 @@ const QUICK_LINKS = [
     title: "마켓 센터",
     subtitle: "실시간 수집 데이터와 오픈소스 차트를 비교합니다.",
     icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6",
+  },
+  {
+    to: "/paper-trading",
+    title: "모의 투자",
+    subtitle: "KIS 페이퍼 계좌의 수익률과 체결 흐름을 봅니다.",
+    icon: "M4 6h16M4 12h16M4 18h10",
   },
   {
     to: "/portfolio",
@@ -113,6 +134,19 @@ function formatCompactNumber(value: number | null | undefined): string {
     maximumFractionDigits: 1,
   }).format(value);
 }
+
+function compactDate(value: string): string {
+  return value.slice(5);
+}
+
+const TOOLTIP_STYLE = {
+  background: "rgba(255,255,255,0.96)",
+  border: "1px solid rgba(148,163,184,0.2)",
+  borderRadius: "20px",
+  color: "#111827",
+  fontSize: "12px",
+  boxShadow: "0 20px 36px rgba(15,23,42,0.12)",
+};
 
 function iconLabel(name: string, ticker: string): string {
   const source = (name || ticker).replace(/\s+/g, "").trim();
@@ -216,6 +250,93 @@ function QuickLinkCard({
         </div>
       </div>
     </Link>
+  );
+}
+
+function ReturnCompareCard({
+  scope,
+  title,
+  subtitle,
+  actionTo,
+  actionLabel,
+}: {
+  scope: TradingScope;
+  title: string;
+  subtitle: string;
+  actionTo: string;
+  actionLabel: string;
+}) {
+  const { data: perf, isLoading: perfLoading } = usePerformance("monthly", scope);
+  const { data: series, isLoading: seriesLoading } = usePerformanceSeries("monthly", scope);
+
+  const chartData = useMemo(
+    () =>
+      (series?.points ?? []).map((point) => ({
+        ...point,
+        label: compactDate(point.date),
+      })),
+    [series]
+  );
+
+  const hasData = chartData.length > 0;
+  const isPositive = (perf?.return_pct ?? 0) >= 0;
+
+  return (
+    <article className="rounded-[28px] border border-white/75 bg-white/78 p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold tracking-[-0.02em]" style={{ color: "var(--text-primary)" }}>
+            {title}
+          </p>
+          <p className="mt-1 text-sm leading-6" style={{ color: "var(--text-secondary)" }}>
+            {subtitle}
+          </p>
+        </div>
+        <Link to={actionTo} className="btn-secondary">
+          {actionLabel}
+        </Link>
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${isPositive ? "badge-buy" : "badge-sell"}`}>
+          {perfLoading ? "집계 중" : `월간 ${formatPct(perf?.return_pct ?? 0)}`}
+        </span>
+        <span className="chip">거래 {(perf?.total_trades ?? 0).toLocaleString()}건</span>
+        <span className="chip">MDD {perfLoading ? "—" : formatPct(perf?.max_drawdown_pct ?? 0)}</span>
+      </div>
+
+      <div className="mt-5">
+        {seriesLoading ? (
+          <div className="h-64 skeleton" />
+        ) : hasData ? (
+          <div className="chart-container h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--chart-axis)" }} />
+                <YAxis tick={{ fontSize: 10, fill: "var(--chart-axis)" }} unit="%" />
+                <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value: number) => `${Number(value).toFixed(2)}%`} />
+                <Line
+                  type="monotone"
+                  dataKey="portfolio_return_pct"
+                  stroke={scope === "paper" ? "var(--brand-500)" : "var(--profit)"}
+                  strokeWidth={2.4}
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="flex h-64 items-center justify-center rounded-[28px] border border-dashed border-[var(--line-strong)] bg-white/55 px-6 text-center">
+            <p className="text-sm leading-6" style={{ color: "var(--text-secondary)" }}>
+              {scope === "paper"
+                ? "모의투자 수익률 데이터가 아직 없습니다."
+                : "실투자 수익률 데이터가 아직 없습니다. 실거래 체결이 쌓이면 그래프가 표시됩니다."}
+            </p>
+          </div>
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -345,6 +466,40 @@ export default function TossTradingDashboard({ portfolio, isLoading }: TossTradi
               </Link>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="card">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <span className="eyebrow">Return compare</span>
+            <h2 className="mt-3 text-[24px] font-bold tracking-[-0.03em]" style={{ color: "var(--text-primary)" }}>
+              실투자 vs 모의투자 수익률
+            </h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+              실제 체결 계좌와 KIS 페이퍼 계좌의 누적 수익률 흐름을 나란히 비교합니다.
+            </p>
+          </div>
+          <Link to="/paper-trading" className="btn-secondary">
+            모의 투자 상세 보기
+          </Link>
+        </div>
+
+        <div className="mt-5 grid gap-4 xl:grid-cols-2">
+          <ReturnCompareCard
+            scope="real"
+            title="실투자 수익률"
+            subtitle="실거래 체결 이력 기준 월간 수익률 그래프"
+            actionTo="/portfolio"
+            actionLabel="내 계좌 보기"
+          />
+          <ReturnCompareCard
+            scope="paper"
+            title="모의투자 수익률"
+            subtitle="한국투자증권 KIS 모의 계좌 기준 월간 수익률 그래프"
+            actionTo="/paper-trading"
+            actionLabel="모의투자 보기"
+          />
         </div>
       </section>
 

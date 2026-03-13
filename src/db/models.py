@@ -7,6 +7,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from src.utils.account_scope import AccountScope
+
 
 class MarketDataPoint(BaseModel):
     ticker: str = Field(..., min_length=1, max_length=10)
@@ -46,6 +48,7 @@ class PaperOrderRequest(BaseModel):
     price: int = Field(..., ge=0)
     signal_source: Literal["A", "B", "BLEND"] = "A"
     agent_id: str = "portfolio_manager_agent"
+    account_scope: AccountScope = "paper"
 
 
 class AgentHeartbeatRecord(BaseModel):

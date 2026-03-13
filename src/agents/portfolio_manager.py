@@ -29,6 +29,7 @@ from src.db.queries import (
     save_position,
     today_trade_totals,
 )
+from src.utils.account_scope import normalize_account_scope
 from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import (
     KEY_LATEST_TICKS,
@@ -46,6 +47,10 @@ logger = get_logger(__name__)
 class PortfolioManagerAgent:
     def __init__(self, agent_id: str = "portfolio_manager_agent") -> None:
         self.agent_id = agent_id
+
+    @staticmethod
+    def _account_scope_from_config(cfg: dict) -> str:
+        return normalize_account_scope("paper" if bool(cfg.get("is_paper_trading", True)) else "real")
 
     async def _resolve_name_and_price(self, ticker: str, target_price: Optional[int]) -> tuple[str, int]:
         if target_price:
@@ -82,18 +87,19 @@ class PortfolioManagerAgent:
 
         signal_source = signal_source_override or signal.strategy
         cfg = risk_config or {}
+        account_scope = self._account_scope_from_config(cfg)
         name, price = await self._resolve_name_and_price(signal.ticker, signal.target_price)
         if price <= 0:
             logger.warning("가격 정보 없음으로 주문 스킵: %s", signal.ticker)
             return None
 
-        position = await get_position(signal.ticker)
+        position = await get_position(signal.ticker, account_scope=account_scope)
         if signal.signal == "BUY":
             order_qty = 1
             max_position_pct = int(cfg.get("max_position_pct", 20))
             paper_seed_capital = int(cfg.get("paper_seed_capital", 10_000_000))
-            is_paper = bool(cfg.get("is_paper_trading", True))
-            total_value = await portfolio_total_value()
+            is_paper = account_scope == "paper"
+            total_value = await portfolio_total_value(account_scope=account_scope)
             current_value = (
                 int(position["quantity"]) * int(position["current_price"]) if position else 0
             )
@@ -124,6 +130,7 @@ class PortfolioManagerAgent:
                 avg_price=new_avg,
                 current_price=price,
                 is_paper=is_paper,
+                account_scope=account_scope,
             )
 
             order = PaperOrderRequest(
@@ -134,6 +141,7 @@ class PortfolioManagerAgent:
                 price=price,
                 signal_source=signal_source,
                 agent_id=self.agent_id,
+                account_scope=account_scope,
             )
             await insert_trade(order)
             return {
@@ -154,7 +162,8 @@ class PortfolioManagerAgent:
             quantity=0,
             avg_price=0,
             current_price=price,
-            is_paper=bool(cfg.get("is_paper_trading", True)),
+            is_paper=account_scope == "paper",
+            account_scope=account_scope,
         )
 
         order = PaperOrderRequest(
@@ -165,6 +174,7 @@ class PortfolioManagerAgent:
             price=price,
             signal_source=signal_source,
             agent_id=self.agent_id,
+            account_scope=account_scope,
         )
         await insert_trade(order)
         return {
@@ -180,7 +190,8 @@ class PortfolioManagerAgent:
         signal_source_override: Optional[str] = None,
     ) -> list[dict]:
         cfg = await get_portfolio_config()
-        totals = await today_trade_totals()
+        account_scope = self._account_scope_from_config(cfg)
+        totals = await today_trade_totals(account_scope=account_scope)
         buy_total = totals["buy_total"]
         sell_total = totals["sell_total"]
         pnl_pct = ((sell_total - buy_total) / buy_total * 100) if buy_total > 0 else 0.0

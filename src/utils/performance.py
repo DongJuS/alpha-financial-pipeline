@@ -23,7 +23,7 @@ def compute_trade_performance(rows: list[dict]) -> dict:
     realized_pnl = 0.0
     invested_capital = 0.0
     sell_returns: list[float] = []
-    equity_curve: list[float] = [0.0]
+    equity_curve: list[float] = [1.0]
     win_sells = 0
     sell_count = 0
 
@@ -59,12 +59,13 @@ def compute_trade_performance(rows: list[dict]) -> dict:
         proceeds = matched_qty * price
         trade_pnl = proceeds - cost_basis
         realized_pnl += trade_pnl
-        equity_curve.append(realized_pnl)
         sell_count += 1
         if trade_pnl > 0:
             win_sells += 1
         if cost_basis > 0:
-            sell_returns.append(trade_pnl / cost_basis)
+            trade_return = trade_pnl / cost_basis
+            sell_returns.append(trade_return)
+            equity_curve.append(equity_curve[-1] * (1.0 + trade_return))
 
         remaining_qty = held_qty - matched_qty
         pos["qty"] = remaining_qty
@@ -74,14 +75,11 @@ def compute_trade_performance(rows: list[dict]) -> dict:
     return_pct = (realized_pnl / invested_capital * 100) if invested_capital > 0 else 0.0
     win_rate = (win_sells / sell_count) if sell_count > 0 else 0.0
 
-    peak = 0.0
+    peak = equity_curve[0]
     max_drawdown_pct = 0.0
     for value in equity_curve:
         if value > peak:
             peak = value
-        # peak가 0 이하인 구간에서는 drawdown 비율을 정의하지 않습니다.
-        if peak <= 0:
-            continue
         drawdown_pct = ((value - peak) / peak) * 100
         if drawdown_pct < max_drawdown_pct:
             max_drawdown_pct = drawdown_pct

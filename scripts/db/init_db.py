@@ -160,23 +160,76 @@ CREATE_TABLES: list[str] = [
     ON CONFLICT DO NOTHING;
     """,
 
-    # 7. 포트폴리오 포지션 (현재 보유)
+    # 7. 계좌 상태 (paper/real 공통 메타데이터)
+    """
+    CREATE TABLE IF NOT EXISTS trading_accounts (
+        account_scope   VARCHAR(10) PRIMARY KEY,
+        broker_name     TEXT NOT NULL,
+        account_label   TEXT NOT NULL,
+        base_currency   VARCHAR(10) NOT NULL DEFAULT 'KRW',
+        seed_capital    BIGINT NOT NULL DEFAULT 10000000 CHECK (seed_capital >= 0),
+        cash_balance    BIGINT NOT NULL DEFAULT 10000000 CHECK (cash_balance >= 0),
+        buying_power    BIGINT NOT NULL DEFAULT 10000000 CHECK (buying_power >= 0),
+        total_equity    BIGINT NOT NULL DEFAULT 10000000 CHECK (total_equity >= 0),
+        is_active       BOOLEAN NOT NULL DEFAULT FALSE,
+        last_synced_at  TIMESTAMPTZ,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    ALTER TABLE trading_accounts
+        DROP CONSTRAINT IF EXISTS trading_accounts_account_scope_check;
+    ALTER TABLE trading_accounts
+        ADD CONSTRAINT trading_accounts_account_scope_check
+        CHECK (account_scope IN ('paper', 'real'));
+    INSERT INTO trading_accounts (
+        account_scope, broker_name, account_label, base_currency,
+        seed_capital, cash_balance, buying_power, total_equity, is_active
+    )
+    VALUES
+        ('paper', '한국투자증권 KIS', 'KIS 모의투자 계좌', 'KRW', 10000000, 10000000, 10000000, 10000000, TRUE),
+        ('real', '한국투자증권 KIS', 'KIS 실거래 계좌', 'KRW', 0, 0, 0, 0, FALSE)
+    ON CONFLICT (account_scope) DO NOTHING;
+    """,
+
+    # 8. 포트폴리오 포지션 (현재 보유)
     """
     CREATE TABLE IF NOT EXISTS portfolio_positions (
         id              BIGSERIAL PRIMARY KEY,
-        ticker          VARCHAR(10) NOT NULL UNIQUE,
+        ticker          VARCHAR(10) NOT NULL,
         name            TEXT NOT NULL,
         quantity        INTEGER NOT NULL CHECK (quantity >= 0),
         avg_price       INTEGER NOT NULL,
         current_price   INTEGER NOT NULL DEFAULT 0,
         is_paper        BOOLEAN NOT NULL DEFAULT TRUE,
+        account_scope   VARCHAR(10) NOT NULL DEFAULT 'paper',
         opened_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-    CREATE INDEX IF NOT EXISTS idx_positions_ticker ON portfolio_positions (ticker);
+    ALTER TABLE portfolio_positions
+        ADD COLUMN IF NOT EXISTS account_scope VARCHAR(10);
+    UPDATE portfolio_positions
+       SET account_scope = CASE WHEN is_paper THEN 'paper' ELSE 'real' END
+     WHERE account_scope IS NULL;
+    ALTER TABLE portfolio_positions
+        ALTER COLUMN account_scope SET DEFAULT 'paper';
+    ALTER TABLE portfolio_positions
+        DROP CONSTRAINT IF EXISTS portfolio_positions_account_scope_check;
+    ALTER TABLE portfolio_positions
+        ADD CONSTRAINT portfolio_positions_account_scope_check
+        CHECK (account_scope IN ('paper', 'real'));
+    ALTER TABLE portfolio_positions
+        ALTER COLUMN account_scope SET NOT NULL;
+    ALTER TABLE portfolio_positions
+        DROP CONSTRAINT IF EXISTS portfolio_positions_ticker_key;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_ticker_scope
+        ON portfolio_positions (ticker, account_scope);
+    CREATE INDEX IF NOT EXISTS idx_positions_scope
+        ON portfolio_positions (account_scope, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_positions_ticker
+        ON portfolio_positions (ticker);
     """,
 
-    # 8. 거래 이력
+    # 9. 거래 이력
     """
     CREATE TABLE IF NOT EXISTS trade_history (
         id              BIGSERIAL PRIMARY KEY,
@@ -190,16 +243,35 @@ CREATE_TABLES: list[str] = [
         agent_id        VARCHAR(30),
         kis_order_id    TEXT,
         is_paper        BOOLEAN NOT NULL DEFAULT TRUE,
+        account_scope   VARCHAR(10) NOT NULL DEFAULT 'paper',
         circuit_breaker BOOLEAN NOT NULL DEFAULT FALSE,  -- 서킷브레이커 강제 청산 여부
         executed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE trade_history
+        ADD COLUMN IF NOT EXISTS account_scope VARCHAR(10);
+    UPDATE trade_history
+       SET account_scope = CASE WHEN is_paper THEN 'paper' ELSE 'real' END
+     WHERE account_scope IS NULL;
+    ALTER TABLE trade_history
+        ALTER COLUMN account_scope SET DEFAULT 'paper';
+    ALTER TABLE trade_history
+        DROP CONSTRAINT IF EXISTS trade_history_account_scope_check;
+    ALTER TABLE trade_history
+        ADD CONSTRAINT trade_history_account_scope_check
+        CHECK (account_scope IN ('paper', 'real'));
+    ALTER TABLE trade_history
+        ALTER COLUMN account_scope SET NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_trade_history_ticker_date
         ON trade_history (ticker, executed_at DESC);
     CREATE INDEX IF NOT EXISTS idx_trade_history_date
         ON trade_history (executed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_trade_history_scope_date
+        ON trade_history (account_scope, executed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_trade_history_scope_ticker_date
+        ON trade_history (account_scope, ticker, executed_at DESC);
     """,
 
-    # 9. 에이전트 헬스비트 (7일 롤링)
+    # 10. 에이전트 헬스비트 (7일 롤링)
     """
     CREATE TABLE IF NOT EXISTS agent_heartbeats (
         id          BIGSERIAL PRIMARY KEY,
@@ -317,6 +389,7 @@ DROP TABLE IF EXISTS
     agent_heartbeats,
     trade_history,
     portfolio_positions,
+    trading_accounts,
     portfolio_config,
     debate_transcripts,
     predictor_tournament_scores,

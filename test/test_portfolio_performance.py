@@ -16,7 +16,7 @@ class PortfolioPerformanceMetricsTest(unittest.TestCase):
         self.assertEqual(result["total_trades"], 4)
         self.assertEqual(result["return_pct"], -3.33)
         self.assertEqual(result["win_rate"], 0.5)
-        self.assertEqual(result["max_drawdown_pct"], -200.0)
+        self.assertEqual(result["max_drawdown_pct"], -10.0)
         self.assertEqual(result["sharpe_ratio"], 0.0)
 
     def test_compute_trade_performance_without_sells(self) -> None:
