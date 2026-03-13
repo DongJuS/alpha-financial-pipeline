@@ -102,7 +102,11 @@ class NotifierAgent:
         )
         return await self.send(event_type="cycle_summary", message=text)
 
-    async def send_paper_daily_report(self, report_date: date | None = None) -> bool:
+    async def send_paper_daily_report(
+        self,
+        report_date: date | None = None,
+        reconciliation: dict | None = None,
+    ) -> bool:
         target_date = report_date or date.today()
         rows_today = await fetch_trade_rows_for_date(target_date, is_paper=True)
         rows_30d = await fetch_trade_rows(days=30, is_paper=True)
@@ -120,6 +124,11 @@ class NotifierAgent:
             f"- 30일 MDD: {metrics_30d['max_drawdown_pct']:.2f}%\n"
             f"- 30일 Sharpe: {metrics_30d['sharpe_ratio'] if metrics_30d['sharpe_ratio'] is not None else '-'}"
         )
+        if reconciliation:
+            text += (
+                f"\n- 동기화 결과: {reconciliation.get('summary', '-')}"
+                f"\n- 신규 KIS 체결 반영: {reconciliation.get('new_trades', 0)}건"
+            )
         return await self.send(event_type="paper_daily_report", message=text)
 
     async def listen_alerts(self) -> None:

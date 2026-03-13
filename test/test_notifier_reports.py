@@ -35,6 +35,27 @@ class NotifierDailyReportTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("오늘 거래:", kwargs["message"])
         self.assertIn("30일 수익률:", kwargs["message"])
 
+    async def test_send_paper_daily_report_includes_reconciliation_summary(self) -> None:
+        agent = NotifierAgent()
+
+        with (
+            patch("src.agents.notifier.fetch_trade_rows_for_date", new=AsyncMock(return_value=[])),
+            patch("src.agents.notifier.fetch_trade_rows", new=AsyncMock(return_value=[])),
+            patch.object(agent, "send", new=AsyncMock(return_value=True)) as send_mock,
+        ):
+            ok = await agent.send_paper_daily_report(
+                report_date=date(2026, 3, 13),
+                reconciliation={
+                    "summary": "KIS paper reconciliation 완료",
+                    "new_trades": 2,
+                },
+            )
+
+        self.assertTrue(ok)
+        _, kwargs = send_mock.await_args
+        self.assertIn("동기화 결과: KIS paper reconciliation 완료", kwargs["message"])
+        self.assertIn("신규 KIS 체결 반영: 2건", kwargs["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

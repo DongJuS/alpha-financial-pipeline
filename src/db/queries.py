@@ -5,7 +5,7 @@ src/db/queries.py — 코어 에이전트용 DB 쿼리 유틸
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Optional
 
 from src.db.models import (
@@ -427,6 +427,87 @@ async def insert_trade(order: PaperOrderRequest, circuit_breaker: bool = False) 
     )
 
 
+async def upsert_trade_fill(
+    *,
+    account_scope: AccountScope,
+    ticker: str,
+    name: str,
+    side: str,
+    quantity: int,
+    price: int,
+    signal_source: str,
+    agent_id: str,
+    kis_order_id: str,
+    executed_at: datetime | None = None,
+) -> bool:
+    scope = normalize_account_scope(account_scope)
+    exists = await fetchval(
+        """
+        SELECT 1
+        FROM trade_history
+        WHERE account_scope = $1
+          AND kis_order_id = $2
+        LIMIT 1
+        """,
+        scope,
+        kis_order_id,
+    )
+
+    if exists:
+        await execute(
+            """
+            UPDATE trade_history
+            SET ticker = $3,
+                name = $4,
+                side = $5,
+                quantity = $6,
+                price = $7,
+                amount = $8,
+                signal_source = $9,
+                agent_id = $10,
+                executed_at = COALESCE($11, executed_at)
+            WHERE account_scope = $1
+              AND kis_order_id = $2
+            """,
+            scope,
+            kis_order_id,
+            ticker,
+            name,
+            side,
+            quantity,
+            price,
+            quantity * price,
+            signal_source,
+            agent_id,
+            executed_at,
+        )
+        return False
+
+    await execute(
+        """
+        INSERT INTO trade_history (
+            ticker, name, side, quantity, price, amount,
+            signal_source, agent_id, kis_order_id, is_paper, account_scope, circuit_breaker, executed_at
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, TRUE, $10, FALSE, COALESCE($11, NOW())
+        )
+        """,
+        ticker,
+        name,
+        side,
+        quantity,
+        price,
+        quantity * price,
+        signal_source,
+        agent_id,
+        kis_order_id,
+        scope,
+        executed_at,
+    )
+    return True
+
+
 async def insert_broker_order(
     client_order_id: str,
     account_scope: AccountScope,
@@ -521,6 +602,107 @@ async def attach_broker_order_reference(
         client_order_id,
         broker_name,
         broker_order_id,
+    )
+
+
+async def upsert_kis_broker_order(
+    *,
+    account_scope: AccountScope,
+    broker_order_id: str,
+    ticker: str,
+    name: str,
+    side: str,
+    requested_quantity: int,
+    requested_price: int,
+    filled_quantity: int,
+    avg_fill_price: int | None,
+    status: str,
+    requested_at: datetime | None,
+    filled_at: datetime | None,
+    signal_source: str = "BLEND",
+    agent_id: str = "kis_reconciler",
+) -> None:
+    scope = normalize_account_scope(account_scope)
+    client_order_id = f"kis-sync-{broker_order_id}"
+    exists = await fetchval(
+        """
+        SELECT 1
+        FROM broker_orders
+        WHERE client_order_id = $1
+        LIMIT 1
+        """,
+        client_order_id,
+    )
+
+    if exists:
+        await execute(
+            """
+            UPDATE broker_orders
+            SET broker_name = '한국투자증권 KIS',
+                ticker = $2,
+                name = $3,
+                side = $4,
+                requested_quantity = $5,
+                requested_price = $6,
+                filled_quantity = $7,
+                avg_fill_price = $8,
+                status = $9,
+                signal_source = COALESCE(signal_source, $10),
+                agent_id = COALESCE(agent_id, $11),
+                broker_order_id = $12,
+                requested_at = COALESCE($13, requested_at),
+                filled_at = COALESCE($14, filled_at),
+                updated_at = NOW()
+            WHERE client_order_id = $1
+            """,
+            client_order_id,
+            ticker,
+            name,
+            side,
+            requested_quantity,
+            requested_price,
+            filled_quantity,
+            avg_fill_price,
+            status,
+            signal_source,
+            agent_id,
+            broker_order_id,
+            requested_at,
+            filled_at,
+        )
+        return
+
+    await execute(
+        """
+        INSERT INTO broker_orders (
+            client_order_id, account_scope, broker_name, ticker, name, side,
+            order_type, requested_quantity, requested_price,
+            filled_quantity, avg_fill_price, status,
+            signal_source, agent_id, broker_order_id, rejection_reason,
+            requested_at, filled_at, created_at, updated_at
+        ) VALUES (
+            $1, $2, '한국투자증권 KIS', $3, $4, $5,
+            'MARKET', $6, $7,
+            $8, $9, $10,
+            $11, $12, $13, NULL,
+            COALESCE($14, NOW()), $15, NOW(), NOW()
+        )
+        """,
+        client_order_id,
+        scope,
+        ticker,
+        name,
+        side,
+        requested_quantity,
+        requested_price,
+        filled_quantity,
+        avg_fill_price,
+        status,
+        signal_source,
+        agent_id,
+        broker_order_id,
+        requested_at,
+        filled_at,
     )
 
 

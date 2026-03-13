@@ -648,7 +648,7 @@ async def get_readiness(
 async def get_readiness_audits(
     _: Annotated[dict, Depends(get_admin_user)],
     limit: int = Query(default=20, ge=1, le=200),
-    audit_type: Optional[str] = Query(default=None, pattern="^(security|risk_rules)$"),
+    audit_type: Optional[str] = Query(default=None, pattern="^(security|risk_rules|paper_reconciliation)$"),
 ) -> ReadinessAuditResponse:
     """운영 감사/실거래 모드 전환 감사 이력을 반환합니다."""
     operational_rows = await fetch_operational_audits(limit=limit, audit_type=audit_type)

@@ -137,7 +137,14 @@ async def phase5_checks() -> list[CheckResult]:
     checks.append(CheckResult("ui:market_chart", "ComposedChart" in market_page or "LineChart" in market_page, "market chart"))
 
     dashboard_page = _read_text(ROOT / "ui/web/src/pages/Dashboard.tsx")
-    checks.append(CheckResult("ui:dashboard_chart", "LineChart" in dashboard_page, "dashboard performance chart"))
+    dashboard_component = _read_text(ROOT / "ui/web/src/components/TossTradingDashboard.tsx")
+    checks.append(
+        CheckResult(
+            "ui:dashboard_chart",
+            "LineChart" in dashboard_page or "LineChart" in dashboard_component,
+            "dashboard performance chart",
+        )
+    )
 
     settings_page = _read_text(ROOT / "ui/web/src/pages/Settings.tsx")
     checks.append(
@@ -216,6 +223,23 @@ async def phase6_checks() -> list[CheckResult]:
             "phase6:load_test",
             bool(latest_load and latest_load["passed"]),
             "load scenario",
+        )
+    )
+
+    latest_reconcile = await fetchrow(
+        """
+        SELECT passed
+        FROM operational_audits
+        WHERE audit_type = 'paper_reconciliation'
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+    )
+    checks.append(
+        CheckResult(
+            "phase6:paper_reconciliation",
+            bool(latest_reconcile and latest_reconcile["passed"]),
+            "latest paper_reconciliation audit",
         )
     )
 

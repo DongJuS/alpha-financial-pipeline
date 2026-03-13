@@ -404,13 +404,18 @@ CREATE_TABLES: list[str] = [
     """
     CREATE TABLE IF NOT EXISTS operational_audits (
         id          BIGSERIAL PRIMARY KEY,
-        audit_type  VARCHAR(30) NOT NULL CHECK (audit_type IN ('security', 'risk_rules')),
+        audit_type  VARCHAR(30) NOT NULL CHECK (audit_type IN ('security', 'risk_rules', 'paper_reconciliation')),
         passed      BOOLEAN NOT NULL,
         summary     TEXT NOT NULL,
         details     JSONB,
         executed_by TEXT,
         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE operational_audits
+        DROP CONSTRAINT IF EXISTS operational_audits_audit_type_check;
+    ALTER TABLE operational_audits
+        ADD CONSTRAINT operational_audits_audit_type_check
+        CHECK (audit_type IN ('security', 'risk_rules', 'paper_reconciliation'));
     CREATE INDEX IF NOT EXISTS idx_operational_audits_type_ts
         ON operational_audits (audit_type, created_at DESC);
     """,
