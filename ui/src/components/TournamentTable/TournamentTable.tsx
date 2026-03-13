@@ -16,58 +16,55 @@ export default function TournamentTable() {
     return (
       <div className="card space-y-3">
         {[...Array(5)].map((_, i) => (
-          <div key={i} className="h-8 bg-gray-100 rounded animate-pulse" />
+          <div key={i} className="h-16 rounded-2xl bg-white animate-pulse" />
         ))}
       </div>
     );
   }
 
   return (
-    <div className="card">
-      <h3 className="mb-4 text-sm font-bold text-slate-700">
+    <div className="card space-y-3">
+      <h3 className="text-sm font-bold text-[#191F28]">
         Strategy A 토너먼트 · 최근 {data?.period_days}일 누적 정확도
       </h3>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-surface-border text-left text-xs text-gray-400">
-            <th className="pb-2 pr-3">순위</th>
-            <th className="pb-2 pr-3">에이전트</th>
-            <th className="pb-2 pr-3">모델</th>
-            <th className="pb-2 pr-3 text-right">정확도</th>
-            <th className="pb-2 text-right">전적</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-surface-border">
-          {data?.rankings.map((r, idx) => (
-            <tr
-              key={r.agent_id}
-              className={r.is_current_winner ? "bg-brand-50/60" : ""}
+      <div className="space-y-2">
+        {data?.rankings.map((rank, idx) => {
+          const accuracy = rank.rolling_accuracy != null ? `${(rank.rolling_accuracy * 100).toFixed(1)}%` : "—";
+          return (
+            <div
+              key={rank.agent_id}
+              className={`rounded-2xl bg-white px-4 py-3 shadow-[0_6px_16px_rgba(25,31,40,0.05)] ${
+                rank.is_current_winner ? "ring-2 ring-[#0019FF]/20" : ""
+              }`}
             >
-              <td className="py-2.5 pr-3 font-bold text-gray-400">
-                {idx + 1}
-              </td>
-              <td className="py-2.5 pr-3 font-semibold text-gray-800">
-                {r.is_current_winner && <span className="mr-1 text-blue-600">★</span>}
-                {r.persona}
-              </td>
-              <td className="py-2.5 pr-3 text-gray-500">
-                <span className="mr-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                  {LLM_BADGES[r.llm_model] ?? "Model"}
-                </span>
-                {r.llm_model}
-              </td>
-              <td className="py-2.5 pr-3 text-right font-semibold">
-                {r.rolling_accuracy != null
-                  ? `${(r.rolling_accuracy * 100).toFixed(1)}%`
-                  : "—"}
-              </td>
-              <td className="py-2.5 text-right text-gray-500">
-                {r.correct}/{r.total}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#F2F4F6] text-xs font-bold text-[#8B95A1]">
+                    {idx + 1}
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-[#191F28]">
+                      {rank.is_current_winner ? "★ " : ""}
+                      {rank.persona}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-[#8B95A1]">{rank.agent_id}</p>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className="rounded-full bg-[#EAF1FF] px-2.5 py-1 text-[11px] font-semibold text-[#0019FF]">
+                    {LLM_BADGES[rank.llm_model] ?? "Model"}
+                  </span>
+                  <p className="mt-1 text-sm font-bold text-[#191F28]">{accuracy}</p>
+                  <p className="text-[11px] text-[#8B95A1]">
+                    {rank.correct}/{rank.total}
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

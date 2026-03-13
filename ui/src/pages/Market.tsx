@@ -1,5 +1,6 @@
 /**
- * ui/src/pages/Market.tsx — 시장 데이터 / 지수 + 종목 OHLCV 차트
+ * ui/src/pages/Market.tsx
+ * Market page with cleaner Toss-like chart controls and hierarchy.
  */
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -7,9 +8,9 @@ import {
   Area,
   AreaChart,
   Bar,
+  ComposedChart,
   Line,
   LineChart,
-  ComposedChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -114,9 +115,7 @@ function shortTime(ts: string): string {
 
 function shortClock(ts: string): string {
   const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) {
-    return ts.slice(11, 19);
-  }
+  if (Number.isNaN(d.getTime())) return ts.slice(11, 19);
   return d.toLocaleTimeString("ko-KR", {
     hour: "2-digit",
     minute: "2-digit",
@@ -145,8 +144,6 @@ export default function Market() {
           ...item,
           label: shortTime(item.timestamp_kst),
           oc_mid: (item.open + item.close) / 2,
-          oc_range: Math.abs(item.close - item.open),
-          is_up: item.close >= item.open,
         })),
     [ohlcv]
   );
@@ -161,41 +158,46 @@ export default function Market() {
   );
 
   return (
-    <div className="page-shell">
-      <h1 className="section-title">시장 데이터</h1>
+    <div className="page-shell space-y-4">
+      <section className="rounded-[30px] bg-[#F2F4F6] px-6 py-6 shadow-[0_12px_28px_rgba(25,31,40,0.06)] md:px-7">
+        <p className="text-[13px] font-semibold text-[#8B95A1]">시장 데이터</p>
+        <h1 className="mt-1 text-[32px] font-extrabold tracking-[-0.03em] text-[#191F28]">마켓 센터</h1>
+        <p className="mt-2 text-sm text-[#8B95A1]">내부 수집 데이터와 오픈소스 데이터를 하나의 흐름으로 비교합니다.</p>
+      </section>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {["kospi", "kosdaq"].map((key) => {
           const item = index?.[key as keyof IndexPayload];
+          const positive = (item?.change_pct ?? 0) >= 0;
           return (
-            <div key={key} className="card">
+            <article key={key} className="card">
               <p className="kpi-label">{key.toUpperCase()}</p>
               {indexLoading ? (
-                <div className="mt-2 h-8 animate-pulse rounded-xl bg-slate-100" />
+                <div className="mt-2 h-8 rounded-xl bg-white animate-pulse" />
               ) : (
                 <>
                   <p className="number-lg mt-1">{item?.value?.toLocaleString("ko-KR") ?? "—"}</p>
-                  <p className={`mt-0.5 text-sm font-semibold ${(item?.change_pct ?? 0) >= 0 ? "text-profit" : "text-loss"}`}>
+                  <p className={`mt-0.5 text-sm font-semibold ${positive ? "text-profit" : "text-loss"}`}>
                     {item?.change_pct != null ? `${item.change_pct >= 0 ? "+" : ""}${item.change_pct.toFixed(2)}%` : "—"}
                   </p>
                 </>
               )}
-            </div>
+            </article>
           );
         })}
-      </div>
+      </section>
 
-      <div className="card space-y-4">
-        <div className="flex items-center justify-between gap-2">
+      <section className="card space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-base font-bold text-slate-800">종목 OHLCV 차트</h2>
-            <p className="mt-1 text-xs text-slate-500">
+            <h2 className="text-base font-bold text-[#191F28]">종목 OHLCV 차트</h2>
+            <p className="mt-1 text-xs text-[#8B95A1]">
               {ohlcv?.name ? `${ohlcv.name} (${ohlcv.ticker})` : "종목 선택"} · {chartSource === "db" ? "내부 수집 DB" : "오픈소스 API(FDR)"}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <select
-              className="min-w-[172px]"
+              className="min-w-[190px] bg-white"
               value={activeTicker ?? ""}
               onChange={(e) => setSelectedTicker(e.target.value)}
               disabled={tickersLoading || !tickers?.length}
@@ -206,11 +208,7 @@ export default function Market() {
                 </option>
               ))}
             </select>
-            <select
-              className="min-w-[140px]"
-              value={chartSource}
-              onChange={(e) => setChartSource(e.target.value as ChartSource)}
-            >
+            <select className="min-w-[140px] bg-white" value={chartSource} onChange={(e) => setChartSource(e.target.value as ChartSource)}>
               <option value="db">내부 DB</option>
               <option value="opensource">오픈소스 API</option>
             </select>
@@ -218,14 +216,14 @@ export default function Market() {
         </div>
 
         {ohlcvLoading || chartData.length === 0 ? (
-          <div className="h-72 rounded-2xl bg-slate-100/80 animate-pulse" />
+          <div className="h-72 rounded-2xl bg-white animate-pulse" />
         ) : (
-          <div className="space-y-4">
-            <div className="h-72">
+          <div className="space-y-3">
+            <div className="h-72 rounded-2xl bg-white px-2 py-2">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={chartData} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={16} />
-                  <YAxis yAxisId="price" orientation="right" tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#8B95A1" }} minTickGap={16} />
+                  <YAxis yAxisId="price" orientation="right" tick={{ fontSize: 11, fill: "#8B95A1" }} domain={["auto", "auto"]} />
                   <Tooltip
                     formatter={(value: number, name: string) => {
                       if (["open", "high", "low", "close"].includes(name)) {
@@ -234,41 +232,42 @@ export default function Market() {
                       return [Number(value).toLocaleString("ko-KR"), name];
                     }}
                   />
-                  <Bar yAxisId="price" dataKey="high" fill="#E5E7EB" radius={[2, 2, 0, 0]} barSize={2} />
-                  <Bar yAxisId="price" dataKey="low" fill="#E5E7EB" radius={[0, 0, 2, 2]} barSize={2} />
-                  <Bar yAxisId="price" dataKey="oc_mid" fill="#93C5FD" barSize={6} />
-                  <Area yAxisId="price" dataKey="close" stroke="#2563EB" fill="#DBEAFE" fillOpacity={0.35} />
+                  <Bar yAxisId="price" dataKey="high" fill="#E8EBEF" radius={[2, 2, 0, 0]} barSize={2} />
+                  <Bar yAxisId="price" dataKey="low" fill="#E8EBEF" radius={[0, 0, 2, 2]} barSize={2} />
+                  <Bar yAxisId="price" dataKey="oc_mid" fill="#A9B8FF" barSize={6} />
+                  <Area yAxisId="price" dataKey="close" stroke="#0019FF" fill="#EAF1FF" fillOpacity={0.45} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="h-36">
+            <div className="h-36 rounded-2xl bg-white px-2 py-2">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData} margin={{ top: 0, right: 12, bottom: 0, left: 0 }}>
-                  <XAxis dataKey="label" tick={{ fontSize: 10 }} minTickGap={16} />
-                  <YAxis tick={{ fontSize: 10 }} orientation="right" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#8B95A1" }} minTickGap={16} />
+                  <YAxis tick={{ fontSize: 10, fill: "#8B95A1" }} orientation="right" />
                   <Tooltip formatter={(value: number) => Number(value).toLocaleString("ko-KR")} />
-                  <Area dataKey="volume" stroke="#10B981" fill="#A7F3D0" fillOpacity={0.5} />
+                  <Area dataKey="volume" stroke="#0EA5E9" fill="#D9F1FF" fillOpacity={0.55} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
         )}
-      </div>
+      </section>
 
-      <div className="card space-y-3">
+      <section className="card space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-slate-800">실시간 가격 추이</h2>
-          <p className="text-xs text-slate-500">5초 폴링 · Redis 실시간 캐시</p>
+          <h2 className="text-base font-bold text-[#191F28]">실시간 가격 추이</h2>
+          <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-[#8B95A1]">5초 폴링</span>
         </div>
+
         {realtimeLoading || realtimeData.length === 0 ? (
-          <div className="h-56 rounded-2xl bg-slate-100/80 animate-pulse" />
+          <div className="h-56 rounded-2xl bg-white animate-pulse" />
         ) : (
-          <div className="h-56">
+          <div className="h-56 rounded-2xl bg-white px-2 py-2">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={realtimeData} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
-                <XAxis dataKey="label" tick={{ fontSize: 10 }} minTickGap={16} />
-                <YAxis tick={{ fontSize: 10 }} orientation="right" domain={["auto", "auto"]} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#8B95A1" }} minTickGap={16} />
+                <YAxis tick={{ fontSize: 10, fill: "#8B95A1" }} orientation="right" domain={["auto", "auto"]} />
                 <Tooltip
                   formatter={(value: number, name: string) => {
                     if (name === "current_price") {
@@ -277,12 +276,12 @@ export default function Market() {
                     return [Number(value).toLocaleString("ko-KR"), name];
                   }}
                 />
-                <Line type="monotone" dataKey="current_price" stroke="#0EA5E9" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="current_price" stroke="#0019FF" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }
