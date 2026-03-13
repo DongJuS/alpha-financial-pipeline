@@ -18,3 +18,8 @@ ui/node_modules/
 
 dist/
 ui/dist/
+
+# Local UI debug and cache artifacts
+.playwright-cli/
+artifacts/
+.vite/
