@@ -133,13 +133,13 @@ async def phase4_checks() -> list[CheckResult]:
 async def phase5_checks() -> list[CheckResult]:
     checks: list[CheckResult] = []
 
-    market_page = _read_text(ROOT / "ui/src/pages/Market.tsx")
+    market_page = _read_text(ROOT / "ui/web/src/pages/Market.tsx")
     checks.append(CheckResult("ui:market_chart", "ComposedChart" in market_page or "LineChart" in market_page, "market chart"))
 
-    dashboard_page = _read_text(ROOT / "ui/src/pages/Dashboard.tsx")
+    dashboard_page = _read_text(ROOT / "ui/web/src/pages/Dashboard.tsx")
     checks.append(CheckResult("ui:dashboard_chart", "LineChart" in dashboard_page, "dashboard performance chart"))
 
-    settings_page = _read_text(ROOT / "ui/src/pages/Settings.tsx")
+    settings_page = _read_text(ROOT / "ui/web/src/pages/Settings.tsx")
     checks.append(
         CheckResult(
             "ui:settings_api",
