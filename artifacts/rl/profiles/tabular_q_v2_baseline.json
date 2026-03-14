@@ -1,0 +1,16 @@
+{
+  "profile_id": "tabular_q_v2_baseline",
+  "algorithm": "tabular_q_learning",
+  "state_version": "qlearn_v2",
+  "trainer_params": {
+    "episodes": 300,
+    "lookback": 20,
+    "learning_rate": 0.10,
+    "discount_factor": 0.95,
+    "epsilon": 0.30,
+    "trade_penalty_bps": 2,
+    "opportunity_cost_factor": 0.5,
+    "num_seeds": 5
+  },
+  "default_train_ratio": 0.7
+}

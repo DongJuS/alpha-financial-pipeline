@@ -31,6 +31,8 @@ load_dotenv(ROOT / ".env")
 
 from src.agents.rl_trading import RLDataset, RLPolicyStore
 from src.agents.rl_trading_v2 import TabularQTrainerV2
+from src.agents.rl_experiment import RLExperimentManager, load_profile
+from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
 
 
 def _download_history(ticker: str, period: str, interval: str) -> pd.DataFrame:
@@ -100,6 +102,8 @@ def main() -> None:
     parser.add_argument("--trade-penalty-bps", type=int, default=2, help="trade penalty in bps")
     parser.add_argument("--opportunity-cost", type=float, default=0.5, help="opportunity cost factor")
     parser.add_argument("--num-seeds", type=int, default=5, help="multi-seed training runs")
+    parser.add_argument("--profile", default="tabular_q_v2_baseline", help="RL profile ID")
+    parser.add_argument("--no-experiment", action="store_true", help="실험 기록 생략")
     args = parser.parse_args()
 
     output_dir = ROOT / "artifacts" / "rl" / "yfinance"
@@ -125,12 +129,49 @@ def main() -> None:
         opportunity_cost_factor=args.opportunity_cost,
         num_seeds=args.num_seeds,
     )
+
+    # 실험 run 생성 (--no-experiment가 아닌 경우)
+    exp_manager = None
+    run_id = None
+    profile = load_profile(args.profile)
+    if not args.no_experiment:
+        exp_manager = RLExperimentManager()
+        run_id = exp_manager.create_run(
+            dataset=dataset,
+            profile=profile,
+            data_source="yfinance",
+            data_range=args.period,
+            state_version="qlearn_v2",
+            trainer_overrides={
+                "episodes": args.episodes,
+                "lookback": args.lookback,
+                "learning_rate": args.learning_rate,
+                "discount_factor": args.discount_factor,
+                "epsilon": args.epsilon,
+                "trade_penalty_bps": args.trade_penalty_bps,
+                "opportunity_cost_factor": args.opportunity_cost,
+                "num_seeds": args.num_seeds,
+            },
+        )
+
     artifact, split_metadata = trainer.train_with_metadata(dataset, train_ratio=args.train_ratio)
 
-    policy_store = RLPolicyStore()
-    artifact = policy_store.save_policy(artifact)
+    # 실험 메타데이터 기록
+    if exp_manager and run_id:
+        exp_manager.record_split(run_id, split_metadata)
+        exp_manager.record_metrics(run_id, artifact.evaluation)
+
+    # V2 정책 저장소 사용 (registry.json 기반)
+    store_v2 = RLPolicyStoreV2()
+    artifact = store_v2.save_policy(artifact, run_id=run_id)
     if artifact.evaluation.approved:
-        policy_store.activate_policy(artifact)
+        activated = store_v2.activate_policy(artifact)
+        if activated and exp_manager and run_id:
+            exp_manager.mark_promoted(run_id)
+
+    # 실험 ↔ 정책 링크
+    if exp_manager and run_id:
+        exp_manager.link_artifact(run_id, artifact.policy_id, artifact.artifact_path)
 
     latest_action, latest_confidence, latest_state, latest_q_values = trainer.infer_action(
         artifact,
@@ -177,6 +218,7 @@ def main() -> None:
             "artifact_path": artifact.artifact_path,
             "approved": artifact.evaluation.approved,
             "state_version": "qlearn_v2",
+            "run_id": run_id,
         },
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -59,6 +59,9 @@ class PolicyEntry(BaseModel):
     epsilon: float = 0.15
     trade_penalty_bps: int = 5
 
+    # 실험 run 양방향 참조
+    run_id: Optional[str] = None
+
 
 class TickerPolicies(BaseModel):
     """종목별 정책 목록 및 활성 정책 포인터."""
