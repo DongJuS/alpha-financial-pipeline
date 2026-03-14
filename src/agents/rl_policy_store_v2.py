@@ -92,10 +92,19 @@ class RLPolicyStoreV2:
 
     # ──────────────────────────── Policy CRUD ────────────────────────────
 
-    def save_policy(self, artifact: RLPolicyArtifact) -> RLPolicyArtifact:
+    def save_policy(
+        self,
+        artifact: RLPolicyArtifact,
+        *,
+        run_id: str | None = None,
+    ) -> RLPolicyArtifact:
         """정책 아티팩트를 파일로 저장하고 레지스트리에 등록합니다.
 
         저장 경로: models/<algorithm>/<ticker>/<policy_id>.json
+
+        Args:
+            artifact: 저장할 정책 아티팩트
+            run_id: 실험 run ID (양방향 참조용)
         """
         registry = self.load_registry()
 
@@ -139,6 +148,7 @@ class RLPolicyStoreV2:
             discount_factor=artifact.discount_factor,
             epsilon=artifact.epsilon,
             trade_penalty_bps=artifact.trade_penalty_bps,
+            run_id=run_id,
         )
         registry.register_policy(entry)
         self._maybe_save()
