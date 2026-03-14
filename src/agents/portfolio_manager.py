@@ -31,6 +31,7 @@ from src.db.queries import (
 )
 from src.utils.account_scope import normalize_account_scope
 from src.utils.logging import get_logger, setup_logging
+from src.utils.market_hours import MARKET_HOURS_ENFORCED, market_session_status
 from src.utils.performance import compute_trade_performance
 from src.utils.redis_client import (
     KEY_LATEST_TICKS,
@@ -101,6 +102,62 @@ class PortfolioManagerAgent:
                 },
                 ensure_ascii=False,
             ),
+        )
+
+    async def _publish_orders_event(
+        self,
+        *,
+        orders: list[dict],
+        enabled_scopes: list[str],
+        blocked_scopes: list[dict[str, object]],
+        market_status: str,
+        skip_reason: Optional[str] = None,
+    ) -> None:
+        await publish_message(
+            TOPIC_ORDERS,
+            json.dumps(
+                {
+                    "type": "orders_executed",
+                    "agent_id": self.agent_id,
+                    "count": len(orders),
+                    "enabled_scopes": enabled_scopes,
+                    "blocked_scopes": blocked_scopes,
+                    "market_hours_enforced": MARKET_HOURS_ENFORCED,
+                    "market_status": market_status,
+                    "skip_reason": skip_reason,
+                    "orders": orders,
+                    "timestamp_utc": datetime.utcnow().isoformat() + "Z",
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+    async def _record_processing_heartbeat(
+        self,
+        *,
+        status: str,
+        last_action: str,
+        orders_executed: int,
+        enabled_scopes: list[str],
+        blocked_scopes: list[dict[str, object]],
+        market_status: str,
+        skip_reason: Optional[str] = None,
+    ) -> None:
+        await set_heartbeat(self.agent_id)
+        await insert_heartbeat(
+            AgentHeartbeatRecord(
+                agent_id=self.agent_id,
+                status=status,
+                last_action=last_action,
+                metrics={
+                    "orders_executed": orders_executed,
+                    "enabled_scopes": enabled_scopes,
+                    "blocked_scopes": blocked_scopes,
+                    "market_hours_enforced": MARKET_HOURS_ENFORCED,
+                    "market_status": market_status,
+                    "skip_reason": skip_reason,
+                },
+            )
         )
 
     async def _resolve_name_and_price(self, ticker: str, target_price: Optional[int]) -> tuple[str, int]:
@@ -251,6 +308,30 @@ class PortfolioManagerAgent:
             )
             return []
 
+        market_status = await market_session_status()
+        if market_status != "open":
+            orders: list[dict] = []
+            blocked_scopes: list[dict[str, object]] = []
+            last_action = f"장 마감/휴장으로 주문 생략 ({market_status})"
+            await self._publish_orders_event(
+                orders=orders,
+                enabled_scopes=enabled_scopes,
+                blocked_scopes=blocked_scopes,
+                market_status=market_status,
+                skip_reason="market_closed",
+            )
+            await self._record_processing_heartbeat(
+                status="healthy",
+                last_action=last_action,
+                orders_executed=0,
+                enabled_scopes=enabled_scopes,
+                blocked_scopes=blocked_scopes,
+                market_status=market_status,
+                skip_reason="market_closed",
+            )
+            logger.info("PortfolioManagerAgent 장외 주문 스킵: market_status=%s", market_status)
+            return []
+
         orders: list[dict] = []
         blocked_scopes: list[dict[str, object]] = []
         for account_scope in enabled_scopes:
@@ -272,34 +353,20 @@ class PortfolioManagerAgent:
 
         hb_status = "healthy" if len(blocked_scopes) < len(enabled_scopes) else "degraded"
 
-        await publish_message(
-            TOPIC_ORDERS,
-            json.dumps(
-                {
-                    "type": "orders_executed",
-                    "agent_id": self.agent_id,
-                    "count": len(orders),
-                    "enabled_scopes": enabled_scopes,
-                    "blocked_scopes": blocked_scopes,
-                    "orders": orders,
-                    "timestamp_utc": datetime.utcnow().isoformat() + "Z",
-                },
-                ensure_ascii=False,
-            ),
+        await self._publish_orders_event(
+            orders=orders,
+            enabled_scopes=enabled_scopes,
+            blocked_scopes=blocked_scopes,
+            market_status=market_status,
         )
 
-        await set_heartbeat(self.agent_id)
-        await insert_heartbeat(
-            AgentHeartbeatRecord(
-                agent_id=self.agent_id,
-                status=hb_status,
-                last_action=f"주문 처리 완료 ({len(orders)}건)",
-                metrics={
-                    "orders_executed": len(orders),
-                    "enabled_scopes": enabled_scopes,
-                    "blocked_scopes": blocked_scopes,
-                },
-            )
+        await self._record_processing_heartbeat(
+            status=hb_status,
+            last_action=f"주문 처리 완료 ({len(orders)}건)",
+            orders_executed=len(orders),
+            enabled_scopes=enabled_scopes,
+            blocked_scopes=blocked_scopes,
+            market_status=market_status,
         )
         logger.info("PortfolioManagerAgent 주문 처리 완료: %d건", len(orders))
         return orders

@@ -303,7 +303,12 @@
     "strategy_blend_ratio": 0.5,
     "max_position_pct": 20,
     "daily_loss_limit_pct": 3,
-    "is_paper_trading": true
+    "is_paper_trading": true,
+    "enable_paper_trading": true,
+    "enable_real_trading": false,
+    "primary_account_scope": "paper",
+    "market_hours_enforced": true,
+    "market_status": "after_hours"
   }
   ```
 
@@ -367,8 +372,16 @@
 
 ### POST `/portfolio/trading-mode`
 - **설명:** 페이퍼/실거래 모드 전환 (관리자 전용)
-- **Request Body:** `{ "is_paper": false, "confirmation_code": "string" }`
-- **동작:** 실거래(`is_paper=false`) 전환 시 confirmation_code + readiness 점검을 모두 통과해야 적용됩니다.
+- **Request Body:**
+  ```json
+  {
+    "enable_paper_trading": true,
+    "enable_real_trading": true,
+    "primary_account_scope": "paper",
+    "confirmation_code": "string"
+  }
+  ```
+- **동작:** 실거래 활성화(`enable_real_trading=true`) 시 confirmation_code + readiness 점검을 모두 통과해야 적용됩니다.
 
 ---
 
@@ -411,4 +424,118 @@
 
 ---
 
-*Last updated: 2026-03-12*
+## 🧩 확장 API 메모 (통합 테스트 진행 중)
+
+아래 엔드포인트는 RL Trading, Search/Scraping, 5-agent 의사결정 계층을 위한 확장 메모입니다.
+기존 코어 API를 대체하지 않으며, 최종 주문 권한은 계속 `PortfolioManagerAgent`에 있습니다.
+
+### POST `/agents/review-council/run`
+- **설명:** 5개 planning agent를 호출해 개발 방향성과 우선순위를 생성
+- **인증:** 필요
+- **Request Body:**
+  ```json
+  {
+    "task": "RL Trading과 Search/Scraping 통합 우선순위 결정",
+    "scope": ["docs", "api", "storage"],
+    "constraints": [
+      "Strategy A/B 유지",
+      "PortfolioManager 주문 권한 유지",
+      "README는 통합 테스트 진행 중 표기"
+    ]
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "task": "RL Trading과 Search/Scraping 통합 우선순위 결정",
+    "agents": {
+      "fast_flow_agent": {
+        "summary": "검색 계약 먼저 고정 후 RL lane 병렬 준비"
+      },
+      "slow_meticulous_agent": {
+        "checkpoints": ["storage schema", "evaluation gate", "audit trail"]
+      },
+      "optimist_agent": {
+        "opportunities": ["Strategy B 품질 향상", "RL feature 확장"]
+      },
+      "pessimist_agent": {
+        "risks": ["출처 미저장", "과적합 정책의 조기 연결"]
+      },
+      "decision_director_agent": {
+        "selected_direction": "search-first-then-rl-offline",
+        "why": "추적 가능한 데이터 계약이 먼저 필요하기 때문"
+      }
+    }
+  }
+  ```
+
+### POST `/rl/training-jobs`
+- **설명:** RL 학습 작업 생성
+- **Request Body:**
+  ```json
+  {
+    "dataset_version": "rl_ds_v1",
+    "policy_family": "ppo",
+    "tickers": ["005930", "000660"],
+    "feature_profile": "market_plus_research_v1"
+  }
+  ```
+- **Response (202):**
+  ```json
+  {
+    "job_id": "rl_train_001",
+    "status": "queued",
+    "dataset_version": "rl_ds_v1"
+  }
+  ```
+
+### GET `/rl/training-jobs/{job_id}`
+- **설명:** RL 학습 작업 상태/결과 조회
+
+### GET `/rl/evaluations`
+- **설명:** RL 평가 결과 목록 조회
+- **Query Params:** `policy_id`, `dataset_version`, `status=approved|hold|rejected`
+
+### GET `/rl/policies`
+- **설명:** 등록된 RL 정책 목록 조회
+
+### GET `/rl/policies/active`
+- **설명:** 현재 활성 정책 또는 shadow 정책 조회
+
+### POST `/research/search-jobs`
+- **설명:** 검색/스크래핑 파이프라인 실행
+- **Request Body:**
+  ```json
+  {
+    "ticker": "005930",
+    "query": "삼성전자 AI 반도체 공급망 2026",
+    "intent": "research",
+    "max_results": 10
+  }
+  ```
+- **Response (202):**
+  ```json
+  {
+    "job_id": "research_001",
+    "status": "queued"
+  }
+  ```
+
+### GET `/research/search-jobs/{job_id}`
+- **설명:** 검색 job 상태 조회
+
+### GET `/research/search-jobs/{job_id}/results`
+- **설명:** 검색 결과, source, extraction 요약 조회
+
+### GET `/research/sources/{source_id}`
+- **설명:** 원문 source 메타데이터 및 구조화 결과 조회
+
+### GET `/research/extractions/{extraction_id}`
+- **설명:** Claude 기반 추출 결과 조회
+
+### 설계 메모
+- 검색 파이프라인은 `SearXNG -> 웹 페이지 접속 -> ScrapeGraphAI -> Claude CLI`를 전제로 합니다.
+- RL 정책은 학습/평가/등록 단계를 거친 뒤에만 활성 정책이 될 수 있습니다.
+- `review-council` API는 개발 의사결정용이며 주문이나 거래 상태를 직접 변경하지 않습니다.
+
+*Last updated: 2026-03-14*

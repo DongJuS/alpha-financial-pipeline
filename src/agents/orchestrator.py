@@ -23,7 +23,10 @@ load_dotenv(ROOT / ".env")
 from src.agents.collector import CollectorAgent
 from src.agents.notifier import NotifierAgent
 from src.agents.portfolio_manager import PortfolioManagerAgent
+from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
+from src.agents.rl_trading import RLPolicyStore
 from src.agents.predictor import PredictorAgent
+from src.agents.rl_trading import RLTradingAgent
 from src.agents.blending import blend_strategy_signals
 from src.agents.strategy_b_consensus import StrategyBConsensus
 from src.agents.strategy_a_tournament import StrategyATournament
@@ -32,6 +35,7 @@ from src.db.queries import insert_heartbeat
 from src.utils.config import get_settings
 from src.utils.db_client import fetch
 from src.utils.logging import get_logger, setup_logging
+from src.utils.market_hours import market_session_status
 from src.utils.redis_client import TOPIC_ALERTS, publish_message, set_heartbeat
 
 setup_logging()
@@ -45,10 +49,14 @@ class OrchestratorAgent:
         use_tournament: bool = False,
         use_consensus: bool = False,
         use_blend: bool = False,
+        use_rl: bool = False,
         tournament_rolling_days: int | None = None,
         tournament_min_samples: int | None = None,
         consensus_rounds: int | None = None,
         consensus_threshold: float | None = None,
+        rl_tick_collection_seconds: int = 30,
+        rl_yahoo_seed_range: str = "10y",
+        rl_policy_store: RLPolicyStore | RLPolicyStoreV2 | None = None,
     ) -> None:
         self.agent_id = agent_id
         self.settings = get_settings()
@@ -67,6 +75,18 @@ class OrchestratorAgent:
         self.use_tournament = use_tournament
         self.use_consensus = use_consensus
         self.use_blend = use_blend
+        self.use_rl = use_rl
+        self.rl_tick_collection_seconds = max(0, rl_tick_collection_seconds)
+        self.rl_yahoo_seed_range = rl_yahoo_seed_range
+        self.rl_policy_store = rl_policy_store or (RLPolicyStoreV2() if use_rl else RLPolicyStore())
+        self.rl = RLTradingAgent(
+            dataset_interval="daily",
+            training_window_days=3650,
+            policy_store=self.rl_policy_store,
+        )
+        self.rl_registry_bootstrap: dict[str, object] | None = None
+        if self.use_rl:
+            self.rl_registry_bootstrap = self._bootstrap_rl_policy_store()
 
     async def _load_winner_predictions(self, winner_agent_id: str, tickers: list[str]) -> list:
         from src.db.models import PredictionSignal
@@ -153,13 +173,105 @@ class OrchestratorAgent:
             )
         return blended_predictions
 
+    def _bootstrap_rl_policy_store(self) -> dict[str, object]:
+        """RL 런타임이 사용할 정책 저장소 상태를 부팅 시점에 로드합니다."""
+        snapshot = self._snapshot_rl_policy_store()
+        if snapshot.get("registry_enabled"):
+            logger.info(
+                "Orchestrator RL registry bootstrap: path=%s exists=%s tickers=%s policies=%s active=%s",
+                snapshot.get("registry_path"),
+                snapshot.get("registry_exists"),
+                snapshot.get("ticker_count"),
+                snapshot.get("policy_count"),
+                snapshot.get("active_policies"),
+            )
+        else:
+            logger.info(
+                "Orchestrator RL policy bootstrap: backend=%s source=%s",
+                snapshot.get("backend"),
+                snapshot.get("active_policy_source"),
+            )
+        return snapshot
+
+    def _snapshot_rl_policy_store(self) -> dict[str, object]:
+        """현재 RL 정책 저장소 상태를 요약합니다."""
+        store = getattr(self.rl, "policy_store", None)
+        if store is None:
+            return {
+                "backend": "unconfigured",
+                "registry_enabled": False,
+            }
+
+        if not hasattr(store, "load_registry"):
+            return {
+                "backend": "legacy_active_policies",
+                "registry_enabled": False,
+                "active_policy_source": "active_policies.json",
+            }
+
+        try:
+            registry = store.load_registry()
+        except Exception as exc:
+            logger.warning("Orchestrator RL registry 로드 실패: %s", exc)
+            return {
+                "backend": "policy_registry_v2",
+                "registry_enabled": True,
+                "load_error": str(exc),
+            }
+
+        registry_path = getattr(store, "registry_path", None)
+        active_policies = registry.list_active_policies()
+        return {
+            "backend": "policy_registry_v2",
+            "registry_enabled": True,
+            "registry_path": str(registry_path) if registry_path is not None else None,
+            "registry_exists": bool(registry_path and Path(registry_path).exists()),
+            "ticker_count": len(registry.tickers),
+            "policy_count": registry.total_policy_count(),
+            "active_policy_count": sum(1 for policy_id in active_policies.values() if policy_id),
+            "active_policies": active_policies,
+            "last_updated": registry.last_updated.isoformat(),
+        }
+
     async def run_cycle(self, tickers: list[str] | None = None) -> dict:
         started = datetime.utcnow()
         try:
-            collected_points = await self.collector.collect_daily_bars(tickers=tickers)
-            cycle_tickers = list(dict.fromkeys([p.ticker for p in collected_points])) or (tickers or [])
+            collected_count = 0
+            cycle_tickers: list[str]
+            if self.use_rl:
+                yahoo_points = await self.collector.collect_yahoo_daily_bars(
+                    tickers=tickers,
+                    range_=self.rl_yahoo_seed_range,
+                    interval="1d",
+                )
+                collected_count += len(yahoo_points)
+                cycle_tickers = list(dict.fromkeys([p.ticker for p in yahoo_points])) or (tickers or [])
+                if not cycle_tickers:
+                    raise ValueError("RL mode는 명시적인 tickers 인자 또는 Yahoo seed 결과가 필요합니다.")
+
+                market_status = await market_session_status()
+                if market_status == "open" and self.rl_tick_collection_seconds > 0:
+                    try:
+                        collected_count += await self.collector.collect_realtime_ticks(
+                            cycle_tickers,
+                            duration_seconds=self.rl_tick_collection_seconds,
+                            fallback_on_error=False,
+                        )
+                    except Exception as exc:
+                        logger.warning("RL tick 수집 실패, Yahoo history 기반으로 계속 진행합니다: %s", exc)
+                else:
+                    logger.info(
+                        "RL KIS tick 실시간 수집 생략: market_status=%s, duration=%ss",
+                        market_status,
+                        self.rl_tick_collection_seconds,
+                    )
+            else:
+                collected_points = await self.collector.collect_daily_bars(tickers=tickers)
+                collected_count = len(collected_points)
+                cycle_tickers = list(dict.fromkeys([p.ticker for p in collected_points])) or (tickers or [])
 
             winner = None
+            rl_summaries = None
             if self.use_blend:
                 tournament_result = await self.tournament.run_daily_tournament(cycle_tickers)
                 winner = tournament_result["winner_agent_id"]
@@ -179,32 +291,41 @@ class OrchestratorAgent:
                 winner = tournament_result["winner_agent_id"]
                 predictions = await self._load_winner_predictions(winner, cycle_tickers)
                 orders = await self.portfolio.process_predictions(predictions)
+            elif self.use_rl:
+                predictions, rl_summaries = await self.rl.run_cycle(cycle_tickers)
+                orders = await self.portfolio.process_predictions(
+                    predictions,
+                    signal_source_override="RL",
+                )
             else:
                 predictions = await self.predictor.run_once(tickers=cycle_tickers)
                 orders = await self.portfolio.process_predictions(predictions)
             await self.notifier.send_cycle_summary(
-                collected=len(collected_points),
+                collected=collected_count,
                 predicted=len(predictions),
                 orders=len(orders),
             )
 
             result = {
-                "collected": len(collected_points),
+                "collected": collected_count,
                 "predicted": len(predictions),
                 "orders": len(orders),
                 "winner_agent_id": winner,
+                "rl_summaries": rl_summaries,
                 "mode": (
                     "blend"
                     if self.use_blend
                     else (
                         "consensus"
                         if self.use_consensus
-                        else ("tournament" if self.use_tournament else "single_predictor")
+                        else ("tournament" if self.use_tournament else ("rl" if self.use_rl else "single_predictor"))
                     )
                 ),
                 "started_at": started.isoformat() + "Z",
                 "finished_at": datetime.utcnow().isoformat() + "Z",
             }
+            if self.use_rl:
+                result["rl_registry_state"] = self._snapshot_rl_policy_store()
 
             await set_heartbeat(self.agent_id)
             await insert_heartbeat(
@@ -252,10 +373,13 @@ async def _main_async(args: argparse.Namespace) -> None:
         use_tournament=args.tournament,
         use_consensus=args.consensus,
         use_blend=args.blend,
+        use_rl=args.rl,
         tournament_rolling_days=args.tournament_rolling_days,
         tournament_min_samples=args.tournament_min_samples,
         consensus_rounds=args.consensus_rounds,
         consensus_threshold=args.consensus_threshold,
+        rl_tick_collection_seconds=args.rl_tick_collection_seconds,
+        rl_yahoo_seed_range=args.rl_yahoo_seed_range,
     )
     tickers = args.tickers.split(",") if args.tickers else None
     if args.loop:
@@ -271,6 +395,7 @@ def main() -> None:
     parser.add_argument("--tournament", action="store_true", help="Strategy A 5개 인스턴스 토너먼트 모드")
     parser.add_argument("--consensus", action="store_true", help="Strategy B 합의/토론 모드")
     parser.add_argument("--blend", action="store_true", help="Strategy A/B 블렌딩 실행 모드")
+    parser.add_argument("--rl", action="store_true", help="RL Trading lane 실행 모드")
     parser.add_argument(
         "--tournament-rolling-days",
         type=int,
@@ -294,6 +419,17 @@ def main() -> None:
         type=float,
         default=None,
         help="Strategy B 합의 confidence 임계치 0.0~1.0 (기본: 설정값)",
+    )
+    parser.add_argument(
+        "--rl-tick-collection-seconds",
+        type=int,
+        default=30,
+        help="RL tick 모드에서 KIS 실시간 틱을 선수집할 시간(초)",
+    )
+    parser.add_argument(
+        "--rl-yahoo-seed-range",
+        default="10y",
+        help="RL mode에서 Yahoo history seed에 사용할 range",
     )
     parser.add_argument("--interval-seconds", type=int, default=600, help="주기 실행 간격(초)")
     args = parser.parse_args()

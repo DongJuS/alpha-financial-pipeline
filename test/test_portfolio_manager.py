@@ -147,6 +147,7 @@ class PortfolioManagerRiskGuardTest(unittest.IsolatedAsyncioTestCase):
                     }
                 ),
             ),
+            patch("src.agents.portfolio_manager.market_session_status", new=AsyncMock(return_value="open")),
             patch("src.agents.portfolio_manager.publish_message", new=AsyncMock()) as publish_mock,
             patch("src.agents.portfolio_manager.set_heartbeat", new=AsyncMock()) as heartbeat_mock,
             patch("src.agents.portfolio_manager.insert_heartbeat", new=AsyncMock()) as insert_heartbeat_mock,
@@ -189,6 +190,7 @@ class PortfolioManagerRiskGuardTest(unittest.IsolatedAsyncioTestCase):
                     }
                 ),
             ),
+            patch("src.agents.portfolio_manager.market_session_status", new=AsyncMock(return_value="open")),
             patch.object(agent, "_is_daily_loss_blocked", new=AsyncMock(return_value=(False, 0.0))),
             patch.object(agent, "process_signal", new=AsyncMock(side_effect=[paper_result, real_result])) as process_signal_mock,
             patch("src.agents.portfolio_manager.publish_message", new=AsyncMock()),
@@ -201,6 +203,84 @@ class PortfolioManagerRiskGuardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(process_signal_mock.await_count, 2)
         self.assertEqual(process_signal_mock.await_args_list[0].kwargs["account_scope_override"], "paper")
         self.assertEqual(process_signal_mock.await_args_list[1].kwargs["account_scope_override"], "real")
+
+    async def test_process_predictions_skips_orders_when_market_closed_for_all_scopes(self) -> None:
+        signal = PredictionSignal(
+            agent_id="predictor_1",
+            llm_model="manual",
+            strategy="A",
+            ticker="005930",
+            signal="BUY",
+            confidence=0.7,
+            trading_date=date.today(),
+        )
+        cases = [
+            (
+                "paper-only",
+                {
+                    "daily_loss_limit_pct": 3,
+                    "max_position_pct": 20,
+                    "enable_paper_trading": True,
+                    "enable_real_trading": False,
+                    "primary_account_scope": "paper",
+                },
+                ["paper"],
+            ),
+            (
+                "real-only",
+                {
+                    "daily_loss_limit_pct": 3,
+                    "max_position_pct": 20,
+                    "enable_paper_trading": False,
+                    "enable_real_trading": True,
+                    "primary_account_scope": "real",
+                },
+                ["real"],
+            ),
+            (
+                "dual",
+                {
+                    "daily_loss_limit_pct": 3,
+                    "max_position_pct": 20,
+                    "enable_paper_trading": True,
+                    "enable_real_trading": True,
+                    "primary_account_scope": "paper",
+                },
+                ["paper", "real"],
+            ),
+        ]
+
+        for label, config, expected_scopes in cases:
+            agent = PortfolioManagerAgent()
+            with self.subTest(label=label):
+                with (
+                    patch("src.agents.portfolio_manager.get_portfolio_config", new=AsyncMock(return_value=config)),
+                    patch("src.agents.portfolio_manager.market_session_status", new=AsyncMock(return_value="after_hours")),
+                    patch("src.agents.portfolio_manager.publish_message", new=AsyncMock()) as publish_mock,
+                    patch("src.agents.portfolio_manager.set_heartbeat", new=AsyncMock()) as heartbeat_mock,
+                    patch("src.agents.portfolio_manager.insert_heartbeat", new=AsyncMock()) as insert_heartbeat_mock,
+                    patch.object(agent, "_is_daily_loss_blocked", new=AsyncMock()) as daily_loss_mock,
+                    patch.object(agent, "process_signal", new=AsyncMock()) as process_signal_mock,
+                ):
+                    orders = await agent.process_predictions([signal])
+
+                self.assertEqual(orders, [])
+                process_signal_mock.assert_not_called()
+                daily_loss_mock.assert_not_called()
+                heartbeat_mock.assert_awaited_once()
+                insert_heartbeat_mock.assert_awaited_once()
+
+                payload = json.loads(publish_mock.await_args.args[1])
+                self.assertEqual(payload["count"], 0)
+                self.assertEqual(payload["enabled_scopes"], expected_scopes)
+                self.assertEqual(payload["market_status"], "after_hours")
+                self.assertEqual(payload["skip_reason"], "market_closed")
+
+                heartbeat = insert_heartbeat_mock.await_args.args[0]
+                self.assertEqual(heartbeat.status, "healthy")
+                self.assertIn("장 마감/휴장으로 주문 생략", heartbeat.last_action)
+                self.assertEqual(heartbeat.metrics["market_status"], "after_hours")
+                self.assertEqual(heartbeat.metrics["skip_reason"], "market_closed")
 
 
 if __name__ == "__main__":

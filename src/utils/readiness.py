@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.db.queries import fetch_latest_operational_audit, fetch_latest_paper_trading_run
+from src.llm.gemini_client import gemini_oauth_available
 from src.utils.config import get_settings, kis_account_number_for_scope, kis_app_key_for_scope, kis_app_secret_for_scope
 from src.utils.db_client import fetchrow, fetchval
 from src.utils.redis_client import get_redis
@@ -254,12 +255,18 @@ async def evaluate_real_trading_readiness() -> dict[str, Any]:
 
     # 8) LLM 키 최소 1개
     llm_values = [settings.anthropic_api_key, settings.openai_api_key, settings.gemini_api_key]
-    llm_ok = any(v and not _is_placeholder(v) for v in llm_values)
+    gemini_oauth_ok = gemini_oauth_available()
+    llm_ok = any(v and not _is_placeholder(v) for v in llm_values) or gemini_oauth_ok
     checks.append(
         {
             "key": "llm:any",
             "ok": llm_ok,
-            "message": "LLM 키 최소 1개 " + ("정상" if llm_ok else "누락/placeholder"),
+            "message": (
+                "LLM 자격증명 최소 1개 정상"
+                if llm_ok
+                else "LLM 자격증명 누락/placeholder"
+            )
+            + (" (Gemini OAuth 포함)" if gemini_oauth_ok else ""),
             "severity": "high",
         }
     )

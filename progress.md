@@ -76,6 +76,16 @@ Phase 1~7 전 구간 구현을 자동 검증 스크립트(`scripts/validate_all_
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
+| 2026-03-15 | 실험 메타데이터 공통 추적 구조 도입 — `.agent/discussions/20260314-cross-strategy-performance-management.md` 최종 결정에 따라 `config/experiments/`, `config/active/` 디렉터리 기반 GitOps 추적 구조 신설 및 `src/utils/experiment_tracker.py` 구현 | ✅ 완료 |
+| 2026-03-15 | RL 아티팩트 Git 추적 정책 정리 — `.gitignore`를 조정해 `artifacts/` 기본 ignore는 유지하면서 `artifacts/rl/models/README.md`, `artifacts/rl/models/registry.json`은 Git 추적 허용, tabular 정책 JSON/Q-table은 계속 ignore, 향후 DQN/PPO 샘플 가중치용 `artifacts/rl/models/{dqn,ppo}/samples/` 경로를 열고 `.gitkeep`/README 규칙까지 반영 | ✅ 완료 |
+| 2026-03-15 | RL Orchestrator registry 부팅 연동 — `src/agents/orchestrator.py`가 RL 모드에서 기본 `RLPolicyStoreV2`를 사용하도록 변경하고, 부팅 시 `registry.json` 스냅샷을 로드해 로그 및 cycle metrics(`rl_registry_state`)에 포함, `test/test_rl_trading.py`에 bootstrap/load 통합 테스트 추가 후 RL 관련 테스트 8개 통과 | ✅ 완료 |
+| 2026-03-15 | RL 모델 관리 논의 문서 마무리 보강 — `.agent/discussions/20260314-rl-model-management.md`의 상태를 재개방하고, 미완료 후속 작업으로 Orchestrator 부팅 시 `registry.json` 로드 연동 및 `.gitignore`/아티팩트 추적 정책 검토를 구체화, 현재 tabular Q-table 실측치(V2 약 70KB, 상태 415~420개)와 상한 추정(약 110KB) 근거 추가 | ✅ 완료 |
+| 2026-03-14 | RL 모델 관리 마이그레이션 — `rl_policy_registry.py`(PolicyRegistry Pydantic 모델), `rl_policy_store_v2.py`(RLPolicyStoreV2), `migrate_rl_policies.py`(14개 정책 마이그레이션), `cleanup_rl_policies.py`(자동 정리), 알고리즘 네임스페이스(`tabular/dqn/ppo/`) 도입, `registry.json` 통합 인덱스 생성, 승격 게이트·자동 정리 구현, `test_rl_policy_registry.py` 31개 테스트 통과 | ✅ 완료 |
+| 2026-03-14 | 신규 논의 주제 생성 — `RL 하이퍼파라미터/실험 추적 관리`와 `A/B/RL/Search 전반의 설정 변경·성능 영향 관리` 논의를 위해 `.agent/discussions/20260314-rl-experiment-management.md`, `.agent/discussions/20260314-cross-strategy-performance-management.md` 초안 작성 | ✅ 완료 |
+| 2026-03-14 | 논의 문서 리뷰 및 Codex 의견 보강 — `.agent/discussions/20260314-searxng-pipeline.md`, `.agent/discussions/20260314-strategy-ab-rl-extension.md`, `.agent/discussions/20260314-rl-model-management.md`에 현재 레포 구현과 운영 리스크 기준 의견 추가 | ✅ 완료 |
+| 2026-03-14 | RL V2 트레이너 구현 — V1 핵심 버그 수정(거래 0건 → 178건), `src/agents/rl_trading_v2.py`에 5-bucket 상태공간+기회비용 리워드+3-포지션(롱/숏/플랫)+멀티시드 학습 구현, 크래프톤 +47.84% 수익 달성(baseline -26.58% 대비 +74.41% 초과수익), `artifacts/rl/models/` 종목별 정책 저장 구조 추가, `test/test_rl_trading_v2.py` 8개 테스트 통과 | ✅ 완료 |
+| 2026-03-14 | RL trading runnable lane 추가 — `src/agents/rl_trading.py`에 tabular Q-learning 기반 학습/평가/정책 저장/추론 구현, `orchestrator --rl` 및 `scripts/run_rl_trading.py` 연결, `trade_history`/`broker_orders`에 `RL` signal source 허용, `test/test_rl_trading.py` + `scripts/validate_rl_trading.py`로 `train -> evaluate -> infer -> order route` 자동 검증 추가 | ✅ 완료 |
+| 2026-03-14 | RL/Search 확장 문서 정리 — `.agent/roadmap.md` 확장, `docs/RL_*`/`docs/SEARCH_*` 문서 추가, `docs/AGENTS.md`에 5-agent 의사결정 계층 및 planned extension agents 반영, `docs/api_spec.md` 확장 API 메모 추가 | ✅ 완료 |
 | 2026-03-13 | 인증 UX 보강 — `Login` 페이지 추가, `RequireAuth` 보호 라우트 적용, `Layout` 로그아웃 버튼 추가, 401 인터셉터에서 로그인 요청은 강제 리다이렉트 제외 처리(오류 메시지 표시 가능), Docker UI 빌드/스모크 테스트 통과 | ✅ 완료 |
 | 2026-03-12 | Phase 5~6~7 마감 배치 — 대시보드/포트폴리오/마켓/설정 UI를 API 연동+차트 기반으로 완성, `/portfolio/performance-series`/`/portfolio/config`/`/notifications/preferences` API 추가, `paper_trading_runs` 스키마 및 `run_phase6_paper_validation.py`(30일/고변동성/부하) 추가, `validate_all_phases.py` 도입 후 Docker 기준 Phase 1~7 모두 100% 검증 통과 | ✅ 완료 |
 | 2026-03-12 | readiness 감사 가시성 강화 — `/portfolio/readiness/audits` API 추가(운영 감사 + 모드 전환 감사 이력 통합 조회), `queries.py`에 감사 조회 헬퍼 추가, API 명세 업데이트 | ✅ 완료 |
@@ -150,10 +160,13 @@ python scripts/run_phase6_paper_validation.py
 # 10. Phase 1~7 완료 검증
 python scripts/validate_all_phases.py
 
-# 11. 프론트엔드 실행
+# 11. Python 3.11 RL 호환성 검증
+./scripts/test_rl_py311.sh
+
+# 12. 프론트엔드 실행
 cd ui && npm install && npm run dev
 ```
 
 ---
 
-*Last updated: 2026-03-12*
+*Last updated: 2026-03-15*

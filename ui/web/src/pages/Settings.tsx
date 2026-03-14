@@ -9,6 +9,7 @@ import {
   useReadiness,
   useUpdatePortfolioConfig,
   useUpdateTradingMode,
+  type MarketSessionStatus,
   type PortfolioConfig,
 } from "@/hooks/usePortfolio";
 import {
@@ -19,6 +20,23 @@ import {
 
 type ConfigForm = Pick<PortfolioConfig, "strategy_blend_ratio" | "max_position_pct" | "daily_loss_limit_pct">;
 type ExecutionForm = Pick<PortfolioConfig, "enable_paper_trading" | "enable_real_trading" | "primary_account_scope">;
+
+function marketStatusLabel(status?: MarketSessionStatus): string {
+  switch (status) {
+    case "open":
+      return "정규장 주문 가능";
+    case "pre_open":
+      return "장 시작 전";
+    case "after_hours":
+      return "장 마감 후";
+    case "holiday":
+      return "휴장일";
+    case "weekend":
+      return "주말";
+    default:
+      return "시장 종료";
+  }
+}
 
 export default function Settings() {
   const { data: config, isLoading: configLoading } = usePortfolioConfig();
@@ -181,6 +199,26 @@ export default function Settings() {
         <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
           paper와 real을 동시에 운용할 수 있습니다. real 활성화에는 confirmation code와 readiness 통과가 필요합니다.
         </p>
+
+        {config?.market_hours_enforced ? (
+          <div
+            className="rounded-xl px-4 py-4"
+            style={{ background: "var(--bg-elevated)", border: "1px solid var(--line-soft)" }}
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                  정규장 외 분석만 허용
+                </p>
+                <p className="mt-1 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>
+                  paper와 real 주문은 한국 정규장 09:00~15:30 KST 거래일에만 실행됩니다. 장 시작 전, 장 마감 후,
+                  주말, 휴장일에는 수집과 분석, 리포트만 계속 수행합니다.
+                </p>
+              </div>
+              <span className="chip">{marketStatusLabel(config.market_status)}</span>
+            </div>
+          </div>
+        ) : null}
 
         {readinessLoading ? (
           <div className="h-24 skeleton" />

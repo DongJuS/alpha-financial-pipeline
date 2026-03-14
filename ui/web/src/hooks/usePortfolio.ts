@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/utils/api";
 
 export type TradingScope = "current" | "paper" | "real";
+export type MarketSessionStatus = "open" | "closed" | "holiday" | "weekend" | "after_hours" | "pre_open";
 
 export interface Position {
   ticker: string;
@@ -64,6 +65,8 @@ export interface PortfolioConfig {
   enable_paper_trading: boolean;
   enable_real_trading: boolean;
   primary_account_scope: "paper" | "real";
+  market_hours_enforced: boolean;
+  market_status: MarketSessionStatus;
 }
 
 export interface TradingModePayload {

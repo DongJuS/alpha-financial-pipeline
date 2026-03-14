@@ -136,6 +136,15 @@ python -m src.agents.orchestrator --consensus --tickers 005930,000660 --consensu
 # Orchestrator 블렌딩 모드 (Strategy A winner + Strategy B consensus)
 python -m src.agents.orchestrator --blend --tickers 005930,000660
 
+# Orchestrator RL 모드 (Yahoo history seed -> KIS tick 선수집 -> RL 학습/평가)
+python -m src.agents.orchestrator --rl --tickers 005930,000660 --rl-yahoo-seed-range 10y --rl-tick-collection-seconds 30
+
+# RL lane 단독 실행 (기본: Yahoo history seed -> KIS tick 선수집 -> RL 학습 -> 평가 -> 추론)
+python scripts/run_rl_trading.py --tickers 005930,000660
+
+# RL signal을 주문 파이프까지 전달
+python scripts/run_rl_trading.py --tickers 005930 --execute-orders
+
 # Docker worker 단독 실행/재시작
 docker compose up -d worker
 docker compose restart worker
@@ -184,6 +193,12 @@ docker compose run --rm api python scripts/preflight_real_trading.py
 docker compose run --rm api python scripts/validate_all_phases.py
 docker compose run --rm api python -m unittest discover -s test -p 'test_*.py' -v
 docker compose run --rm ui npm run build
+
+# 5) RL trading lane 전용 검증
+python3 scripts/validate_rl_trading.py
+
+# 6) Python 3.11 호환성 검증 (RL)
+./scripts/test_rl_py311.sh
 ```
 
 ---
@@ -215,5 +230,17 @@ docker compose run --rm ui npm run build
 실거래 모드 활성화 전 충분한 페이퍼 트레이딩 검증을 권장합니다.
 
 ---
+
+## 확장 기능 상태 메모
+
+- 강화학습 트레이딩은 기존 Strategy A/B를 대체하지 않고 구조에 추가되는 기능입니다.
+- 검색/스크래핑 리서치 파이프라인도 기존 코어 트레이딩 위에 추가되는 기능입니다.
+- 현재 README 기준 상태 표시는 두 확장 기능 모두 `통합 테스트 진행 중`입니다.
+- 추후 검증이 완료되면 이 상태 문구는 운영 반영 상태에 맞게 갱신해야 합니다.
+
+### 확장 방향
+
+- RL Trading Lane: 데이터셋/피처 -> 학습 환경 -> 평가 -> 정책 추론 -> PortfolioManager 연결
+- Search Lane: `SearXNG -> 웹 페이지 접속 -> ScrapeGraphAI 파싱 -> Claude CLI 추론`
 
 *Last updated: 2026-03-12*

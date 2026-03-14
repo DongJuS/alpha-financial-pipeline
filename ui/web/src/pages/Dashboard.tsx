@@ -3,10 +3,17 @@
  * Main dashboard page.
  */
 import TossTradingDashboard from "@/components/TossTradingDashboard";
-import { usePortfolio } from "@/hooks/usePortfolio";
+import { usePortfolio, useTradingAccountOverview } from "@/hooks/usePortfolio";
 
 export default function Dashboard() {
-  const { data: portfolio, isLoading } = usePortfolio();
+  const { data: portfolio, isLoading: portfolioLoading } = usePortfolio();
+  const { data: accountOverview, isLoading: accountLoading } = useTradingAccountOverview();
 
-  return <TossTradingDashboard portfolio={portfolio ?? null} isLoading={isLoading} />;
+  return (
+    <TossTradingDashboard
+      portfolio={portfolio ?? null}
+      accountOverview={accountOverview ?? null}
+      isLoading={portfolioLoading || accountLoading}
+    />
+  );
 }

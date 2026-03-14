@@ -21,5 +21,19 @@ ui/dist/
 
 # Local UI debug and cache artifacts
 .playwright-cli/
-artifacts/
+artifacts/*
+!artifacts/rl/
+artifacts/rl/*
+!artifacts/rl/models/
+artifacts/rl/models/*
+!artifacts/rl/models/README.md
+!artifacts/rl/models/registry.json
+!artifacts/rl/models/dqn/
+artifacts/rl/models/dqn/*
+!artifacts/rl/models/dqn/samples/
+!artifacts/rl/models/dqn/samples/**
+!artifacts/rl/models/ppo/
+artifacts/rl/models/ppo/*
+!artifacts/rl/models/ppo/samples/
+!artifacts/rl/models/ppo/samples/**
 .vite/

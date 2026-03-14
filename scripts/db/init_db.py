@@ -329,7 +329,7 @@ CREATE_TABLES: list[str] = [
         quantity        INTEGER NOT NULL CHECK (quantity > 0),
         price           INTEGER NOT NULL,
         amount          BIGINT NOT NULL,          -- price * quantity
-        signal_source   VARCHAR(10) CHECK (signal_source IN ('A', 'B', 'BLEND')),
+        signal_source   VARCHAR(10) CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL')),
         agent_id        VARCHAR(30),
         kis_order_id    TEXT,
         is_paper        BOOLEAN NOT NULL DEFAULT TRUE,
@@ -349,6 +349,11 @@ CREATE_TABLES: list[str] = [
     ALTER TABLE trade_history
         ADD CONSTRAINT trade_history_account_scope_check
         CHECK (account_scope IN ('paper', 'real'));
+    ALTER TABLE trade_history
+        DROP CONSTRAINT IF EXISTS trade_history_signal_source_check;
+    ALTER TABLE trade_history
+        ADD CONSTRAINT trade_history_signal_source_check
+        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL'));
     ALTER TABLE trade_history
         ALTER COLUMN account_scope SET NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_trade_history_ticker_date
@@ -378,7 +383,7 @@ CREATE_TABLES: list[str] = [
         avg_fill_price      INTEGER,
         status              VARCHAR(16) NOT NULL DEFAULT 'PENDING'
                                 CHECK (status IN ('PENDING', 'FILLED', 'REJECTED', 'CANCELLED')),
-        signal_source       VARCHAR(10) CHECK (signal_source IN ('A', 'B', 'BLEND')),
+        signal_source       VARCHAR(10) CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL')),
         agent_id            VARCHAR(30),
         broker_order_id     TEXT,
         rejection_reason    TEXT,
@@ -392,6 +397,11 @@ CREATE_TABLES: list[str] = [
     ALTER TABLE broker_orders
         ADD CONSTRAINT broker_orders_account_scope_check
         CHECK (account_scope IN ('paper', 'real'));
+    ALTER TABLE broker_orders
+        DROP CONSTRAINT IF EXISTS broker_orders_signal_source_check;
+    ALTER TABLE broker_orders
+        ADD CONSTRAINT broker_orders_signal_source_check
+        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL'));
     CREATE INDEX IF NOT EXISTS idx_broker_orders_scope_ts
         ON broker_orders (account_scope, requested_at DESC);
     CREATE INDEX IF NOT EXISTS idx_broker_orders_scope_status_ts

@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
-from src.utils.config import get_settings
+from src.utils.config import get_settings, kis_app_key_for_scope, kis_app_secret_for_scope
 from src.utils.logging import setup_logging
 
 setup_logging()
@@ -101,14 +101,17 @@ async def check_kis_token() -> tuple[bool, str]:
 
 def check_env_vars() -> tuple[bool, str]:
     """필수 환경변수 설정 여부를 확인합니다."""
+    active_scope = "paper" if settings.kis_is_paper_trading else "real"
+    active_key_label = "KIS_PAPER_APP_KEY" if active_scope == "paper" else "KIS_REAL_APP_KEY"
+    active_secret_label = "KIS_PAPER_APP_SECRET" if active_scope == "paper" else "KIS_REAL_APP_SECRET"
     required = {
         "DATABASE_URL": settings.database_url,
         "JWT_SECRET": settings.jwt_secret,
         "REDIS_URL": settings.redis_url,
     }
     optional = {
-        "KIS_APP_KEY": settings.kis_app_key,
-        "KIS_APP_SECRET": settings.kis_app_secret,
+        active_key_label: kis_app_key_for_scope(settings, active_scope),
+        active_secret_label: kis_app_secret_for_scope(settings, active_scope),
         "ANTHROPIC_API_KEY": settings.anthropic_api_key,
         "OPENAI_API_KEY": settings.openai_api_key,
         "GEMINI_API_KEY": settings.gemini_api_key,

@@ -17,6 +17,7 @@ import {
   usePerformance,
   usePerformanceSeries,
   usePortfolio,
+  useTradingAccountOverview,
   useTradeHistory,
   type PerformanceMetrics,
 } from "@/hooks/usePortfolio";
@@ -40,6 +41,7 @@ const TOOLTIP_STYLE = {
 export default function Portfolio() {
   const [period, setPeriod] = useState<PerformanceMetrics["period"]>("monthly");
   const { data: portfolio, isLoading } = usePortfolio();
+  const { data: accountOverview, isLoading: accountLoading } = useTradingAccountOverview();
   const { data: perf, isLoading: perfLoading } = usePerformance(period);
   const { data: series, isLoading: seriesLoading } = usePerformanceSeries(period);
   const { data: history, isLoading: historyLoading } = useTradeHistory(1, 30);
@@ -53,6 +55,9 @@ export default function Portfolio() {
     [series]
   );
   const positions = portfolio?.positions ?? [];
+  const totalAsset = accountOverview?.total_equity ?? portfolio?.total_value ?? 0;
+  const totalPnl = accountOverview?.total_pnl ?? portfolio?.total_pnl ?? 0;
+  const accountScope = accountOverview?.account_scope ?? (portfolio?.is_paper ? "paper" : "real");
 
   return (
     <div className="page-shell space-y-5">
@@ -89,12 +94,12 @@ export default function Portfolio() {
 
         <div className="mt-4 flex flex-wrap gap-2">
           <span className="px-3 py-1.5 text-xs font-semibold" style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", borderRadius: "4px" }}>
-            총 자산 {portfolio ? formatKRW(portfolio.total_value) : "집계 중"}
+            총 자산 {accountLoading && !portfolio ? "집계 중" : formatKRW(totalAsset)}
           </span>
           <span className="px-3 py-1.5 text-xs font-semibold" style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", borderRadius: "4px" }}>
-            누적 손익 {portfolio ? formatKRW(portfolio.total_pnl) : "집계 중"}
+            누적 손익 {accountLoading && !portfolio ? "집계 중" : formatKRW(totalPnl)}
           </span>
-          <span className="chip">{portfolio?.is_paper ? "페이퍼 트레이딩" : "실거래"}</span>
+          <span className="chip">{accountScope === "paper" ? "페이퍼 트레이딩" : "실거래"}</span>
         </div>
       </section>
 

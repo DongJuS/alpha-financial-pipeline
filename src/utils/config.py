@@ -40,7 +40,6 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     anthropic_cli_command: str = Field(default="", alias="ANTHROPIC_CLI_COMMAND")
-    gemini_cli_command: str = Field(default="", alias="GEMINI_CLI_COMMAND")
     llm_cli_timeout_seconds: int = Field(default=90, ge=5, le=600, alias="LLM_CLI_TIMEOUT_SECONDS")
 
     # ── KIS Developers (한국투자증권) ─────────────────────────────────────────

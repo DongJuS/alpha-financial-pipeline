@@ -4,15 +4,32 @@ src/llm/gemini_client.py — Gemini 호출 래퍼
 
 from __future__ import annotations
 
+from functools import lru_cache
 import json
 from typing import Any, Optional
 
-from src.llm.cli_bridge import build_cli_command, is_cli_available, run_cli_prompt
 from src.utils.config import get_settings
 from src.utils.logging import get_logger
 from src.utils.secret_validation import is_placeholder_secret
 
 logger = get_logger(__name__)
+GEMINI_OAUTH_SCOPES = ("https://www.googleapis.com/auth/generative-language",)
+
+
+@lru_cache(maxsize=1)
+def load_gemini_oauth_credentials() -> tuple[Any | None, str | None]:
+    try:
+        import google.auth
+
+        return google.auth.default(scopes=list(GEMINI_OAUTH_SCOPES))
+    except Exception as exc:
+        logger.info("Gemini OAuth credentials unavailable: %s", exc)
+        return None, None
+
+
+def gemini_oauth_available() -> bool:
+    credentials, _ = load_gemini_oauth_credentials()
+    return credentials is not None
 
 
 class GeminiClient:
@@ -22,33 +39,57 @@ class GeminiClient:
         self.model = model
         settings = get_settings()
         self.api_key = settings.gemini_api_key
-        self.cli_timeout_seconds = settings.llm_cli_timeout_seconds
-        self._cli_command = build_cli_command(settings.gemini_cli_command, model=self.model)
         self._model: Optional[Any] = None
+        self._auth_mode: Optional[str] = None
         self._quota_exhausted = self.__class__._global_quota_exhausted
 
-        if self._cli_command:
-            if is_cli_available(self._cli_command):
-                logger.info("Gemini CLI 모드 활성화: %s", self._cli_command[0])
-                return
-            logger.warning("Gemini CLI 명령을 찾을 수 없어 SDK 모드로 폴백: %s", self._cli_command[0])
-            self._cli_command = []
-
-        if is_placeholder_secret(self.api_key):
+        if self._configure_oauth():
             return
+        self._configure_api_key()
+
+    def _configure_oauth(self) -> bool:
+        credentials, project_id = load_gemini_oauth_credentials()
+        if credentials is None:
+            return False
+
+        try:
+            import google.generativeai as genai
+
+            genai.configure(credentials=credentials)
+            self._model = genai.GenerativeModel(self.model)
+            self._auth_mode = "oauth"
+            suffix = f" (project={project_id})" if project_id else ""
+            logger.info("Gemini OAuth 모드 활성화%s", suffix)
+            return True
+        except Exception as exc:
+            logger.warning("Gemini OAuth 초기화 실패: %s", exc)
+            self._model = None
+            return False
+
+    def _configure_api_key(self) -> bool:
+        if is_placeholder_secret(self.api_key):
+            return False
 
         try:
             import google.generativeai as genai
 
             genai.configure(api_key=self.api_key)
             self._model = genai.GenerativeModel(self.model)
-        except Exception as e:
-            logger.warning("Gemini SDK 초기화 실패: %s", e)
+            self._auth_mode = "api_key"
+            logger.info("Gemini API key 모드 활성화")
+            return True
+        except Exception as exc:
+            logger.warning("Gemini SDK 초기화 실패: %s", exc)
             self._model = None
+            return False
 
     @property
     def is_configured(self) -> bool:
-        return (bool(self._cli_command) or self._model is not None) and not self.__class__._global_quota_exhausted
+        return self._model is not None and not self.__class__._global_quota_exhausted
+
+    @property
+    def auth_mode(self) -> Optional[str]:
+        return self._auth_mode
 
     def _is_quota_error(self, error: Exception) -> bool:
         text = str(error).lower()
@@ -65,12 +106,6 @@ class GeminiClient:
         )
 
     async def ask(self, prompt: str) -> str:
-        if self._cli_command:
-            return await run_cli_prompt(
-                command=self._cli_command,
-                prompt=prompt,
-                timeout_seconds=self.cli_timeout_seconds,
-            )
         if self.__class__._global_quota_exhausted:
             raise RuntimeError("Gemini quota exhausted.")
         if not self._model:

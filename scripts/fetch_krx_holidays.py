@@ -9,6 +9,8 @@ KRX 공식 REST API (data.krx.co.kr) 를 사용합니다.
 CollectorAgent는 매 작업 전에 Redis `krx:holidays:{year}` 키를 확인합니다.
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import json

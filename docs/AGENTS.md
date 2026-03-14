@@ -264,4 +264,57 @@ Strategy A와 Strategy B의 시그널을 받아 KIS API를 통해 실제(또는 
 
 ---
 
-*Last updated: 2026-03-12*
+## 7. 확장 예정 에이전트 (통합 테스트 진행 중)
+
+이 섹션의 에이전트들은 현재 코어 트레이딩 런타임을 대체하지 않습니다.
+기존 Strategy A / Strategy B / PortfolioManager / paper-real 실행 구조를 유지한 채, 확장 레이어로 추가됩니다.
+
+### 7-1. 5-Agent 의사결정 계층
+
+이 계층은 RL Trading과 Search/Scraping 확장을 설계하거나 우선순위를 정할 때 사용합니다.
+운영 주문을 실행하지 않으며, `PortfolioManagerAgent`의 주문 권한에도 영향을 주지 않습니다.
+
+| 에이전트 | 성향 | 주요 책임 | 기본 산출물 |
+|----------|------|-----------|-------------|
+| `FastFlowAgent` | 빠르지만 구조 중심 | 작업을 큰 덩어리로 나누고 의존 관계를 빠르게 정리 | 초기 실행 순서, 구조도, 병렬화 후보 |
+| `SlowMeticulousAgent` | 꼼꼼하지만 느림 | 누락 가능성이 큰 제약과 검증 게이트를 보강 | 상세 체크리스트, 검증 조건, 실패 기준 |
+| `OptimistAgent` | 낙관적 | 새 기능이 만들 수 있는 기회와 확장 여지를 최대한 발굴 | 빠른 실험안, 조기 가치 창출 포인트 |
+| `PessimistAgent` | 비관적 | 장애, 데이터 오염, 과적합, 운영 사고 가능성을 집중 점검 | 리스크 목록, 차단 조건, 보수적 대안 |
+| `DecisionDirectorAgent` | 최종 의사결정 | 상충하는 의견을 종합해 기본 개발 방향과 단계별 우선순위를 선택 | 결정문, 채택 이유, 보류 사안 |
+
+운영 원칙:
+- `DecisionDirectorAgent`는 방향을 고정하지만, 주문 실행 권한을 갖지 않습니다.
+- 의견 충돌 시 `SlowMeticulousAgent`와 `PessimistAgent`가 제시한 차단 조건을 먼저 확인합니다.
+- 빠른 추진이 가능하더라도 추적 가능성, 재현성, 출처 저장이 확보되지 않으면 통합 단계로 승격하지 않습니다.
+
+### 7-2. RL Trading 확장 예정 에이전트
+
+아래 에이전트들은 RL lane을 분리된 학습/평가/정책 계층으로 편입하기 위한 계획안입니다.
+
+| 에이전트 | 상태 | 역할 |
+|----------|------|------|
+| `rl_data_builder_agent` | planned | 시장 데이터, 포트폴리오 상태, 연구 추출 결과를 RL 학습용 feature dataset으로 변환 |
+| `rl_trainer_agent` | planned | 환경 정의와 정책 학습 실행, 모델 artifact/version 생성 |
+| `rl_evaluator_agent` | planned | 백테스트, out-of-sample 검증, 리스크 지표 평가 |
+| `rl_policy_agent` | planned | 승인된 정책을 inference 전용으로 로드해 시그널 후보 생성 |
+
+주의:
+- RL 정책은 직접 브로커를 호출하지 않습니다.
+- RL 신호도 기존 리스크 가드와 `PortfolioManagerAgent`를 통과해야만 주문 단계로 이동합니다.
+
+### 7-3. Search/Scraping 확장 예정 에이전트
+
+아래 에이전트들은 검색과 스크래핑 파이프라인을 기존 전략의 보조 연구 레이어로 붙이기 위한 계획안입니다.
+
+| 에이전트 | 상태 | 역할 |
+|----------|------|------|
+| `search_query_agent` | planned | 종목/테마별 검색 질의 생성, SearXNG 호출, 후보 URL 수집 |
+| `scrape_worker_agent` | planned | 웹 페이지 fetch/render 후 ScrapeGraphAI로 구조화 데이터 생성 |
+| `claude_extraction_agent` | planned | 구조화된 페이지 내용을 요약, 근거 추출, 전략/RL용 feature로 정리 |
+
+검색 파이프라인 원칙:
+- Tavily는 사용하지 않습니다.
+- 검색 흐름은 `SearXNG -> 웹 페이지 접속 -> ScrapeGraphAI -> Claude CLI`를 따릅니다.
+- 검색 결과는 출처와 추출 결과를 함께 저장해 추후 감사가 가능해야 합니다.
+
+*Last updated: 2026-03-14*

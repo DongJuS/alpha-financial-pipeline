@@ -4,6 +4,7 @@
 - 기본 뷰 scope는 `paper`이지만, 주문 실행은 `paper`와 `real`을 동시에 활성화할 수 있습니다.
 - 실거래 활성화는 readiness 통과 + 확인 코드 일치가 모두 필요합니다.
 - 전환/차단 시도는 `real_trading_audit`에 모두 기록됩니다.
+- paper/real 주문은 한국 정규장 `09:00~15:30 KST` 거래일에만 허용됩니다. 장외 시간에는 수집, 분석, 리포트는 계속되지만 주문 0건이 정상입니다.
 
 ## 2. 전환 전 필수 점검
 1. 최근 30일 이상 페이퍼 트레이딩 이력 확보 (`READINESS_REQUIRED_PAPER_DAYS`)
@@ -78,3 +79,4 @@ python scripts/kis_auth.py --scope all --check
   4. `scripts/run_paper_reconciliation.py --scope paper`
   5. `scripts/run_paper_reconciliation.py --scope real`
 - 감사 로그(`operational_audits`)의 최신 성공 이력이 7일 이내인지 유지
+- worker 로그에 장외 cycle summary가 보이더라도 `orders=0`이면 정상 동작입니다.

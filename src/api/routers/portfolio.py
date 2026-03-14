@@ -23,6 +23,7 @@ from src.services.paper_trading import (
 from src.utils.account_scope import is_paper_scope, normalize_account_scope
 from src.utils.config import Settings
 from src.utils.db_client import execute, fetch, fetchrow
+from src.utils.market_hours import MARKET_HOURS_ENFORCED, market_session_status
 from src.utils.performance import compute_trade_performance
 from src.utils.readiness import evaluate_real_trading_readiness
 
@@ -565,6 +566,7 @@ async def get_config(
     _: Annotated[dict, Depends(get_admin_user)],
 ) -> dict:
     """현재 포트폴리오 운영 설정을 조회합니다."""
+    market_status = await market_session_status()
     row = await fetchrow(
         """
         SELECT
@@ -588,9 +590,13 @@ async def get_config(
             "enable_paper_trading": True,
             "enable_real_trading": False,
             "primary_account_scope": "paper",
+            "market_hours_enforced": MARKET_HOURS_ENFORCED,
+            "market_status": market_status,
         }
     payload = dict(row)
     payload["is_paper_trading"] = normalize_account_scope(payload["primary_account_scope"]) == "paper"
+    payload["market_hours_enforced"] = MARKET_HOURS_ENFORCED
+    payload["market_status"] = market_status
     return payload
 
 

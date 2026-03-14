@@ -27,7 +27,8 @@ load_dotenv(ROOT / ".env")
 
 from src.db.models import AgentHeartbeatRecord, MarketDataPoint
 from src.db.queries import insert_heartbeat, upsert_market_data
-from src.utils.config import get_settings
+from src.services.yahoo_finance import fetch_daily_bars
+from src.utils.config import get_settings, kis_app_key_for_scope, kis_app_secret_for_scope
 from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import (
     KEY_LATEST_TICKS,
@@ -51,6 +52,9 @@ class CollectorAgent:
         self.agent_id = agent_id
         self.settings = get_settings()
         self._last_hb_db_at: Optional[datetime] = None
+
+    def _account_scope(self) -> str:
+        return "paper" if self.settings.kis_is_paper_trading else "real"
 
     @staticmethod
     def _load_fdr():
@@ -93,6 +97,38 @@ class CollectorAgent:
             missing = [t for t in requested if t not in {x[0] for x in selected}]
             selected.extend((t, t, "KOSPI") for t in missing)
         return selected
+
+    async def resolve_tickers(self, requested: list[str] | None, limit: int = 20) -> list[tuple[str, str, str]]:
+        return await asyncio.to_thread(self._resolve_tickers, requested, limit)
+
+    @staticmethod
+    def _yahoo_ticker(ticker: str, market: str) -> str:
+        if "." in ticker:
+            return ticker
+        suffix = ".KS" if market == "KOSPI" else ".KQ"
+        return f"{ticker}{suffix}"
+
+    @staticmethod
+    def _fetch_yahoo_daily_bars_via_yfinance(yahoo_ticker: str, interval: str, range_: str):
+        import yfinance as yf
+
+        data = yf.download(
+            yahoo_ticker,
+            period=range_,
+            interval=interval,
+            progress=False,
+            auto_adjust=False,
+            actions=False,
+            threads=False,
+        )
+        if data is None or data.empty:
+            raise ValueError(f"yfinance 데이터가 비어 있습니다: ticker={yahoo_ticker}, range={range_}, interval={interval}")
+        if hasattr(data.columns, "levels"):
+            try:
+                data = data.xs(yahoo_ticker, axis=1, level="Ticker")
+            except Exception:
+                data.columns = [col[0] for col in data.columns]
+        return data.reset_index()
 
     def _fetch_daily_bars(
         self,
@@ -161,7 +197,7 @@ class CollectorAgent:
 
     async def _get_access_token(self) -> Optional[str]:
         redis = await get_redis()
-        scope = "paper" if self.settings.kis_is_paper_trading else "real"
+        scope = self._account_scope()
         raw = await redis.get(kis_oauth_token_key(scope))
         if not raw:
             return None
@@ -174,14 +210,17 @@ class CollectorAgent:
         """
         KIS WebSocket 접속용 approval_key 발급.
         """
-        if not self.settings.kis_app_key or not self.settings.kis_app_secret:
-            raise RuntimeError("KIS_APP_KEY/KIS_APP_SECRET 미설정")
+        scope = self._account_scope()
+        app_key = kis_app_key_for_scope(self.settings, scope)
+        app_secret = kis_app_secret_for_scope(self.settings, scope)
+        if not app_key or not app_secret:
+            raise RuntimeError(f"KIS {scope} app key/app secret 미설정")
 
-        url = f"{self.settings.kis_base_url}/oauth2/Approval"
+        url = f"{self.settings.kis_base_url_for_scope(scope)}/oauth2/Approval"
         payload = {
             "grant_type": "client_credentials",
-            "appkey": self.settings.kis_app_key,
-            "secretkey": self.settings.kis_app_secret,
+            "appkey": app_key,
+            "secretkey": app_secret,
         }
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(url, json=payload)
@@ -197,14 +236,17 @@ class CollectorAgent:
         """
         WebSocket 메시지 파싱 실패 시 REST 시세를 보정용으로 조회합니다.
         """
+        scope = self._account_scope()
+        app_key = kis_app_key_for_scope(self.settings, scope)
+        app_secret = kis_app_secret_for_scope(self.settings, scope)
         token = await self._get_access_token()
-        if not token:
+        if not token or not app_key or not app_secret:
             return None
 
         headers = {
             "authorization": f"Bearer {token}",
-            "appkey": self.settings.kis_app_key,
-            "appsecret": self.settings.kis_app_secret,
+            "appkey": app_key,
+            "appsecret": app_secret,
             "tr_id": "FHKST01010100",
             "custtype": "P",
         }
@@ -212,7 +254,7 @@ class CollectorAgent:
             "FID_COND_MRKT_DIV_CODE": "J",
             "FID_INPUT_ISCD": ticker,
         }
-        url = f"{self.settings.kis_base_url}/uapi/domestic-stock/v1/quotations/inquire-price"
+        url = f"{self.settings.kis_base_url_for_scope(scope)}/uapi/domestic-stock/v1/quotations/inquire-price"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers, params=params)
@@ -355,6 +397,90 @@ class CollectorAgent:
         logger.info("CollectorAgent 일봉 수집 완료: %d건", saved)
         return points
 
+    async def collect_yahoo_daily_bars(
+        self,
+        tickers: list[str] | None = None,
+        *,
+        range_: str = "10y",
+        interval: str = "1d",
+    ) -> list[MarketDataPoint]:
+        selected = await self.resolve_tickers(tickers)
+        points: list[MarketDataPoint] = []
+
+        for ticker, name, market in selected:
+            yahoo_ticker = self._yahoo_ticker(ticker, market)
+            try:
+                bars = await fetch_daily_bars(yahoo_ticker, range_=range_, interval=interval)
+            except Exception as exc:
+                logger.warning("Yahoo chart API 수집 실패 [%s/%s]: %s", ticker, yahoo_ticker, exc)
+                try:
+                    history = await asyncio.to_thread(
+                        self._fetch_yahoo_daily_bars_via_yfinance,
+                        yahoo_ticker,
+                        interval,
+                        range_,
+                    )
+                    bars = []
+                    for row in history.to_dict(orient="records"):
+                        trade_date = row["Date"].date().isoformat() if hasattr(row["Date"], "date") else str(row["Date"])
+                        bars.append(
+                            {
+                                "date": trade_date,
+                                "open": float(row["Open"]),
+                                "high": float(row["High"]),
+                                "low": float(row["Low"]),
+                                "close": float(row["Close"]),
+                                "volume": int(row["Volume"]),
+                            }
+                        )
+                except Exception as yf_exc:
+                    logger.warning("Yahoo yfinance 수집도 실패 [%s/%s]: %s", ticker, yahoo_ticker, yf_exc)
+                    continue
+
+            for bar in bars:
+                try:
+                    bar_date = bar.get("date") if isinstance(bar, dict) else bar.date
+                    bar_open = bar.get("open") if isinstance(bar, dict) else bar.open
+                    bar_high = bar.get("high") if isinstance(bar, dict) else bar.high
+                    bar_low = bar.get("low") if isinstance(bar, dict) else bar.low
+                    bar_close = bar.get("close") if isinstance(bar, dict) else bar.close
+                    bar_volume = bar.get("volume") if isinstance(bar, dict) else bar.volume
+                    trade_date = datetime.fromisoformat(str(bar_date)).date()
+                except ValueError:
+                    trade_date = datetime.now(KST).date()
+                points.append(
+                    MarketDataPoint(
+                        ticker=ticker,
+                        name=name,
+                        market=market if market in {"KOSPI", "KOSDAQ"} else "KOSPI",
+                        timestamp_kst=datetime(
+                            trade_date.year,
+                            trade_date.month,
+                            trade_date.day,
+                            15,
+                            30,
+                            tzinfo=KST,
+                        ),
+                        interval="daily",
+                        open=int(round(float(bar_open))),
+                        high=int(round(float(bar_high))),
+                        low=int(round(float(bar_low))),
+                        close=int(round(float(bar_close))),
+                        volume=int(bar_volume),
+                        change_pct=None,
+                    )
+                )
+
+        saved = await upsert_market_data(points)
+        await self._beat(
+            status="healthy",
+            last_action=f"Yahoo 일봉 수집 완료 ({saved}건)",
+            metrics={"collected_count": saved, "mode": "yahoo_daily"},
+            force_db=True,
+        )
+        logger.info("CollectorAgent Yahoo 일봉 수집 완료: %d건", saved)
+        return points
+
     async def collect_realtime_ticks(
         self,
         tickers: list[str],
@@ -362,7 +488,7 @@ class CollectorAgent:
         tr_id: str = "H0STCNT0",
         reconnect_max: int = 3,
         fallback_on_error: bool = True,
-    ) -> None:
+    ) -> int:
         if not tickers:
             raise ValueError("realtime 모드는 --tickers 지정이 필요합니다.")
 
@@ -377,14 +503,15 @@ class CollectorAgent:
         while True:
             try:
                 approval_key = await self._issue_ws_approval_key()
+                scope = self._account_scope()
                 async with websockets.connect(
-                    self.settings.kis_websocket_url,
+                    self.settings.kis_websocket_url_for_scope(scope),
                     ping_interval=20,
                     ping_timeout=20,
                     close_timeout=5,
                     max_size=2**20,
                 ) as ws:
-                    logger.info("KIS WebSocket 연결 성공: %s", self.settings.kis_websocket_url)
+                    logger.info("KIS WebSocket 연결 성공 [%s]: %s", scope, self.settings.kis_websocket_url_for_scope(scope))
 
                     for ticker in subscribed:
                         subscribe_payload = {
@@ -416,7 +543,7 @@ class CollectorAgent:
                                     metrics={"received_ticks": received, "mode": "kis_ws"},
                                     force_db=True,
                                 )
-                                return
+                                return received
 
                         try:
                             raw = await asyncio.wait_for(ws.recv(), timeout=30)
@@ -501,6 +628,7 @@ class CollectorAgent:
             for _ in range(3):
                 await self.collect_daily_bars(tickers=subscribed, lookback_days=2)
                 await asyncio.sleep(10)
+            return 0
         else:
             raise RuntimeError("KIS WebSocket 수집 실패")
 

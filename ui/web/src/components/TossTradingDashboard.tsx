@@ -16,7 +16,9 @@ import {
   usePerformance,
   usePerformanceSeries,
   usePortfolioConfig,
+  type MarketSessionStatus,
   type PortfolioSummary,
+  type TradingAccountOverview,
   type TradingScope,
 } from "@/hooks/usePortfolio";
 import { api, formatPct } from "@/utils/api";
@@ -40,6 +42,7 @@ type ActivityTone = "active" | "idle" | "danger";
 
 interface TossTradingDashboardProps {
   portfolio: PortfolioSummary | null;
+  accountOverview: TradingAccountOverview | null;
   isLoading: boolean;
 }
 
@@ -174,6 +177,23 @@ function toneColor(tone: ActivityTone): string {
   if (tone === "active") return "var(--green)";
   if (tone === "danger") return "var(--profit)";
   return "rgba(255,255,255,0.78)";
+}
+
+function marketStatusChip(status?: MarketSessionStatus): string {
+  switch (status) {
+    case "open":
+      return "정규장 주문 가능";
+    case "pre_open":
+      return "장 시작 전 · 분석만";
+    case "after_hours":
+      return "장 마감 후 · 분석만";
+    case "holiday":
+      return "휴장일 · 분석만";
+    case "weekend":
+      return "주말 · 분석만";
+    default:
+      return "시장 종료 · 분석만";
+  }
 }
 
 async function fetchPopularStocks(): Promise<PopularStock[]> {
@@ -340,7 +360,7 @@ function ReturnCompareCard({
   );
 }
 
-export default function TossTradingDashboard({ portfolio, isLoading }: TossTradingDashboardProps) {
+export default function TossTradingDashboard({ portfolio, accountOverview, isLoading }: TossTradingDashboardProps) {
   const { data: popularStocks, isLoading: popularLoading } = useQuery({
     queryKey: ["dashboard", "popular-stocks"],
     queryFn: fetchPopularStocks,
@@ -364,9 +384,10 @@ export default function TossTradingDashboard({ portfolio, isLoading }: TossTradi
     return [...portfolio.positions].sort((a, b) => b.weight_pct - a.weight_pct).slice(0, 3);
   }, [portfolio?.positions]);
 
-  const totalAsset = isLoading ? null : portfolio?.total_value ?? 0;
-  const pnlValue = isLoading ? null : portfolio?.total_pnl ?? 0;
-  const pnlPct = isLoading ? null : portfolio?.total_pnl_pct ?? 0;
+  const totalAsset = isLoading ? null : accountOverview?.total_equity ?? portfolio?.total_value ?? 0;
+  const pnlValue = isLoading ? null : accountOverview?.total_pnl ?? portfolio?.total_pnl ?? 0;
+  const pnlPct = isLoading ? null : accountOverview?.total_pnl_pct ?? portfolio?.total_pnl_pct ?? 0;
+  const accountScope = accountOverview?.account_scope ?? (portfolio?.is_paper ? "paper" : "real");
   const isPositivePnl = (pnlValue ?? 0) >= 0;
 
   return (
@@ -401,11 +422,16 @@ export default function TossTradingDashboard({ portfolio, isLoading }: TossTradi
                 {pnlPct == null ? "--" : formatPct(pnlPct)}
               </span>
               <span className="inline-flex rounded-full bg-white/12 px-3 py-1.5 text-xs font-semibold text-white/88">
-                {portfolio?.is_paper ? "페이퍼 트레이딩" : "실거래"}
+                {accountScope === "paper" ? "페이퍼 트레이딩" : "실거래"}
               </span>
               <span className="inline-flex rounded-full bg-white/12 px-3 py-1.5 text-xs font-semibold text-white/88">
                 보유 종목 {portfolio?.positions.length ?? 0}개
               </span>
+              {config?.market_hours_enforced ? (
+                <span className="inline-flex rounded-full bg-white/12 px-3 py-1.5 text-xs font-semibold text-white/88">
+                  {marketStatusChip(config.market_status)}
+                </span>
+              ) : null}
             </div>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-3">

@@ -81,18 +81,52 @@ async def list_tickers(limit: int = 30) -> list[dict]:
 
 
 async def fetch_recent_ohlcv(ticker: str, days: int = 30) -> list[dict]:
+    return await fetch_recent_market_data(ticker, interval="daily", days=days)
+
+
+async def fetch_recent_market_data(
+    ticker: str,
+    *,
+    interval: str = "daily",
+    days: int | None = None,
+    seconds: int | None = None,
+    limit: int | None = None,
+) -> list[dict]:
+    if interval not in {"daily", "tick"}:
+        raise ValueError(f"지원하지 않는 interval입니다: {interval}")
+
+    if days is None and seconds is None:
+        days = 30 if interval == "daily" else None
+        seconds = 86_400 if interval == "tick" else None
+
+    conditions = [
+        "ticker = $1",
+        "interval = $2",
+    ]
+    params: list[Any] = [ticker, interval]
+
+    if days is not None:
+        params.append(days)
+        conditions.append(f"timestamp_kst >= NOW() - (${len(params)} * INTERVAL '1 day')")
+    if seconds is not None:
+        params.append(seconds)
+        conditions.append(f"timestamp_kst >= NOW() - (${len(params)} * INTERVAL '1 second')")
+
+    limit_sql = ""
+    if limit is not None:
+        params.append(limit)
+        limit_sql = f" LIMIT ${len(params)}"
+
     rows = await fetch(
-        """
+        f"""
         SELECT
             ticker, name, timestamp_kst, open, high, low, close, volume, change_pct
         FROM market_data
-        WHERE ticker = $1
-          AND interval = 'daily'
-          AND timestamp_kst >= NOW() - ($2 * INTERVAL '1 day')
+        WHERE {' AND '.join(conditions)}
         ORDER BY timestamp_kst DESC
+        {limit_sql}
         """,
-        ticker,
-        days,
+        *params,
     )
     return [dict(r) for r in rows]
 

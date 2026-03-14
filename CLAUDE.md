@@ -6,9 +6,9 @@
 
 ## 📌 프로젝트 개요
 
-- **프로젝트명:** 00_mono
-- **목표:** (프로젝트 목표를 여기에 작성)
-- **기술 스택:** (사용 기술을 여기에 작성)
+- **프로젝트명:** agents-investing
+- **목표:** 한국 KOSPI/KOSDAQ 시장 대상 멀티 에이전트 자동 투자 시스템을 운영하고, 기존 Strategy A/B 구조를 유지한 채 RL Trading과 Search/Scraping pipeline을 구조적으로 확장한다.
+- **기술 스택:** Python 3.11+, FastAPI, LangGraph, PostgreSQL, Redis, React 18 + TypeScript + Vite, KIS Developers API, FinanceDataReader, Claude/OpenAI/Gemini
 
 ---
 
@@ -42,13 +42,16 @@ npm run lint
 4. **모든 작업 완료 후** 반드시 `progress.md`를 업데이트한다.
 5. **새로운 기술적 결정이나 문제 해결 경험**은 `MEMORY.md`에 기록한다.
 6. 멋대로 새 패키지를 설치하지 않는다. `.agent/tech_stack.md`에 명시된 것만 사용한다.
-
+7. **새 논의 문서**는 반드시 `.agent/templates/discussion.md`를 기반으로 생성한다.
+8. 논의 문서 파일명은 `YYYYMMDD-topic-slug.md` 규칙을 따른다.
+9. 논의 작업은 `.agent/discussions/` 폴더에 기록한다.
+10. 논의 문서는 결론 확정 후 필요한 영구 문서에 반영하고, 반영이 끝나면 삭제한다.
 ---
 
 ## 📂 프로젝트 구조 요약
 
 ```
-# /00_mono (Root)
+# /agents-investing (Root)
 
 ├── CLAUDE.md             # 🚀 [Entry] 에이전트 행동 강령 (최우선 진입점)
 ├── MEMORY.md             # 🧠 [Memory] 기술적 결정 및 문제 해결의 누적 기록
@@ -60,6 +63,8 @@ npm run lint
 │   ├── roadmap.md        # 프로젝트 전체 마일스톤 (Long-term Goal)
 │   ├── tech_stack.md     # 허용된 라이브러리, 버전, API 제약 (Skills)
 │   ├── conventions.md    # 코드 스타일, 테스트 규칙, 배포 규격
+│   ├── templates/        # 문서 템플릿 원본
+│   ├── discussions/      # 에이전트 논의 작업 문서
 │   └── prompts.md        # 특정 작업(Refactoring, UI)을 위한 재사용 프롬프트
 │
 ├── .mcp/                 # 🔌 [Interface] 에이전트 도구 연결 설정
@@ -96,4 +101,13 @@ npm run lint
 
 ---
 
-*Last updated: 2026-03-12*
+*Last updated: 2026-03-14*
+
+---
+
+## 확장 구조 메모
+
+- 기존 Strategy A/B와 포트폴리오 실행 구조는 유지합니다.
+- 강화학습 트레이딩은 기존 시스템을 대체하는 것이 아니라 구조에 추가되는 기능입니다.
+- 검색 파이프라인도 동일하게 추가 기능이며, 방향은 `SearXNG -> 웹 페이지 접속 -> ScrapeGraphAI 구조화 -> Claude CLI 추론` 입니다.
+- README에는 현재 상태를 `통합 테스트 진행 중`으로 표기하고, 운영 반영이 완료되면 이후 문구를 바꿉니다.

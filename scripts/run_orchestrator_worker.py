@@ -2,7 +2,7 @@
 scripts/run_orchestrator_worker.py — Docker/운영용 Orchestrator 루프 실행기
 
 환경변수:
-  ORCH_MODE=single|tournament|consensus|blend (기본: blend)
+  ORCH_MODE=single|tournament|consensus|blend|rl (기본: blend)
   ORCH_TICKERS=005930,000660 (기본: 비어있음 = Collector 기본 종목 사용)
   ORCH_INTERVAL_SECONDS=600 (기본: 600)
   ORCH_RUN_ONCE=false (true면 1회 사이클만 실행)
@@ -13,6 +13,8 @@ scripts/run_orchestrator_worker.py — Docker/운영용 Orchestrator 루프 실�
   ORCH_TOURNAMENT_MIN_SAMPLES=3 (선택)
   ORCH_CONSENSUS_ROUNDS=2 (선택)
   ORCH_CONSENSUS_THRESHOLD=0.67 (선택)
+  ORCH_RL_TICK_COLLECTION_SECONDS=30 (선택, RL tick 선수집 시간)
+  ORCH_RL_YAHOO_SEED_RANGE=10y (선택, RL Yahoo history seed range)
 """
 
 from __future__ import annotations
@@ -84,8 +86,10 @@ async def main_async() -> int:
     tournament_min_samples = _optional_int("ORCH_TOURNAMENT_MIN_SAMPLES")
     consensus_rounds = _optional_int("ORCH_CONSENSUS_ROUNDS")
     consensus_threshold = _optional_float("ORCH_CONSENSUS_THRESHOLD")
+    rl_tick_collection_seconds = _optional_int("ORCH_RL_TICK_COLLECTION_SECONDS")
+    rl_yahoo_seed_range = os.getenv("ORCH_RL_YAHOO_SEED_RANGE", "10y").strip() or "10y"
 
-    if mode not in {"single", "tournament", "consensus", "blend"}:
+    if mode not in {"single", "tournament", "consensus", "blend", "rl"}:
         logger.warning("지원하지 않는 ORCH_MODE=%s, blend로 대체합니다.", mode)
         mode = "blend"
 
@@ -93,14 +97,19 @@ async def main_async() -> int:
         use_tournament=mode == "tournament",
         use_consensus=mode == "consensus",
         use_blend=mode == "blend",
+        use_rl=mode == "rl",
         tournament_rolling_days=tournament_rolling_days,
         tournament_min_samples=tournament_min_samples,
         consensus_rounds=consensus_rounds,
         consensus_threshold=consensus_threshold,
+        rl_tick_collection_seconds=(
+            rl_tick_collection_seconds if rl_tick_collection_seconds is not None else 30
+        ),
+        rl_yahoo_seed_range=rl_yahoo_seed_range,
     )
 
     logger.info(
-        "Orchestrator worker 시작: mode=%s, interval=%ss, run_once=%s, daily_report=%s(%02d:%02d KST), tickers=%s, tournament_rolling_days=%s, tournament_min_samples=%s, consensus_rounds=%s, consensus_threshold=%s",
+        "Orchestrator worker 시작: mode=%s, interval=%ss, run_once=%s, daily_report=%s(%02d:%02d KST), tickers=%s, tournament_rolling_days=%s, tournament_min_samples=%s, consensus_rounds=%s, consensus_threshold=%s, rl_tick_collection_seconds=%s, rl_yahoo_seed_range=%s",
         mode,
         interval_seconds,
         run_once,
@@ -112,6 +121,8 @@ async def main_async() -> int:
         tournament_min_samples,
         consensus_rounds,
         consensus_threshold,
+        rl_tick_collection_seconds,
+        rl_yahoo_seed_range,
     )
 
     if run_once:

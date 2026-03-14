@@ -77,6 +77,7 @@ async def validate_daily_loss_circuit_breaker() -> dict[str, Any]:
                 }
             ),
         ),
+        patch("src.agents.portfolio_manager.market_session_status", new=AsyncMock(return_value="open")),
         patch("src.agents.portfolio_manager.publish_message", new=AsyncMock()) as publish_mock,
         patch("src.agents.portfolio_manager.set_heartbeat", new=AsyncMock()) as heartbeat_mock,
         patch("src.agents.portfolio_manager.insert_heartbeat", new=AsyncMock()) as insert_hb_mock,
@@ -117,6 +118,7 @@ async def validate_daily_loss_allows_when_within_limit() -> dict[str, Any]:
                 }
             ),
         ),
+        patch("src.agents.portfolio_manager.market_session_status", new=AsyncMock(return_value="open")),
         patch("src.agents.portfolio_manager.publish_message", new=AsyncMock()) as publish_mock,
         patch("src.agents.portfolio_manager.set_heartbeat", new=AsyncMock()) as heartbeat_mock,
         patch("src.agents.portfolio_manager.insert_heartbeat", new=AsyncMock()) as insert_hb_mock,
