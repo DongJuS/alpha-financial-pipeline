@@ -93,6 +93,29 @@ class Settings(BaseSettings):
         alias="READINESS_AUDIT_MAX_AGE_DAYS",
     )
 
+    # ── Strategy Modes (전략별 독립 포트폴리오) ─────────────────────────────
+    strategy_modes: str = Field(
+        default='{"A": "paper", "B": "paper", "RL": "virtual", "S": "virtual", "L": "virtual"}',
+        alias="STRATEGY_MODES",
+    )
+    strategy_capital_allocation: str = Field(
+        default='{"A": 5000000, "B": 5000000, "RL": 10000000, "S": 10000000, "L": 10000000}',
+        alias="STRATEGY_CAPITAL_ALLOCATION",
+    )
+
+    # ── Virtual Broker 시뮬레이션 설정 ────────────────────────────────────
+    virtual_initial_capital: int = Field(default=10_000_000, alias="VIRTUAL_INITIAL_CAPITAL")
+    virtual_slippage_bps: int = Field(default=5, ge=0, le=100, alias="VIRTUAL_SLIPPAGE_BPS")
+    virtual_fill_delay_max_sec: float = Field(default=2.0, ge=0.0, le=30.0, alias="VIRTUAL_FILL_DELAY_MAX_SEC")
+    virtual_partial_fill_enabled: bool = Field(default=False, alias="VIRTUAL_PARTIAL_FILL_ENABLED")
+
+    # ── 합산 리스크 관리 ─────────────────────────────────────────────────
+    max_single_stock_exposure_pct: float = Field(default=30.0, ge=1.0, le=100.0, alias="MAX_SINGLE_STOCK_EXPOSURE_PCT")
+    max_strategy_overlap_count: int = Field(default=3, ge=1, le=10, alias="MAX_STRATEGY_OVERLAP_COUNT")
+
+    # ── 전략 승격 기준 오버라이드 ──────────────────────────────────────────
+    promotion_criteria_override: str = Field(default="", alias="PROMOTION_CRITERIA_OVERRIDE")
+
     # ── Logging ──────────────────────────────────────────────────────────────
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
