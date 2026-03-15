@@ -64,7 +64,6 @@ class PortfolioManagerAgent:
     @classmethod
     def _enabled_account_scopes_from_config(cls, cfg: dict, strategy_id: Optional[str] = None) -> list[str]:
         if strategy_id is not None:
-            # For independent portfolio per strategy, use strategy_modes from Settings (env var)
             from src.utils.config import get_settings
             settings = get_settings()
             try:
@@ -81,12 +80,12 @@ class PortfolioManagerAgent:
 
     @staticmethod
     def _broker_for_scope(account_scope: str, paper_broker, real_broker, virtual_broker=None):
-        if account_scope == "virtual":
+        if account_scope == "virtual" and virtual_broker is not None:
             return virtual_broker
         return paper_broker if account_scope == "paper" else real_broker
 
-    async def _daily_realized_pnl_pct(self, account_scope: str, strategy_id: Optional[str] = None) -> float:
-        rows = await fetch_trade_rows_for_date(datetime.utcnow().date(), account_scope=account_scope, strategy_id=strategy_id)
+    async def _daily_realized_pnl_pct(self, account_scope: str) -> float:
+        rows = await fetch_trade_rows_for_date(datetime.utcnow().date(), account_scope=account_scope)
         metrics = compute_trade_performance(rows)
         invested_capital = float(metrics.get("invested_capital") or 0)
         realized_pnl = float(metrics.get("realized_pnl") or 0)
@@ -203,7 +202,6 @@ class PortfolioManagerAgent:
         signal_source_override: Optional[str] = None,
         risk_config: Optional[dict] = None,
         account_scope_override: Optional[str] = None,
-        strategy_id: Optional[str] = None,
     ) -> Optional[dict]:
         if signal.signal == "HOLD":
             return None
@@ -218,16 +216,15 @@ class PortfolioManagerAgent:
             logger.warning("가격 정보 없음으로 주문 스킵: %s", signal.ticker)
             return None
 
-        position = await get_position(signal.ticker, account_scope=account_scope, strategy_id=strategy_id)
+        position = await get_position(signal.ticker, account_scope=account_scope)
         if signal.signal == "BUY":
             order_qty = 1
             max_position_pct = int(cfg.get("max_position_pct", 20))
             is_paper = account_scope == "paper"
             is_virtual = account_scope == "virtual"
+            strategy_id = getattr(self, "strategy_id", None)
 
-            # Determine seed capital based on strategy and account scope
             if is_virtual and strategy_id:
-                # For virtual scope with strategy, use strategy-specific capital allocation from Settings
                 from src.utils.config import get_settings
                 settings = get_settings()
                 try:
@@ -242,8 +239,7 @@ class PortfolioManagerAgent:
                     paper_seed_capital = int(account.get("seed_capital") or 10_000_000) if account else 10_000_000
                 else:
                     paper_seed_capital = int(paper_seed_capital_raw or 10_000_000)
-
-            total_value = await portfolio_total_value(account_scope=account_scope, strategy_id=strategy_id)
+            total_value = await portfolio_total_value(account_scope=account_scope)
             current_value = (
                 int(position["quantity"]) * int(position["current_price"]) if position else 0
             )
@@ -271,7 +267,6 @@ class PortfolioManagerAgent:
                 signal_source=signal_source,
                 agent_id=self.agent_id,
                 account_scope=account_scope,
-                strategy_id=strategy_id,
             )
             broker = self._broker_for_scope(account_scope, self.paper_broker, self.real_broker, self.virtual_broker)
             execution = await broker.execute_order(order)
@@ -301,7 +296,6 @@ class PortfolioManagerAgent:
             signal_source=signal_source,
             agent_id=self.agent_id,
             account_scope=account_scope,
-            strategy_id=strategy_id,
         )
         broker = self._broker_for_scope(account_scope, self.paper_broker, self.real_broker, self.virtual_broker)
         execution = await broker.execute_order(order)
@@ -320,10 +314,9 @@ class PortfolioManagerAgent:
         self,
         predictions: list[PredictionSignal],
         signal_source_override: Optional[str] = None,
-        strategy_id: Optional[str] = None,
     ) -> list[dict]:
         cfg = await get_portfolio_config()
-        enabled_scopes = self._enabled_account_scopes_from_config(cfg, strategy_id=strategy_id)
+        enabled_scopes = self._enabled_account_scopes_from_config(cfg)
         daily_loss_limit_pct = int(cfg.get("daily_loss_limit_pct", 3))
 
         if not enabled_scopes:
@@ -378,7 +371,6 @@ class PortfolioManagerAgent:
                     signal_source_override=signal_source_override,
                     risk_config=cfg,
                     account_scope_override=account_scope,
-                    strategy_id=strategy_id,
                 )
                 if order:
                     orders.append(order)
