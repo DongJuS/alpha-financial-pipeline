@@ -105,21 +105,7 @@ flowchart TD
         SIGNAL_TYPE -->|"HOLD"| HOLD_SKIP["↩️ 대기"]
     end
 
-    %% ==================== 주문 실행 ====================
-    subgraph BROKER_LAYER ["🏢 **Broker Execution**"]
-        BUY_ORDER --> BROKER_ROUTE{"계좌 구분"}
-        SELL_ORDER --> BROKER_ROUTE
-        BROKER_ROUTE -->|"Paper"| PAPER_BROKER["KIS 페이퍼 브로커\n모의투자 결정"]
-        BROKER_ROUTE -->|"Real"| REAL_BROKER["KIS 실거래 브로커\n실전투자 결정"]
-        PAPER_BROKER --> EXEC_RESULT
-        REAL_BROKER --> EXEC_RESULT
-        EXEC_RESULT{"결정 결과"}
-        EXEC_RESULT -->|"결정"| UPDATE_POS["포지션 업데이트\nportfolio_positions"]
-        EXEC_RESULT -->|"거제"| LOG_REJECT["거제 로깅"]
-    end
-
-    %% ==================== 저장소 ====================
-    subgraph DB_LAYER ["💾️ **Persistence**"]
+    %% ==================== 주문 실행 =============
         PG_PRED["predictions"]
         PG_DEBATE["debate_transcripts"]
         PG_TOUR["predictor_tournament_scores"]
