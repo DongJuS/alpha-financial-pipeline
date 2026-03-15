@@ -1,6 +1,6 @@
 # Discussion: RL 하이퍼파라미터/실험 추적 및 재현성 관리 구조
 
-status: open
+status: closed
 created_at: 2026-03-14
 topic_slug: rl-experiment-management
 owner: user
@@ -194,22 +194,43 @@ artifacts/rl/
 
 ## 7. Final Decision
 
-(논의 후 확정)
+**Option B + C 하이브리드 채택.** `artifacts/rl/profiles/` 디렉터리에 재사용 가능한 하이퍼파라미터 프로파일을 두고, 모든 학습은 `artifacts/rl/experiments/<run_id>/` 에서 run 단위로 기록한다.
+
+구조:
+- `artifacts/rl/profiles/`: 재사용 가능한 baseline 프로파일 (tabular_q_v1_baseline.json, tabular_q_v2_momentum.json, ...)
+- `artifacts/rl/experiments/<run_id>/`: 각 실행 결과 기록
+  - config.json (profile_id + override 하이퍼파라미터)
+  - dataset_meta.json (소스, train_ratio, dataset_hash)
+  - split.json (train/test 범위)
+  - metrics.json (성과지표)
+  - artifact_link.json (정책 파일 경로 포인터)
+  - notes.md (실행 설명 및 승격 근거)
+
+운영 규칙:
+- 모든 학습은 먼저 experiment/<run_id>/를 생성한 후 시작
+- 승인된 경우에만 models/ 및 active_policies.json 갱신
+- 정책 파일에는 run_id를 기록, experiment 쪽에는 artifact 경로 기록 (양방향 참조)
+- dataset_hash는 SHA256 기반으로 데이터 재현성 보장
+
+구현 파일:
+- `src/agents/rl_experiment_manager.py` (RLExperimentManager)
+- `artifacts/rl/profiles/tabular_q_v1_baseline.json`, `tabular_q_v2_momentum.json`
+- `test/test_rl_experiment_manager.py` (23+ 테스트)
 
 ## 8. Follow-up Actions
 
-- [ ] `artifacts/rl/profiles/` 디렉토리 표준 설계
-- [ ] `artifacts/rl/experiments/` run 디렉토리 규칙 정의
-- [ ] RL 실험 메타데이터 JSON 스키마 초안 작성
-- [ ] `run_id`, `profile_id`, `dataset_hash`의 생성 규칙 정의
-- [ ] `rl_trading_v2.py` 학습 시 실험 기록 생성 포인트 설계
-- [ ] 정책 승격 시 experiment ↔ policy 링크 규칙 정의
-- [ ] 실험 비교용 요약 인덱스 파일(`experiments/index.json` 등) 필요 여부 검토
-- [ ] README 또는 `docs/RL_*` 문서에 운영 절차 반영
+- [x] `artifacts/rl/profiles/` 디렉토리 표준 설계
+- [x] `artifacts/rl/experiments/` run 디렉토리 규칙 정의
+- [x] RL 실험 메타데이터 JSON 스키마 초안 작성
+- [x] `run_id`, `profile_id`, `dataset_hash`의 생성 규칙 정의
+- [x] `rl_trading_v2.py` 학습 시 실험 기록 생성 포인트 설계
+- [x] 정책 승격 시 experiment ↔ policy 링크 규칙 정의
+- [x] 실험 비교용 요약 인덱스 파일(`experiments/index.json` 등) 필요 여부 검토
+- [x] README 또는 `docs/RL_*` 문서에 운영 절차 반영
 
 ## 9. Closure Checklist
 
-- [ ] 구조/장기 방향 변경 사항을 `.agent/roadmap.md`에 반영
-- [ ] 이번 세션의 할 일을 `progress.md`에 반영
-- [ ] 계속 유지되어야 하는 운영 규칙을 `MEMORY.md`에 반영
-- [ ] 필요한 영구 문서 반영 후 이 논의 문서를 삭제
+- [x] 구조/장기 방향 변경 사항을 `.agent/roadmap.md`에 반영
+- [x] 이번 세션의 할 일을 `progress.md`에 반영
+- [x] 계속 유지되어야 하는 운영 규칙을 `MEMORY.md`에 반영
+- [x] 필요한 영구 문서 반영 후 이 논의 문서를 삭제
