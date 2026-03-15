@@ -591,10 +591,91 @@ CREATE_TABLES: list[str] = [
     CREATE INDEX IF NOT EXISTS idx_paper_trading_runs_scenario
         ON paper_trading_runs (scenario, created_at DESC);
     """,
+
+    # 18. 검색 쿼리 (SearXNG pipeline)
+    """
+    CREATE TABLE IF NOT EXISTS search_queries (
+        id SERIAL PRIMARY KEY,
+        query TEXT NOT NULL,
+        ticker VARCHAR(10),
+        category TEXT DEFAULT 'general',
+        max_results INTEGER DEFAULT 10,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
+        result_count INTEGER DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_search_queries_ticker
+        ON search_queries (ticker, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_search_queries_status
+        ON search_queries (status, created_at DESC);
+    """,
+
+    # 19. 검색 결과
+    """
+    CREATE TABLE IF NOT EXISTS search_results (
+        id SERIAL PRIMARY KEY,
+        query_id INT REFERENCES search_queries(id),
+        url TEXT NOT NULL,
+        canonical_url TEXT,
+        title TEXT,
+        snippet TEXT,
+        engine TEXT,
+        rank INT,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'fetched', 'failed')),
+        fetched_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_search_results_query
+        ON search_results (query_id, rank);
+    CREATE INDEX IF NOT EXISTS idx_search_results_url
+        ON search_results (canonical_url);
+    """,
+
+    # 20. 페이지 추출 결과
+    """
+    CREATE TABLE IF NOT EXISTS page_extractions (
+        id SERIAL PRIMARY KEY,
+        search_result_id INT REFERENCES search_results(id),
+        raw_content_hash TEXT,
+        raw_content_path TEXT,
+        structured_data JSONB,
+        extraction_schema TEXT,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'extracted', 'partial', 'failed')),
+        error_message TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_page_extractions_result
+        ON page_extractions (search_result_id);
+    CREATE INDEX IF NOT EXISTS idx_page_extractions_status
+        ON page_extractions (status);
+    """,
+
+    # 21. 리서치 결과 (Claude 추론)
+    """
+    CREATE TABLE IF NOT EXISTS research_outputs (
+        id SERIAL PRIMARY KEY,
+        query_id INT REFERENCES search_queries(id),
+        ticker VARCHAR(10),
+        extraction_ids INTEGER[],
+        output_type TEXT DEFAULT 'research_contract',
+        output_data JSONB NOT NULL,
+        model_used TEXT,
+        status TEXT DEFAULT 'completed' CHECK (status IN ('completed', 'partial', 'failed')),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_research_outputs_ticker
+        ON research_outputs (ticker, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_research_outputs_query
+        ON research_outputs (query_id);
+    """,
 ]
 
 DROP_TABLES_SQL = """
 DROP TABLE IF EXISTS
+    research_outputs,
+    page_extractions,
+    search_results,
+    search_queries,
     paper_trading_runs,
     operational_audits,
     real_trading_audit,
