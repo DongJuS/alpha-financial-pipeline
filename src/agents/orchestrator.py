@@ -246,8 +246,8 @@ class OrchestratorAgent:
                 risk_monitor = AggregateRiskMonitor()
                 risk_summary = await risk_monitor.get_risk_summary()
 
-                if risk_summary.get("violations"):
-                    risk_violations = risk_summary.get("violations", [])
+                if risk_summary.warnings:
+                    risk_violations = risk_summary.warnings
                     logger.warning(
                         "Aggregate risk violations detected: %s",
                         risk_violations,
@@ -291,10 +291,12 @@ class OrchestratorAgent:
                     try:
                         readiness = (
                             await promoter.evaluate_promotion_readiness(
-                                strategy_name
+                                strategy_name,
+                                from_mode="virtual",
+                                to_mode="paper",
                             )
                         )
-                        if readiness and readiness.is_ready:
+                        if readiness and readiness.ready:
                             alert_msg = (
                                 f"전략 {strategy_name} 승격 준비 완료: "
                                 f"{readiness.from_mode} → "
