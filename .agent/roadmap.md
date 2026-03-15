@@ -102,11 +102,11 @@
 - [x] 승격 게이트 및 자동 정리 규칙 구현
 - [x] RL 실험 관리 시스템 구현 (profiles/ + experiments/ 디렉터리, RLExperimentManager)
 - [x] RL 하이퍼파라미터 프로파일 기반 재사용 구조 확보
-- [ ] RL dataset builder를 market/research feature 기준으로 확장
-- [ ] trading simulator/environment 정의 고도화
-- [ ] 정책 레지스트리 조회 API 추가 (REST 엔드포인트)
-- [ ] walk-forward / out-of-sample 평가 기준을 DB/API로 노출
-- [ ] shadow inference와 paper promotion gate 정교화
+- [x] RL dataset builder를 market/research feature 기준으로 확장 (RLDatasetBuilderV2)
+- [x] trading simulator/environment 정의 고도화 (TradingEnv Gymnasium 호환)
+- [x] 정책 레지스트리 조회 API 추가 (REST 17개 엔드포인트)
+- [x] walk-forward / out-of-sample 평가 기준을 DB/API로 노출 (WalkForwardEvaluator)
+- [x] shadow inference와 paper promotion gate 정교화 (ShadowInferenceEngine)
 
 완료 기준:
 - 학습 결과가 dataset version, config, artifact hash와 함께 저장
@@ -211,7 +211,7 @@ Strategy L  → [real] [paper] [virtual]
 ## 현재 상태 요약
 
 - 코어 트레이딩 트랙: 구현 완료 및 유지보수 단계
-- RL 트레이딩: 최소 runnable lane + 실험 관리 구현 완료, 데이터셋/환경 고도화 진행 중
+- RL 트레이딩: Phase 9 전체 구현 완료 (dataset builder v2, trading env, walk-forward, shadow inference, promotion gate, REST API 17개)
 - 검색/스크래핑 스택: 파이프라인 설계 완료, MVP 구현 완료
 - N-way 블렌딩: 설계 확정, 구현 완료 (Phase 11)
 - 독립 포트폴리오: 핵심 인프라 + Orchestrator 통합 완료 (Phase 12)
