@@ -94,6 +94,33 @@
   - CLOSE→HOLD: blend 레벨에서는 단순 매핑, 포지션 청산은 PortfolioManager 책임
   - signal_source는 `BLEND` 통일 + `blend_meta` JSONB로 참여 전략/가중치 기록
 
+### 2026-03-15 — Search Strategy (S) 통합 (ResearchPortfolioManager → SearchRunner)
+- **결정:** 기존 `ResearchPortfolioManager`를 `SearchRunner` 래퍼로 감싸 N-way 블렌딩에 참여 가능하게 함
+- **구현 사항:**
+  - `src/agents/orchestrator.py`에 `SearchRunner` 클래스 추가 (name="S", run() 메서드)
+  - `OrchestratorAgent.__init__()`에 `use_search` 플래그, search 관련 파라미터 추가
+  - `_resolve_strategies()`, `_setup_registry()`에 "S" 전략 지원 추가
+  - CLI: `--search` 플래그 + `--search-max-concurrent`, `--search-categories`, `--search-max-sources` 파라미터 추가
+  - 기본 가중치: `{"A": 0.30, "B": 0.30, "RL": 0.20, "S": 0.20}` (기존 A/B 0.35씩에서 0.30으로 조정)
+  - 모든 처리는 `--strategies A,B,RL,S`로 N-way 블렌딩 레지스트리를 통해 실행
+- **테스트:** `test/test_search_runner.py` 추가 (sentiment → signal 매핑, 캐싱, 에러 핸들링, 프로토콜 준수)
+- **문서:** `docs/AGENTS.md`에 ResearchPortfolioManager 섹션 추가, `architecture.md` 다이어그램 업데이트
+
+### 2026-03-15 — RL 트레이딩 독립 실행 결정
+- **결정:** RL은 N-way 블렌딩에 참여하지 않고, 독립적으로 트레이딩 결정을 내린다.
+- **변경 전:** `--strategies A,B,RL` 실행 시 A/B/RL 3개 시그널이 가중합으로 블렌딩됨
+- **변경 후:** `--strategies A,B,RL` 실행 시 A+B만 블렌딩, RL은 별도로 PortfolioManager에 직접 전달
+- **핵심 변경 파일:**
+  - `src/agents/orchestrator.py` — `run_cycle()`에서 `all_predictions.pop("RL")` 후 비-RL 전략만 블렌딩, RL은 `process_predictions(signal_source_override="RL")`로 독립 실행
+- **실행 모드별 동작:**
+  - `--rl` 단독: 기존과 동일 (RL만 실행)
+  - `--strategies A,B,RL`: A+B 블렌딩 → PM 전달 + RL 독립 → PM 전달 (2개 경로)
+  - `--strategies A,RL`: A 단독 → PM 전달 + RL 독립 → PM 전달
+  - `--strategies A,B`: A+B 블렌딩 (RL 미참여)
+- **mode_name 변경:** `blend_nway(A,B)+rl_independent` 형식으로 RL 독립 실행 여부 명시
+- **blend_meta 확장:** `rl_independent: true`, `rl_predictions`, `rl_orders` 필드 추가
+- **이유:** RL은 Q-table 기반으로 자체 학습한 정책에 따라 결정하므로, LLM 기반 전략(A/B)과 가중합으로 섞으면 RL 고유의 시장 패턴 인식이 희석됨. RL이 독립적으로 결정해야 정책 성능을 정확히 측정/개선할 수 있음.
+
 ### 2026-03-15 — RL 실험 관리 구조 결정 (Option B+C 하이브리드)
 - **결정:** `artifacts/rl/profiles/`에 재사용 가능한 하이퍼파라미터 프로파일을 두고, 모든 학습은 `artifacts/rl/experiments/<run_id>/`에 run 단위로 기록한다.
 - **구조:** config.json + dataset_meta.json + split.json + metrics.json + artifact_link.json + notes.md

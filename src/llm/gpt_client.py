@@ -63,6 +63,19 @@ class GPTClient:
                 logger.warning("OpenAI quota exhausted: GPT 호출을 세션 동안 비활성화합니다.")
             raise
 
-    async def ask_json(self, prompt: str) -> dict:
-        text = await self.ask(prompt + "\n\nJSON 객체 하나만 출력하세요.")
-        return json.loads(text)
+    async def ask_json(self, prompt: str, temperature: float = 0.4) -> dict:
+        text = await self.ask(prompt + "\n\nJSON 객체 하나만 출력하세요.", temperature=temperature)
+        return _extract_json(text)
+
+
+def _extract_json(text: str) -> dict:
+    """LLM 응답에서 JSON 객체를 추출합니다."""
+    import re
+
+    md_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    if md_match:
+        return json.loads(md_match.group(1).strip())
+    brace_match = re.search(r"\{.*\}", text, re.DOTALL)
+    if brace_match:
+        return json.loads(brace_match.group(0))
+    return json.loads(text)
