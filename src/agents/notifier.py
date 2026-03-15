@@ -102,6 +102,39 @@ class NotifierAgent:
         )
         return await self.send(event_type="cycle_summary", message=text)
 
+    async def send_promotion_alert(
+        self,
+        strategy_id: str,
+        from_mode: str,
+        to_mode: str,
+        metrics: dict | None = None,
+    ) -> bool:
+        """전략 승격 준비 완료 알림을 발송합니다.
+
+        Args:
+            strategy_id: 전략 ID (예: 'A', 'B', 'RL', 'S')
+            from_mode: 현재 모드 (예: 'virtual', 'paper')
+            to_mode: 승격 대상 모드 (예: 'paper', 'real')
+            metrics: 선택적 성능 지표 dict
+
+        Returns:
+            bool: 발송 성공 여부
+        """
+        metrics_text = ""
+        if metrics:
+            metrics_text = "\n".join(f"  - {k}: {v}" for k, v in metrics.items())
+
+        text = (
+            f"🎯 전략 승격 준비 완료\n"
+            f"- 전략: {strategy_id}\n"
+            f"- 전환: {from_mode} → {to_mode}\n"
+            f"- 시각(UTC): {datetime.utcnow().isoformat()}Z"
+        )
+        if metrics_text:
+            text += f"\n- 지표:\n{metrics_text}"
+
+        return await self.send(event_type="promotion_ready", message=text)
+
     async def send_paper_daily_report(
         self,
         report_date: date | None = None,
