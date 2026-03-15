@@ -224,7 +224,7 @@ proposer: {json.dumps(proposer, ensure_ascii=False)}
 challenger1: {challenger1}
 challenger2: {challenger2}
 
-아래 임계치 기준을 반드시 적용해 최종 결론을 JSON으로 출력:
+아래 임계치 기준을 반드시 적용해 최종 결론을 JSON으로 추출:
 - consensus_threshold: {self.consensus_threshold:.2f}
 - confidence가 임계치보다 낮으면 consensus_reached=false
 
@@ -418,7 +418,7 @@ async def _main_async(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Strategy B Consensus Runner")
-    parser.add_argument("--tickers", required=True, help="쉼표 구분 티커 목록")
+    parser.add_argument("--tickers", required=True, help="쌍표 구분 티커 목록")
     parser.add_argument("--max-rounds", type=int, default=None, help="최대 토론 라운드 수(기본: 설정값)")
     parser.add_argument(
         "--consensus-threshold",

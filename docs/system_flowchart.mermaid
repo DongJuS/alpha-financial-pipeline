@@ -6,16 +6,16 @@ flowchart TD
     %% 작성일: 2026-03-15
     %% ============================================================
 
-    START(["`⏰ **Orchestrator Cycle Start**
-    APScheduler / Manual Trigger`"])
+    START(["⏰ **Orchestrator Cycle Start**
+    APScheduler / Manual Trigger"])
 
-    START --> MH{"`장 상태 확인
-    market_hours.py`"}
+    START --> MH{"장 상태 확인
+    market_hours.py"}
     MH -->|"장중 (09:00~15:30)"| COLLECT
     MH -->|"장외 / 주말 / 공휴일"| SKIP_MARKET["🔒 주문 생략\n(분석만 수행)"]
 
     %% ==================== 데이터 수집 ====================
-    subgraph DATA_LAYER ["`📊 **데이터 수집 레이어**`"]
+    subgraph DATA_LAYER ["📊 **데이터 수집 레이어**"]
         COLLECT["KIS API\n실시간 시세 수집"]
         OHLCV["FinanceDataReader\nOHLCV 수집"]
         INDEX["Redis 지수 캐시\n(KOSPI/KOSDAQ)"]
@@ -29,7 +29,7 @@ flowchart TD
     COLLECT --> STRATEGY_B
 
     %% ==================== Strategy A ====================
-    subgraph STRATEGY_A_LAYER ["`🏆 **Strategy A — Tournament**`"]
+    subgraph STRATEGY_A_LAYER ["🏆 **Strategy A — Tournament**"]
         direction TB
         STRATEGY_A["Strategy A Runner"]
         STRATEGY_A --> P1["🤖 Predictor 1\nClaude Opus · 가치투자형\ntemp=0.3"]
@@ -38,8 +38,8 @@ flowchart TD
         STRATEGY_A --> P4["🤖 Predictor 4\nGemini Pro · 역추세형\ntemp=0.6"]
         STRATEGY_A --> P5["🤖 Predictor 5\nClaude Haiku · 거시경제형\ntemp=0.4"]
 
-        P1 & P2 & P3 & P4 & P5 --> LLM_CALL_A{"`LLM 호출
-        + 포지션 컨텍스트`"}
+        P1 & P2 & P3 & P4 & P5 --> LLM_CALL_A{"LLM 호출
+        + 포지션 캐릭터스트"}
         LLM_CALL_A -->|"성공"| SIGNAL_A["BUY / SELL / HOLD\n+ confidence"]
         LLM_CALL_A -->|"실패"| FALLBACK_A["Provider Fallback\nClaude → GPT → Gemini"]
         FALLBACK_A --> SIGNAL_A
@@ -49,24 +49,24 @@ flowchart TD
     end
 
     %% ==================== Strategy B ====================
-    subgraph STRATEGY_B_LAYER ["`🗣️ **Strategy B — Consensus Debate**`"]
+    subgraph STRATEGY_B_LAYER ["💬️ **Strategy B — Consensus Debate**"]
         direction TB
         STRATEGY_B["Strategy B Runner"]
         STRATEGY_B --> PROPOSER["💡 Proposer\ntemp=0.5\n매매 주장 제시"]
         PROPOSER --> CH1["⚔️ Challenger 1\ntemp=0.7\n반론 제시"]
         PROPOSER --> CH2["⚔️ Challenger 2\ntemp=0.7\n반론 제시"]
         CH1 & CH2 --> SYNTH["🧠 Synthesizer\ntemp=0.3\n종합 판단"]
-        SYNTH --> CONSENSUS{"`합의 도달?
-        conf ≥ threshold(0.67)`"}
+        SYNTH --> CONSENSUS{"합의 도달?
+        conf ≥ threshold(0.67)"}
         CONSENSUS -->|"합의 성공"| SIGNAL_B["시그널 확정\n(BUY/SELL/HOLD)"]
-        CONSENSUS -->|"합의 실패"| NEXT_ROUND{"`다음 라운드?
-        round < max_rounds`"}
+        CONSENSUS -->|"합의 실패"| NEXT_ROUND{"다음 라운드?
+        round < max_rounds"}
         NEXT_ROUND -->|"Yes"| PROPOSER
         NEXT_ROUND -->|"No (소진)"| HOLD_B["HOLD 확정\nreason: max_rounds\nor confidence_below"]
     end
 
     %% ==================== 블렌딩 ====================
-    subgraph BLEND_LAYER ["`🔀 **Signal Blending**`"]
+    subgraph BLEND_LAYER ["🔀 **Signal Blending**"]
         WINNER --> BLEND
         SIGNAL_B --> BLEND
         HOLD_B --> BLEND
@@ -75,51 +75,37 @@ flowchart TD
     end
 
     %% ==================== 포트폴리오 매니저 ====================
-    subgraph PM_LAYER ["`💼 **Portfolio Manager**`"]
+    subgraph PM_LAYER ["💼 **Portfolio Manager**"]
         direction TB
         FINAL_SIGNAL --> PM["PortfolioManagerAgent"]
 
-        PM --> EXIT_CHECK{"`규칙 기반 매도 체크
-        익절 ≥ +5% | 손절 ≤ -3%`"}
-        EXIT_CHECK -->|"해당 포지션 있음"| FORCE_SELL["🔴 강제 SELL 시그널\nrule_based_exit"]
-        EXIT_CHECK -->|"해당 없음"| PROCESS
+        PM --> EXIT_CHECK{"규칙 기반 매도 체크
+        익절 ≥ +5% | 손절 ≤ -3%"}
+        EXIT_CHECK -->|"할봉 포지션 있음"| FORCE_SELL["🔴 강제 SELL 시그널\nrule_based_exit"]
+        EXIT_CHECK -->|"할봉 없음"| PROCESS
 
         FORCE_SELL --> PROCESS
         PROCESS["시그널 처리 루프"]
 
-        PROCESS --> CB_CHECK{"`일일 손실 한도?
-        daily_loss_limit_pct`"}
+        PROCESS --> CB_CHECK{"일일 손실 한도?
+        daily_loss_limit_pct"}
         CB_CHECK -->|"한도 초과"| CIRCUIT["🚫 Circuit Breaker\n주문 차단"]
         CB_CHECK -->|"정상"| SIGNAL_TYPE
 
-        SIGNAL_TYPE{"`시그널 종류`"}
-        SIGNAL_TYPE -->|"BUY"| POS_CHECK{"`포지션 비중 초과?
-        max_position_pct`"}
-        POS_CHECK -->|"초과"| BUY_SKIP["⏭️ BUY 스킵"]
+        SIGNAL_TYPE{"시그널 종류"}
+        SIGNAL_TYPE -->|"BUY"| POS_CHECK{"포지션 비중 초과?
+        max_position_pct"}
+        POS_CHECK -->|"초과"| BUY_SKIP["↩️ BUY 스킵"]
         POS_CHECK -->|"정상"| BUY_ORDER["✅ 매수 주문"]
 
-        SIGNAL_TYPE -->|"SELL"| HAS_POS{"`보유 포지션?`"}
+        SIGNAL_TYPE -->|"SELL"| HAS_POS{"보유 포지션?"}
         HAS_POS -->|"Yes"| SELL_ORDER["✅ 매도 주문\n전량 청산"]
-        HAS_POS -->|"No"| SELL_SKIP["⏭️ SELL 스킵"]
+        HAS_POS -->|"No"| SELL_SKIP["↩️ SELL 스킵"]
 
-        SIGNAL_TYPE -->|"HOLD"| HOLD_SKIP["⏭️ 대기"]
+        SIGNAL_TYPE -->|"HOLD"| HOLD_SKIP["↩️ 대기"]
     end
 
-    %% ==================== 주문 실행 ====================
-    subgraph BROKER_LAYER ["`🏦 **Broker Execution**`"]
-        BUY_ORDER --> BROKER_ROUTE{"`계좌 구분`"}
-        SELL_ORDER --> BROKER_ROUTE
-        BROKER_ROUTE -->|"Paper"| PAPER_BROKER["KIS 페이퍼 브로커\n모의투자 체결"]
-        BROKER_ROUTE -->|"Real"| REAL_BROKER["KIS 실거래 브로커\n실전투자 체결"]
-        PAPER_BROKER --> EXEC_RESULT
-        REAL_BROKER --> EXEC_RESULT
-        EXEC_RESULT{"`체결 결과`"}
-        EXEC_RESULT -->|"체결"| UPDATE_POS["포지션 업데이트\nportfolio_positions"]
-        EXEC_RESULT -->|"거절"| LOG_REJECT["거절 로깅"]
-    end
-
-    %% ==================== 저장소 ====================
-    subgraph DB_LAYER ["`🗄️ **Persistence**`"]
+    %% ==================== 주문 실행 =============
         PG_PRED["predictions"]
         PG_DEBATE["debate_transcripts"]
         PG_TOUR["predictor_tournament_scores"]
@@ -139,8 +125,8 @@ flowchart TD
     UPDATE_POS --> PG_ORDERS
 
     %% ==================== 알림 ====================
-    subgraph NOTIFY_LAYER ["`📢 **Notifications**`"]
-        UPDATE_POS --> TELEGRAM["Telegram 알림\n체결 결과 통보"]
+    subgraph NOTIFY_LAYER ["📢 **Notifications**"]
+        UPDATE_POS --> TELEGRAM["Telegram 알림\n결정 결과 통보"]
         CIRCUIT --> TELEGRAM
     end
 

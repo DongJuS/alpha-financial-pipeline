@@ -1,5 +1,5 @@
 """
-src/agents/predictor.py — PredictorAgent MVP (Claude 단일 인스턴스 + 규칙 폴백)
+src/agents/predictor.py — PredictorAgent MVP (Claude 단일 인스턴스 + 규칙 피드백)
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ class PredictorAgent:
 
     @staticmethod
     def _compute_temperature(agent_id: str) -> float:
-        """에이전트 ID 기반으로 temperature를 분산시켜 예측 다양성을 확보합니다."""
+        """에이전트 ID 기준으로 temperature를 분산시켜 예측 다양성을 확보합니다."""
         temp_map = {
             "predictor_1": 0.3,
             "predictor_2": 0.5,
@@ -93,7 +93,7 @@ class PredictorAgent:
             for c in candles[:20]
         ]
 
-        # 보유 포지션 컨텍스트
+        # 보유 포지션 캐텍스트
         position_context = ""
         if position and int(position.get("quantity", 0)) > 0:
             avg_price = int(position.get("avg_price", 0))
@@ -101,6 +101,7 @@ class PredictorAgent:
             current_price = int(candles[0]["close"]) if candles else 0
             pnl_pct = ((current_price - avg_price) / avg_price * 100) if avg_price > 0 else 0.0
             position_context = f"""
+
 현재 보유 포지션:
   - 수량: {qty}주
   - 평균 매수가: {avg_price:,}원
@@ -109,7 +110,7 @@ class PredictorAgent:
   - 매도를 고려해야 할 상황이면 SELL을 권고해라 (익절: +5% 이상, 손절: -3% 이하 권장)
 """
         else:
-            position_context = "\n현재 보유 포지션: 없음 (매수 가능 상태)\n"
+            position_context = "\n\n현재 보유 포지션: 없음 (매수 가능 상태)\n"
 
         prompt = f"""
 너는 한국주식 단기 예측 분석가다.
@@ -255,7 +256,7 @@ def main() -> None:
     parser.add_argument("--agent-id", default="predictor_1")
     parser.add_argument("--strategy", default="A", choices=["A", "B"])
     parser.add_argument("--model", default="claude-3-5-sonnet-latest")
-    parser.add_argument("--tickers", default="", help="쉼표 구분 티커 목록")
+    parser.add_argument("--tickers", default="", help="쌍표 구분 티커 목록")
     parser.add_argument("--limit", type=int, default=10)
     args = parser.parse_args()
     asyncio.run(_main_async(args))

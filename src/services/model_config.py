@@ -21,11 +21,9 @@ SUPPORTED_MODEL_OPTIONS = [
     {"model": "claude-opus-4-5-20251114", "provider": "claude", "label": "Claude Opus 4.5", "description": "이전 세대 Opus · 안정적 추론"},
     {"model": "claude-3-5-sonnet-latest", "provider": "claude", "label": "Claude 3.5 Sonnet", "description": "레거시 호환 · 복합 추론"},
     # ── Gemini (OAuth/ADC) ──────────────────────────────────────
-    # 3.x 세대
     {"model": "gemini-3.1-pro-preview", "provider": "gemini", "label": "Gemini 3.1 Pro", "description": "최신 최상위 · 복합 추론 · 에이전트 최적화"},
     {"model": "gemini-3.1-flash-lite-preview", "provider": "gemini", "label": "Gemini 3.1 Flash Lite", "description": "3.1 경량 · 최저비용 · 대량 처리"},
     {"model": "gemini-3-flash-preview", "provider": "gemini", "label": "Gemini 3.0 Flash", "description": "고속 사고 모델 · 에이전트 · 코딩"},
-    # 2.x 세대
     {"model": "gemini-2.5-pro-preview-06-05", "provider": "gemini", "label": "Gemini 2.5 Pro", "description": "2세대 Pro · 복합 추론 · 100만 토큰 컨텍스트"},
     {"model": "gemini-2.5-flash-preview-05-20", "provider": "gemini", "label": "Gemini 2.5 Flash", "description": "2세대 Flash · 사고 모드 · 빠른 응답"},
     {"model": "gemini-2.0-flash", "provider": "gemini", "label": "Gemini 2.0 Flash", "description": "안정 Flash · 에이전트 경험 최적화"},
@@ -99,7 +97,7 @@ def provider_status() -> list[dict]:
     claude = ClaudeClient(model="claude-opus-4-6")
     gemini = GeminiClient(model="gemini-3.1-pro-preview")
 
-    # Claude 인증 모드 판별
+
     if claude._cli_command:
         claude_mode = "CLI"
     elif claude._client is not None:
@@ -107,7 +105,7 @@ def provider_status() -> list[dict]:
     else:
         claude_mode = "미연결"
 
-    # Gemini 인증 모드 판별
+
     gemini_mode = gemini.auth_mode or "미연결"
     if gemini_mode == "oauth":
         gemini_mode = "OAuth (ADC)"

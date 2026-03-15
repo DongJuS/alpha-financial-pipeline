@@ -36,17 +36,16 @@ KEY_MACRO_CONTEXT = "memory:macro_context"
 KEY_MARKET_INDEX = "redis:cache:market_index"
 
 # ── TTL 상수 (초) ────────────────────────────────────────────────────────────
-TTL_HEARTBEAT = 90          # 90초 — 에이전트 생존 신호
-TTL_KIS_TOKEN = 23 * 3600   # 23시간 — KIS OAuth 토큰
-TTL_KRX_HOLIDAYS = 24 * 3600  # 24시간 — KRX 휴장일
-TTL_LATEST_TICKS = 60       # 60초 — 실시간 시세 캐시
-TTL_REALTIME_SERIES = 3600  # 1시간 — 실시간 시계열 캐시
-TTL_MACRO_CONTEXT = 4 * 3600  # 4시간 — 거시경제 컨텍스트
-TTL_MARKET_INDEX = 120      # 120초 — 시장 지수 캐시
+TTL_HEARTBEAT = 90
+TTL_KIS_TOKEN = 23 * 3600
+TTL_KRX_HOLIDAYS = 24 * 3600
+TTL_LATEST_TICKS = 60
+TTL_REALTIME_SERIES = 3600
+TTL_MACRO_CONTEXT = 4 * 3600
+TTL_MARKET_INDEX = 120
 
 
 async def get_redis() -> aioredis.Redis:
-    """Redis 클라이언트 싱글턴을 반환합니다. 연결이 없으면 새로 생성합니다."""
     global _redis_client
     if _redis_client is None:
         settings = get_settings()
@@ -61,7 +60,6 @@ async def get_redis() -> aioredis.Redis:
 
 
 async def close_redis() -> None:
-    """앱 종료 시 Redis 연결을 닫습니다."""
     global _redis_client
     if _redis_client is not None:
         await _redis_client.aclose()
@@ -70,27 +68,23 @@ async def close_redis() -> None:
 
 
 async def publish_message(topic: str, payload: str) -> None:
-    """Redis Pub/Sub 채널에 메시지를 발행합니다."""
     redis = await get_redis()
     await redis.publish(topic, payload)
     logger.debug("Published to %s", topic)
 
 
 async def set_heartbeat(agent_id: str, value: str = "1") -> None:
-    """에이전트 생존 신호를 Redis에 기록합니다 (TTL 90초)."""
     redis = await get_redis()
     key = KEY_HEARTBEAT.format(agent_id=agent_id)
     await redis.set(key, value, ex=TTL_HEARTBEAT)
 
 
 def kis_oauth_token_key(scope: str) -> str:
-    """KIS OAuth 토큰 Redis 키를 계좌 scope별로 반환합니다."""
     normalized = "real" if scope == "real" else "paper"
     return KEY_KIS_OAUTH_TOKEN.format(scope=normalized)
 
 
 async def check_heartbeat(agent_id: str) -> bool:
-    """에이전트 생존 여부를 확인합니다."""
     redis = await get_redis()
     key = KEY_HEARTBEAT.format(agent_id=agent_id)
     return await redis.exists(key) == 1

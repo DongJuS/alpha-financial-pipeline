@@ -261,8 +261,8 @@ async def _main_async(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Strategy A Tournament Runner")
-    parser.add_argument("--tickers", required=True, help="쉼표 구분 티커 목록")
-    parser.add_argument("--rolling-days", type=int, default=None, help="점수 롤링 윈도우 일수")
+    parser.add_argument("--tickers", required=True, help="쌍표 구분 티커 목록")
+    parser.add_argument("--rolling-days", type=int, default=None, help="점수 롤링 의도우 일수")
     parser.add_argument("--min-samples", type=int, default=None, help="우승자 선정을 위한 최소 채점 샘플 수")
     args = parser.parse_args()
     asyncio.run(_main_async(args))
