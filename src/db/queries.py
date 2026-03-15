@@ -738,6 +738,7 @@ async def insert_broker_order(
     status: str = "PENDING",
     broker_order_id: str | None = None,
     rejection_reason: str | None = None,
+    strategy_id: str | None = None,
 ) -> None:
     scope = normalize_account_scope(account_scope)
     await execute(
@@ -746,13 +747,13 @@ async def insert_broker_order(
             client_order_id, account_scope, broker_name, ticker, name, side,
             order_type, requested_quantity, requested_price,
             filled_quantity, avg_fill_price, status,
-            signal_source, agent_id, broker_order_id, rejection_reason,
+            signal_source, agent_id, broker_order_id, rejection_reason, strategy_id,
             requested_at, created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6,
             'MARKET', $7, $8,
             0, NULL, $9,
-            $10, $11, $12, $13,
+            $10, $11, $12, $13, $14,
             NOW(), NOW(), NOW()
         )
         """,
@@ -769,6 +770,7 @@ async def insert_broker_order(
         agent_id,
         broker_order_id,
         rejection_reason,
+        strategy_id,
     )
 
 

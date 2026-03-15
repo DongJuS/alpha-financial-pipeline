@@ -58,6 +58,7 @@ class VirtualBroker:
             requested_price=order.price,
             signal_source=order.signal_source,
             agent_id=order.agent_id,
+            strategy_id=strategy_id,
         )
 
         account_state = await self.sync_account_state(scope, snapshot_source="pre_trade")
