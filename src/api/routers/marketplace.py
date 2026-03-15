@@ -156,6 +156,55 @@ async def list_sectors(
     return await get_sectors()
 
 
+@router.get("/sectors/heatmap")
+async def get_sector_heatmap(
+    _: Annotated[dict, Depends(get_current_user)],
+) -> list[dict]:
+    """섹터별 평균 등락률 히트맵 데이터."""
+    from src.utils.db_client import fetch as db_fetch
+
+    redis = await get_redis()
+    cached = await redis.get("redis:cache:sector_heatmap")
+    if cached:
+        return json.loads(cached)
+
+    # Cache miss fallback: compute from DB
+    rows = await db_fetch(
+        """
+        SELECT sm.sector,
+               COUNT(*) AS stock_count,
+               COALESCE(AVG(md.change_pct), 0) AS avg_change_pct,
+               COALESCE(SUM(sm.market_cap), 0) AS total_market_cap,
+               COALESCE(SUM(md.volume), 0) AS total_volume
+        FROM stock_master sm
+        LEFT JOIN LATERAL (
+            SELECT change_pct, volume
+            FROM market_data md
+            WHERE md.ticker = sm.ticker AND md.interval = 'daily'
+            ORDER BY md.timestamp_kst DESC
+            LIMIT 1
+        ) md ON TRUE
+        WHERE sm.is_active = TRUE
+          AND sm.is_etf = FALSE AND sm.is_etn = FALSE
+          AND sm.sector IS NOT NULL AND sm.sector != ''
+        GROUP BY sm.sector
+        ORDER BY total_market_cap DESC
+        """
+    )
+    result = [
+        {
+            "sector": row["sector"],
+            "stock_count": int(row["stock_count"]),
+            "avg_change_pct": round(float(row["avg_change_pct"]), 2),
+            "total_market_cap": int(row["total_market_cap"]),
+            "total_volume": int(row["total_volume"]),
+        }
+        for row in rows
+    ]
+    await redis.set("redis:cache:sector_heatmap", json.dumps(result, ensure_ascii=False), ex=300)
+    return result
+
+
 @router.get("/sectors/{sector}/stocks")
 async def list_sector_stocks(
     sector: str,
