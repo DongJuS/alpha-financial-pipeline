@@ -21,7 +21,7 @@ import {
   type BrokerOrderItem,
   type PerformanceMetrics,
 } from "@/hooks/usePortfolio";
-import { formatKRW, formatPct } from "@/utils/api";
+import { formatKRW, formatMDD, formatPct } from "@/utils/api";
 
 const PERIOD_OPTIONS: PerformanceMetrics["period"][] = ["daily", "weekly", "monthly", "all"];
 const PERIOD_LABELS: Record<PerformanceMetrics["period"], string> = {
@@ -446,12 +446,12 @@ export default function PaperTrading() {
                 <div className="inner-card">
                   <div className="flex items-center justify-between text-sm">
                     <span style={{ color: "var(--text-secondary)" }}>최대 낙폭</span>
-                    <span className="text-loss">{formatPct(overview.latest_run.max_drawdown_pct ?? 0)}</span>
+                    <span className="text-loss">{formatMDD(overview.latest_run.max_drawdown_pct ?? 0)}</span>
                   </div>
                   <div className="mt-3 flex items-center justify-between text-sm">
                     <span style={{ color: "var(--text-secondary)" }}>Sharpe</span>
                     <span style={{ color: "var(--text-primary)" }}>
-                      {overview.latest_run.sharpe_ratio != null ? overview.latest_run.sharpe_ratio.toFixed(3) : "—"}
+                      {overview.latest_run.sharpe_ratio != null ? overview.latest_run.sharpe_ratio.toFixed(2) : "—"}
                     </span>
                   </div>
                   <div className="mt-3 flex items-center justify-between text-sm">
@@ -561,13 +561,13 @@ export default function PaperTrading() {
             <div className="inner-card">
               <p className="kpi-label">MDD</p>
               <p className="mt-2 text-[24px] font-bold tracking-[-0.03em] text-loss">
-                {perfLoading ? "—" : formatPct(perf?.max_drawdown_pct ?? 0)}
+                {perfLoading ? "—" : formatMDD(perf?.max_drawdown_pct ?? 0)}
               </p>
             </div>
             <div className="inner-card">
               <p className="kpi-label">Sharpe</p>
               <p className="mt-2 text-[24px] font-bold tracking-[-0.03em]" style={{ color: "var(--text-primary)" }}>
-                {perf?.sharpe_ratio != null ? perf.sharpe_ratio.toFixed(3) : "—"}
+                {perf?.sharpe_ratio != null ? perf.sharpe_ratio.toFixed(2) : "—"}
               </p>
             </div>
             <div className="inner-card">

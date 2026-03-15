@@ -1,5 +1,5 @@
 """
-src/agents/predictor.py — PredictorAgent MVP (Claude 단일 인스턴스 + 규칙 폴백)
+src/agents/predictor.py — PredictorAgent MVP (Claude 단일 인스턴스 + 규칙 피드백)
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ load_dotenv(ROOT / ".env")
 from src.db.models import AgentHeartbeatRecord, PredictionSignal
 from src.db.queries import (
     fetch_recent_ohlcv,
+    get_position,
     insert_heartbeat,
     insert_prediction,
     list_tickers,
@@ -52,6 +53,20 @@ class PredictorAgent:
         self.claude = ClaudeClient(model=llm_model if "claude" in llm_model.lower() else "claude-3-5-sonnet-latest")
         self.gpt = GPTClient(model=llm_model if "gpt" in llm_model.lower() else "gpt-4o-mini")
         self.gemini = GeminiClient(model=llm_model if "gemini" in llm_model.lower() else "gemini-1.5-pro")
+        # 에이전트별 temperature 다양성 (동일 데이터에서 다른 응답 유도)
+        self._temperature = self._compute_temperature(agent_id)
+
+    @staticmethod
+    def _compute_temperature(agent_id: str) -> float:
+        """에이전트 ID 기준으로 temperature를 분산시켜 예측 다양성을 확보합니다."""
+        temp_map = {
+            "predictor_1": 0.3,
+            "predictor_2": 0.5,
+            "predictor_3": 0.7,
+            "predictor_4": 0.6,
+            "predictor_5": 0.4,
+        }
+        return temp_map.get(agent_id, 0.5)
 
     def _provider_name(self) -> str:
         model = self.llm_model.lower()
@@ -66,7 +81,7 @@ class PredictorAgent:
         rest = [p for p in ["claude", "gpt", "gemini"] if p != primary]
         return [primary, *rest]
 
-    async def _llm_signal(self, ticker: str, candles: list[dict]) -> dict[str, Any]:
+    async def _llm_signal(self, ticker: str, candles: list[dict], position: dict | None = None) -> dict[str, Any]:
         compact = [
             {
                 "ts": str(c["timestamp_kst"]),
@@ -78,12 +93,32 @@ class PredictorAgent:
             }
             for c in candles[:20]
         ]
+
+        # 보유 포지션 캐텍스트
+        position_context = ""
+        if position and int(position.get("quantity", 0)) > 0:
+            avg_price = int(position.get("avg_price", 0))
+            qty = int(position["quantity"])
+            current_price = int(candles[0]["close"]) if candles else 0
+            pnl_pct = ((current_price - avg_price) / avg_price * 100) if avg_price > 0 else 0.0
+            position_context = f"""
+
+현재 보유 포지션:
+  - 수량: {qty}주
+  - 평균 매수가: {avg_price:,}원
+  - 현재가: {current_price:,}원
+  - 평가 손익률: {pnl_pct:+.2f}%
+  - 매도를 고려해야 할 상황이면 SELL을 권고해라 (익절: +5% 이상, 손절: -3% 이하 권장)
+"""
+        else:
+            position_context = "\n\n현재 보유 포지션: 없음 (매수 가능 상태)\n"
+
         prompt = f"""
 너는 한국주식 단기 예측 분석가다.
 현재 페르소나: {self.persona}
 티커: {ticker}
 최근 데이터(최신순): {json.dumps(compact, ensure_ascii=False)}
-
+{position_context}
 아래 JSON 형식으로만 답해라:
 {{
   "signal": "BUY|SELL|HOLD",
@@ -94,15 +129,16 @@ class PredictorAgent:
 }}
 """
         attempted_providers: list[str] = []
+        temp = self._temperature
         for provider in self._provider_order():
             attempted_providers.append(provider)
             try:
                 if provider == "gpt" and self.gpt.is_configured:
-                    raw = await self.gpt.ask_json(prompt)
+                    raw = await self.gpt.ask_json(prompt, temperature=temp)
                 elif provider == "gemini" and self.gemini.is_configured:
-                    raw = await self.gemini.ask_json(prompt)
+                    raw = await self.gemini.ask_json(prompt, temperature=temp)
                 elif provider == "claude" and self.claude.is_configured:
-                    raw = await self.claude.ask_json(prompt)
+                    raw = await self.claude.ask_json(prompt, temperature=temp)
                 else:
                     continue
 
@@ -133,8 +169,9 @@ class PredictorAgent:
         failed_tickers: list[str] = []
         for ticker in tickers:
             candles = await fetch_recent_ohlcv(ticker, days=30)
+            position = await get_position(ticker, account_scope="paper")
             try:
-                llm_output = await self._llm_signal(ticker=ticker, candles=candles)
+                llm_output = await self._llm_signal(ticker=ticker, candles=candles, position=position)
             except Exception as e:
                 logger.warning("%s 예측 생략 [%s]: %s", self.agent_id, ticker, e)
                 failed_tickers.append(ticker)
@@ -236,7 +273,7 @@ def main() -> None:
     parser.add_argument("--agent-id", default="predictor_1")
     parser.add_argument("--strategy", default="A", choices=["A", "B"])
     parser.add_argument("--model", default="claude-3-5-sonnet-latest")
-    parser.add_argument("--tickers", default="", help="쉼표 구분 티커 목록")
+    parser.add_argument("--tickers", default="", help="쌍표 구분 티커 목록")
     parser.add_argument("--limit", type=int, default=10)
     args = parser.parse_args()
     asyncio.run(_main_async(args))
