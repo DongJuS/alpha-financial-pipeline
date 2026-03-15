@@ -399,24 +399,28 @@ class TabularQTrainerV2:
 
 # ────────────────────────── V2 시그널 매핑 (N-way 블렌딩용) ──────────────────────────
 
-# V2 action → PredictionSignal 호환 매핑
-_ACTION_TO_SIGNAL = {
+# V2 action → PredictionSignal 호환 매핑 (위치에 무관하게 기본값)
+_ACTION_TO_SIGNAL_SIMPLE = {
     "BUY": "BUY",
     "SELL": "SELL",
     "HOLD": "HOLD",
-    "CLOSE": "HOLD",  # blend 레벨에서는 CLOSE→HOLD (포지션 청산은 PortfolioManager 책임)
+    "CLOSE": "HOLD",  # 기본값: CLOSE→HOLD
 }
 
 
-def map_v2_action_to_signal(action: str) -> str:
+def map_v2_action_to_signal(action: str, has_position: bool | None = None) -> str:
     """V2의 4-action(BUY/SELL/HOLD/CLOSE)을 PredictionSignal 호환 3-signal(BUY/SELL/HOLD)로 변환한다.
 
     - BUY → BUY
     - SELL → SELL
     - HOLD → HOLD
-    - CLOSE → HOLD (blend 레벨; RL 단독 모드에서는 PortfolioManager가 청산 처리)
+    - CLOSE + has_position=True → SELL
+    - CLOSE + (has_position=False or None) → HOLD
     """
-    return _ACTION_TO_SIGNAL.get(action.upper(), "HOLD")
+    action_upper = action.upper()
+    if action_upper == "CLOSE" and has_position is True:
+        return "SELL"
+    return _ACTION_TO_SIGNAL_SIMPLE.get(action_upper, "HOLD")
 
 
 def normalize_q_confidence(q_values: dict[str, float]) -> float:

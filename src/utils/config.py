@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     paper_broker_backend: str = Field(default="internal", alias="PAPER_BROKER_BACKEND")
     real_broker_backend: str = Field(default="kis", alias="REAL_BROKER_BACKEND")
     kis_request_timeout_seconds: int = Field(default=15, ge=5, le=60, alias="KIS_REQUEST_TIMEOUT_SECONDS")
+    strategy_modes: str = Field(default='{"A": ["virtual"], "B": ["virtual"], "RL": ["virtual"], "S": ["virtual"], "L": ["virtual"]}', alias="STRATEGY_MODES")
+    strategy_capital_allocation: str = Field(default='{"A": 2000000, "B": 2000000, "RL": 2000000, "S": 2000000, "L": 2000000}', alias="STRATEGY_CAPITAL_ALLOCATION")
+    virtual_initial_capital: int = Field(default=10_000_000, ge=0, alias="VIRTUAL_INITIAL_CAPITAL")
 
     # ── Telegram ─────────────────────────────────────────────────────────────
     telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")

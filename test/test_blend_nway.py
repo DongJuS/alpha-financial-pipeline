@@ -286,6 +286,18 @@ class TestRLV2SignalMapping(unittest.TestCase):
         self.assertEqual(map_v2_action_to_signal("Sell"), "SELL")
         self.assertEqual(map_v2_action_to_signal("close"), "HOLD")
 
+    def test_close_maps_to_sell_with_position(self):
+        """CLOSE + has_position=True → SELL."""
+        self.assertEqual(map_v2_action_to_signal("CLOSE", has_position=True), "SELL")
+
+    def test_close_maps_to_hold_without_position(self):
+        """CLOSE + has_position=False → HOLD."""
+        self.assertEqual(map_v2_action_to_signal("CLOSE", has_position=False), "HOLD")
+
+    def test_close_maps_to_hold_position_none(self):
+        """CLOSE + has_position=None → HOLD."""
+        self.assertEqual(map_v2_action_to_signal("CLOSE", has_position=None), "HOLD")
+
 
 # ────────────────────────── normalize_q_confidence 테스트 ──────────────────────────
 

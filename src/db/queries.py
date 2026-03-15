@@ -218,19 +218,35 @@ async def insert_debate_transcript(
     return int(transcript_id)
 
 
-async def get_position(ticker: str, account_scope: AccountScope = "paper") -> Optional[dict]:
+async def get_position(ticker: str, account_scope: AccountScope = "paper", strategy_id: Optional[str] = None) -> Optional[dict]:
     scope = normalize_account_scope(account_scope)
-    row = await fetchrow(
-        """
-        SELECT ticker, name, quantity, avg_price, current_price, is_paper, account_scope
-        FROM portfolio_positions
-        WHERE ticker = $1
-          AND account_scope = $2
-        LIMIT 1
-        """,
-        ticker,
-        scope,
-    )
+    if strategy_id is not None:
+        row = await fetchrow(
+            """
+            SELECT ticker, name, quantity, avg_price, current_price, is_paper, account_scope, strategy_id
+            FROM portfolio_positions
+            WHERE ticker = $1
+              AND account_scope = $2
+              AND strategy_id = $3
+            LIMIT 1
+            """,
+            ticker,
+            scope,
+            strategy_id,
+        )
+    else:
+        row = await fetchrow(
+            """
+            SELECT ticker, name, quantity, avg_price, current_price, is_paper, account_scope, strategy_id
+            FROM portfolio_positions
+            WHERE ticker = $1
+              AND account_scope = $2
+              AND strategy_id IS NULL
+            LIMIT 1
+            """,
+            ticker,
+            scope,
+        )
     return dict(row) if row else None
 
 
@@ -242,22 +258,31 @@ async def save_position(
     current_price: int,
     is_paper: bool,
     account_scope: AccountScope | None = None,
+    strategy_id: Optional[str] = None,
 ) -> None:
     scope = normalize_account_scope(account_scope or scope_from_is_paper(is_paper))
     if quantity <= 0:
-        await execute(
-            "DELETE FROM portfolio_positions WHERE ticker = $1 AND account_scope = $2",
-            ticker,
-            scope,
-        )
+        if strategy_id is not None:
+            await execute(
+                "DELETE FROM portfolio_positions WHERE ticker = $1 AND account_scope = $2 AND strategy_id = $3",
+                ticker,
+                scope,
+                strategy_id,
+            )
+        else:
+            await execute(
+                "DELETE FROM portfolio_positions WHERE ticker = $1 AND account_scope = $2 AND strategy_id IS NULL",
+                ticker,
+                scope,
+            )
         return
 
     await execute(
         """
         INSERT INTO portfolio_positions (
-            ticker, name, quantity, avg_price, current_price, is_paper, account_scope, opened_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-        ON CONFLICT (ticker, account_scope)
+            ticker, name, quantity, avg_price, current_price, is_paper, account_scope, strategy_id, opened_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        ON CONFLICT (ticker, account_scope, COALESCE(strategy_id, ''))
         DO UPDATE SET
             name = EXCLUDED.name,
             quantity = EXCLUDED.quantity,
@@ -273,35 +298,65 @@ async def save_position(
         current_price,
         scope == "paper",
         scope,
+        strategy_id,
     )
 
 
-async def portfolio_total_value(account_scope: AccountScope = "paper") -> int:
+async def portfolio_total_value(account_scope: AccountScope = "paper", strategy_id: Optional[str] = None) -> int:
     scope = normalize_account_scope(account_scope)
-    value = await fetchval(
-        """
-        SELECT COALESCE(SUM(quantity * current_price), 0)
-        FROM portfolio_positions
-        WHERE quantity > 0
-          AND account_scope = $1
-        """,
-        scope,
-    )
+    if strategy_id is not None:
+        value = await fetchval(
+            """
+            SELECT COALESCE(SUM(quantity * current_price), 0)
+            FROM portfolio_positions
+            WHERE quantity > 0
+              AND account_scope = $1
+              AND strategy_id = $2
+            """,
+            scope,
+            strategy_id,
+        )
+    else:
+        value = await fetchval(
+            """
+            SELECT COALESCE(SUM(quantity * current_price), 0)
+            FROM portfolio_positions
+            WHERE quantity > 0
+              AND account_scope = $1
+              AND strategy_id IS NULL
+            """,
+            scope,
+        )
     return int(value or 0)
 
 
-async def list_positions(account_scope: AccountScope = "paper") -> list[dict]:
+async def list_positions(account_scope: AccountScope = "paper", strategy_id: Optional[str] = None) -> list[dict]:
     scope = normalize_account_scope(account_scope)
-    rows = await fetch(
-        """
-        SELECT ticker, name, quantity, avg_price, current_price, is_paper, account_scope
-        FROM portfolio_positions
-        WHERE quantity > 0
-          AND account_scope = $1
-        ORDER BY (quantity * current_price) DESC, ticker
-        """,
-        scope,
-    )
+    if strategy_id is not None:
+        rows = await fetch(
+            """
+            SELECT ticker, name, quantity, avg_price, current_price, is_paper, account_scope, strategy_id
+            FROM portfolio_positions
+            WHERE quantity > 0
+              AND account_scope = $1
+              AND strategy_id = $2
+            ORDER BY (quantity * current_price) DESC, ticker
+            """,
+            scope,
+            strategy_id,
+        )
+    else:
+        rows = await fetch(
+            """
+            SELECT ticker, name, quantity, avg_price, current_price, is_paper, account_scope, strategy_id
+            FROM portfolio_positions
+            WHERE quantity > 0
+              AND account_scope = $1
+              AND strategy_id IS NULL
+            ORDER BY (quantity * current_price) DESC, ticker
+            """,
+            scope,
+        )
     return [dict(r) for r in rows]
 
 
@@ -527,19 +582,36 @@ async def fetch_trade_rows_for_date(
     trade_date: date,
     is_paper: bool = True,
     account_scope: AccountScope | None = None,
+    strategy_id: Optional[str] = None,
 ) -> list[dict]:
     scope = normalize_account_scope(account_scope or scope_from_is_paper(is_paper))
-    rows = await fetch(
-        """
-        SELECT ticker, side, price, quantity, amount, executed_at
-        FROM trade_history
-        WHERE account_scope = $1
-          AND executed_at::date = $2::date
-        ORDER BY executed_at
-        """,
-        scope,
-        trade_date,
-    )
+    if strategy_id is not None:
+        rows = await fetch(
+            """
+            SELECT ticker, side, price, quantity, amount, executed_at, strategy_id
+            FROM trade_history
+            WHERE account_scope = $1
+              AND executed_at::date = $2::date
+              AND strategy_id = $3
+            ORDER BY executed_at
+            """,
+            scope,
+            trade_date,
+            strategy_id,
+        )
+    else:
+        rows = await fetch(
+            """
+            SELECT ticker, side, price, quantity, amount, executed_at, strategy_id
+            FROM trade_history
+            WHERE account_scope = $1
+              AND executed_at::date = $2::date
+              AND strategy_id IS NULL
+            ORDER BY executed_at
+            """,
+            scope,
+            trade_date,
+        )
     return [dict(r) for r in rows]
 
 
@@ -549,10 +621,10 @@ async def insert_trade(order: PaperOrderRequest, circuit_breaker: bool = False) 
         """
         INSERT INTO trade_history (
             ticker, name, side, quantity, price, amount,
-            signal_source, agent_id, kis_order_id, is_paper, account_scope, circuit_breaker
+            signal_source, agent_id, kis_order_id, is_paper, account_scope, strategy_id, circuit_breaker
         ) VALUES (
             $1, $2, $3, $4, $5, $6,
-            $7, $8, NULL, $9, $10, $11
+            $7, $8, NULL, $9, $10, $11, $12
         )
         """,
         order.ticker,
@@ -565,6 +637,7 @@ async def insert_trade(order: PaperOrderRequest, circuit_breaker: bool = False) 
         order.agent_id,
         scope == "paper",
         scope,
+        order.strategy_id,
         circuit_breaker,
     )
 
