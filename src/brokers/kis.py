@@ -93,7 +93,7 @@ class KISApiClient:
         if not token:
             raise KISAPIError(
                 "KIS 토큰이 없습니다. `python scripts/kis_auth.py --scope "
-                f"{self.account_scope}`를 실행하거나 자동 발급이 가능한지 확인하세요."
+                f"{self.account_scope}`을 실행하거나 자동 발급이 가능한지 확인하세요."
             )
         return str(token)
 
