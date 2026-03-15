@@ -77,9 +77,10 @@ class ClaudeClient:
         text_parts = [getattr(c, "text", "") for c in getattr(resp, "content", [])]
         return "".join(text_parts).strip()
 
-    async def ask_json(self, prompt: str, max_tokens: int = 600) -> dict:
+    async def ask_json(self, prompt: str, max_tokens: int = 600, temperature: float = 0.4) -> dict:
         text = await self.ask(
-            prompt=prompt + "\n\n반드시 JSON 객체 하나만 출력하세요.",
+            prompt=prompt + "\n\n반드시 JSON 객체 하나만 추출하세요.",
             max_tokens=max_tokens,
+            temperature=temperature,
         )
         return _extract_json(text)
