@@ -1,8 +1,11 @@
 """
-src/agents/orchestrator.py — OrchestratorAgent MVP
+src/agents/orchestrator.py — OrchestratorAgent (N-way blend + Registry)
 
 기본 사이클:
-Collector -> Predictor -> PortfolioManager -> Notifier
+Collector -> StrategyRegistry(병렬) -> Blender -> PortfolioManager -> Notifier
+
+기존 단독 모드(--tournament, --consensus, --rl)와 2-way --blend 모두 하위 호환.
+--strategies A,B,RL 플래그로 N-way blend 가능.
 """
 
 from __future__ import annotations
@@ -27,10 +30,11 @@ from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
 from src.agents.rl_trading import RLPolicyStore
 from src.agents.predictor import PredictorAgent
 from src.agents.rl_trading import RLTradingAgent
-from src.agents.blending import blend_strategy_signals
+from src.agents.blending import BlendInput, BlendResult, NWayBlendResult, blend_signals, blend_strategy_signals
+from src.agents.strategy_runner import StrategyRegistry, StrategyRunner
 from src.agents.strategy_b_consensus import StrategyBConsensus
 from src.agents.strategy_a_tournament import StrategyATournament
-from src.db.models import AgentHeartbeatRecord
+from src.db.models import AgentHeartbeatRecord, PredictionSignal
 from src.db.queries import insert_heartbeat
 from src.utils.config import get_settings
 from src.utils.db_client import fetch
@@ -42,6 +46,60 @@ setup_logging()
 logger = get_logger(__name__)
 
 
+# ────────────────────────── StrategyRunner 구현체 ──────────────────────────
+
+
+class TournamentRunner:
+    """Strategy A 토너먼트를 StrategyRunner로 래핑."""
+
+    name: str = "A"
+
+    def __init__(
+        self,
+        tournament: StrategyATournament,
+        *,
+        load_winner_predictions: object,
+    ) -> None:
+        self._tournament = tournament
+        self._load_winner_predictions = load_winner_predictions
+
+    async def run(self, tickers: list[str]) -> list[PredictionSignal]:
+        result = await self._tournament.run_daily_tournament(tickers)
+        winner = result["winner_agent_id"]
+        predictions = await self._load_winner_predictions(winner, tickers)
+        return predictions
+
+
+class ConsensusRunner:
+    """Strategy B 합의를 StrategyRunner로 래핑."""
+
+    name: str = "B"
+
+    def __init__(self, consensus: StrategyBConsensus) -> None:
+        self._consensus = consensus
+
+    async def run(self, tickers: list[str]) -> list[PredictionSignal]:
+        return await self._consensus.run(tickers)
+
+
+class RLRunner:
+    """RL Trading을 StrategyRunner로 래핑."""
+
+    name: str = "RL"
+
+    def __init__(self, rl_agent: RLTradingAgent) -> None:
+        self._rl = rl_agent
+        self.last_summaries: list | None = None
+
+    async def run(self, tickers: list[str]) -> list[PredictionSignal]:
+        predictions, summaries = await self._rl.run_cycle(tickers)
+        self.last_summaries = summaries
+        return predictions
+
+
+# ────────────────────────── Orchestrator ──────────────────────────
+
+
 class OrchestratorAgent:
     def __init__(
         self,
@@ -50,6 +108,7 @@ class OrchestratorAgent:
         use_consensus: bool = False,
         use_blend: bool = False,
         use_rl: bool = False,
+        strategies: list[str] | None = None,
         tournament_rolling_days: int | None = None,
         tournament_min_samples: int | None = None,
         consensus_rounds: int | None = None,
@@ -72,25 +131,85 @@ class OrchestratorAgent:
         )
         self.portfolio = PortfolioManagerAgent()
         self.notifier = NotifierAgent()
+
+        # 기존 단독 플래그
         self.use_tournament = use_tournament
         self.use_consensus = use_consensus
         self.use_blend = use_blend
         self.use_rl = use_rl
+
+        # RL 관련
         self.rl_tick_collection_seconds = max(0, rl_tick_collection_seconds)
         self.rl_yahoo_seed_range = rl_yahoo_seed_range
-        self.rl_policy_store = rl_policy_store or (RLPolicyStoreV2() if use_rl else RLPolicyStore())
+        needs_rl = use_rl or (strategies and "RL" in strategies)
+        self.rl_policy_store = rl_policy_store or (RLPolicyStoreV2() if needs_rl else RLPolicyStore())
         self.rl = RLTradingAgent(
             dataset_interval="daily",
             training_window_days=3650,
             policy_store=self.rl_policy_store,
         )
         self.rl_registry_bootstrap: dict[str, object] | None = None
-        if self.use_rl:
+        if needs_rl:
             self.rl_registry_bootstrap = self._bootstrap_rl_policy_store()
 
-    async def _load_winner_predictions(self, winner_agent_id: str, tickers: list[str]) -> list:
-        from src.db.models import PredictionSignal
+        # --strategies 플래그로 N-way 모드 결정
+        self._active_strategies = self._resolve_strategies(strategies)
 
+        # StrategyRegistry 구성
+        self.registry = StrategyRegistry()
+        self._rl_runner: RLRunner | None = None
+        self._setup_registry()
+
+        # 가중치 로드
+        self._blend_weights = self._load_blend_weights()
+
+    def _resolve_strategies(self, strategies: list[str] | None) -> list[str]:
+        """CLI 플래그를 기반으로 활성 전략 목록을 결정한다.
+
+        우선순위:
+        1. --strategies A,B,RL (명시적)
+        2. --blend → ["A", "B"]
+        3. --tournament → ["A"]
+        4. --consensus → ["B"]
+        5. --rl → ["RL"]
+        6. 없으면 → [] (single_predictor 모드)
+        """
+        if strategies:
+            return [s.strip().upper() for s in strategies if s.strip()]
+        if self.use_blend:
+            return ["A", "B"]
+        if self.use_tournament:
+            return ["A"]
+        if self.use_consensus:
+            return ["B"]
+        if self.use_rl:
+            return ["RL"]
+        return []
+
+    def _setup_registry(self) -> None:
+        """활성 전략에 따라 Runner를 Registry에 등록한다."""
+        if "A" in self._active_strategies:
+            self.registry.register(TournamentRunner(
+                self.tournament,
+                load_winner_predictions=self._load_winner_predictions,
+            ))
+        if "B" in self._active_strategies:
+            self.registry.register(ConsensusRunner(self.consensus))
+        if "RL" in self._active_strategies:
+            self._rl_runner = RLRunner(self.rl)
+            self.registry.register(self._rl_runner)
+
+    def _load_blend_weights(self) -> dict[str, float]:
+        """설정에서 전략별 가중치를 로드한다."""
+        try:
+            weights = json.loads(self.settings.strategy_blend_weights)
+            if isinstance(weights, dict):
+                return {k.upper(): float(v) for k, v in weights.items()}
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            logger.warning("strategy_blend_weights 파싱 실패, 기본값 사용: %s", exc)
+        return {"A": 0.35, "B": 0.35, "RL": 0.30}
+
+    async def _load_winner_predictions(self, winner_agent_id: str, tickers: list[str]) -> list:
         rows = await fetch(
             """
             SELECT DISTINCT ON (ticker)
@@ -126,8 +245,7 @@ class OrchestratorAgent:
 
     @staticmethod
     def _blend_predictions(predictions_a: list, predictions_b: list, ratio: float) -> list:
-        from src.db.models import PredictionSignal
-
+        """기존 2-way A/B 블렌딩 (하위 호환)."""
         by_ticker_a = {p.ticker: p for p in predictions_a}
         by_ticker_b = {p.ticker: p for p in predictions_b}
         tickers = sorted(set(by_ticker_a.keys()) | set(by_ticker_b.keys()))
@@ -158,7 +276,7 @@ class OrchestratorAgent:
                 PredictionSignal(
                     agent_id="blend_agent",
                     llm_model="blend",
-                    strategy="A",  # DB 제약(A/B) 때문에 A로 저장/전달하고 주문 소스는 BLEND로 분리 전달
+                    strategy="A",
                     ticker=ticker,
                     signal=blended.combined_signal,
                     confidence=blended.combined_confidence,
@@ -172,6 +290,72 @@ class OrchestratorAgent:
                 )
             )
         return blended_predictions
+
+    def _blend_nway_predictions(
+        self,
+        all_predictions: dict[str, list[PredictionSignal]],
+    ) -> list[PredictionSignal]:
+        """N-way 블렌딩: 여러 전략의 예측을 종목별로 병합한다."""
+        # 종목별로 모든 전략의 시그널을 수집
+        ticker_signals: dict[str, list[tuple[str, PredictionSignal]]] = {}
+        for strategy_name, predictions in all_predictions.items():
+            for pred in predictions:
+                if pred.ticker not in ticker_signals:
+                    ticker_signals[pred.ticker] = []
+                ticker_signals[pred.ticker].append((strategy_name, pred))
+
+        blended: list[PredictionSignal] = []
+        for ticker in sorted(ticker_signals.keys()):
+            inputs: list[BlendInput] = []
+            for strategy_name, pred in ticker_signals[ticker]:
+                weight = self._blend_weights.get(strategy_name, 0.20)
+                inputs.append(BlendInput(
+                    strategy=strategy_name,
+                    signal=pred.signal,
+                    confidence=pred.confidence or 0.5,
+                    weight=weight,
+                ))
+
+            result = blend_signals(inputs)
+
+            # target_price/stop_loss는 가장 높은 가중치 전략에서 가져옴
+            best_pred = None
+            best_weight = -1.0
+            for strategy_name, pred in ticker_signals[ticker]:
+                w = self._blend_weights.get(strategy_name, 0.20)
+                if w > best_weight:
+                    best_weight = w
+                    best_pred = pred
+
+            blended.append(PredictionSignal(
+                agent_id="blend_agent",
+                llm_model="blend_nway",
+                strategy="A",  # DB 호환
+                ticker=ticker,
+                signal=result.signal,
+                confidence=result.confidence,
+                target_price=best_pred.target_price if best_pred else None,
+                stop_loss=best_pred.stop_loss if best_pred else None,
+                reasoning_summary=(
+                    f"nway_blend: strategies={result.participating_strategies}, "
+                    f"score={result.weighted_score:.4f}, conflict={result.conflict}, "
+                    f"signals={result.meta.get('signals', {})}"
+                ),
+                trading_date=date.today(),
+            ))
+
+        return blended
+
+    def _build_blend_meta(
+        self,
+        all_predictions: dict[str, list[PredictionSignal]],
+    ) -> dict:
+        """주문에 첨부할 blend 메타데이터를 생성한다."""
+        return {
+            "strategies": list(all_predictions.keys()),
+            "weights": {k: round(self._blend_weights.get(k, 0.0), 4) for k in all_predictions.keys()},
+            "strategy_count": len(all_predictions),
+        }
 
     def _bootstrap_rl_policy_store(self) -> dict[str, object]:
         """RL 런타임이 사용할 정책 저장소 상태를 부팅 시점에 로드합니다."""
@@ -236,9 +420,11 @@ class OrchestratorAgent:
     async def run_cycle(self, tickers: list[str] | None = None) -> dict:
         started = datetime.utcnow()
         try:
+            # ── 데이터 수집 ──
             collected_count = 0
             cycle_tickers: list[str]
-            if self.use_rl:
+            needs_rl_data = "RL" in self._active_strategies
+            if needs_rl_data:
                 yahoo_points = await self.collector.collect_yahoo_daily_bars(
                     tickers=tickers,
                     range_=self.rl_yahoo_seed_range,
@@ -270,36 +456,54 @@ class OrchestratorAgent:
                 collected_count = len(collected_points)
                 cycle_tickers = list(dict.fromkeys([p.ticker for p in collected_points])) or (tickers or [])
 
+            # ── 전략 실행 ──
             winner = None
             rl_summaries = None
-            if self.use_blend:
-                tournament_result = await self.tournament.run_daily_tournament(cycle_tickers)
-                winner = tournament_result["winner_agent_id"]
-                predictions_a = await self._load_winner_predictions(winner, cycle_tickers)
-                predictions_b = await self.consensus.run(cycle_tickers)
-                ratio = self.settings.strategy_blend_ratio
-                predictions = self._blend_predictions(predictions_a, predictions_b, ratio)
+
+            if self.registry.runner_count >= 2:
+                # N-way Registry 병렬 실행 → blend
+                all_predictions = await self.registry.run_all(cycle_tickers)
+
+                # RL summaries 추출
+                if self._rl_runner and self._rl_runner.last_summaries:
+                    rl_summaries = self._rl_runner.last_summaries
+
+                # N-way blend
+                predictions = self._blend_nway_predictions(all_predictions)
+                blend_meta = self._build_blend_meta(all_predictions)
+
                 orders = await self.portfolio.process_predictions(
                     predictions,
                     signal_source_override="BLEND",
                 )
-            elif self.use_consensus:
-                predictions = await self.consensus.run(cycle_tickers)
-                orders = await self.portfolio.process_predictions(predictions)
-            elif self.use_tournament:
-                tournament_result = await self.tournament.run_daily_tournament(cycle_tickers)
-                winner = tournament_result["winner_agent_id"]
-                predictions = await self._load_winner_predictions(winner, cycle_tickers)
-                orders = await self.portfolio.process_predictions(predictions)
-            elif self.use_rl:
-                predictions, rl_summaries = await self.rl.run_cycle(cycle_tickers)
+                mode_name = f"blend_nway({','.join(self.registry.active_names)})"
+
+            elif self.registry.runner_count == 1:
+                # 단일 전략 (기존 단독 모드 호환)
+                strategy_name = self.registry.active_names[0]
+                runner = self.registry.get(strategy_name)
+                assert runner is not None
+
+                predictions = await runner.run(cycle_tickers)
+
+                if self._rl_runner and self._rl_runner.last_summaries:
+                    rl_summaries = self._rl_runner.last_summaries
+
+                source_override = strategy_name if strategy_name in ("A", "B", "RL") else None
                 orders = await self.portfolio.process_predictions(
                     predictions,
-                    signal_source_override="RL",
+                    signal_source_override=source_override,
                 )
+                mode_name = {"A": "tournament", "B": "consensus", "RL": "rl"}.get(strategy_name, strategy_name)
+                blend_meta = None
+
             else:
+                # 기본 single predictor
                 predictions = await self.predictor.run_once(tickers=cycle_tickers)
                 orders = await self.portfolio.process_predictions(predictions)
+                mode_name = "single_predictor"
+                blend_meta = None
+
             await self.notifier.send_cycle_summary(
                 collected=collected_count,
                 predicted=len(predictions),
@@ -312,19 +516,13 @@ class OrchestratorAgent:
                 "orders": len(orders),
                 "winner_agent_id": winner,
                 "rl_summaries": rl_summaries,
-                "mode": (
-                    "blend"
-                    if self.use_blend
-                    else (
-                        "consensus"
-                        if self.use_consensus
-                        else ("tournament" if self.use_tournament else ("rl" if self.use_rl else "single_predictor"))
-                    )
-                ),
+                "mode": mode_name,
+                "active_strategies": self.registry.active_names,
+                "blend_meta": blend_meta,
                 "started_at": started.isoformat() + "Z",
                 "finished_at": datetime.utcnow().isoformat() + "Z",
             }
-            if self.use_rl:
+            if "RL" in self._active_strategies:
                 result["rl_registry_state"] = self._snapshot_rl_policy_store()
 
             await set_heartbeat(self.agent_id)
@@ -369,11 +567,17 @@ class OrchestratorAgent:
 
 
 async def _main_async(args: argparse.Namespace) -> None:
+    # --strategies 가 명시되면 그것을 사용, 아니면 기존 플래그에서 유추
+    strategies = None
+    if args.strategies:
+        strategies = [s.strip() for s in args.strategies.split(",") if s.strip()]
+
     agent = OrchestratorAgent(
         use_tournament=args.tournament,
         use_consensus=args.consensus,
         use_blend=args.blend,
         use_rl=args.rl,
+        strategies=strategies,
         tournament_rolling_days=args.tournament_rolling_days,
         tournament_min_samples=args.tournament_min_samples,
         consensus_rounds=args.consensus_rounds,
@@ -389,13 +593,18 @@ async def _main_async(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="OrchestratorAgent MVP")
+    parser = argparse.ArgumentParser(description="OrchestratorAgent (N-way blend)")
     parser.add_argument("--tickers", default="", help="쉼표 구분 티커 목록")
     parser.add_argument("--loop", action="store_true", help="주기 실행 모드")
-    parser.add_argument("--tournament", action="store_true", help="Strategy A 5개 인스턴스 토너먼트 모드")
-    parser.add_argument("--consensus", action="store_true", help="Strategy B 합의/토론 모드")
-    parser.add_argument("--blend", action="store_true", help="Strategy A/B 블렌딩 실행 모드")
-    parser.add_argument("--rl", action="store_true", help="RL Trading lane 실행 모드")
+    parser.add_argument("--tournament", action="store_true", help="Strategy A 토너먼트 단독 모드")
+    parser.add_argument("--consensus", action="store_true", help="Strategy B 합의/토론 단독 모드")
+    parser.add_argument("--blend", action="store_true", help="Strategy A/B 2-way 블렌딩 (하위 호환)")
+    parser.add_argument("--rl", action="store_true", help="RL Trading lane 단독 모드")
+    parser.add_argument(
+        "--strategies",
+        default="",
+        help="쉼표 구분 활성 전략 (예: A,B,RL). --blend, --tournament 등보다 우선",
+    )
     parser.add_argument(
         "--tournament-rolling-days",
         type=int,
