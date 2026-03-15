@@ -1,7 +1,7 @@
 /**
  * ui/src/hooks/useAgentStatus.ts — 에이전트 헬스 상태 폴링 훅
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/utils/api";
 
 export interface AgentStatus {
@@ -36,7 +36,7 @@ export function useAgentStatus() {
   return useQuery({
     queryKey: ["agents", "status"],
     queryFn: fetchAgentStatus,
-    refetchInterval: 60_000,  // 60초 폴링
+    refetchInterval: 60_000,
     staleTime: 30_000,
   });
 }
@@ -64,7 +64,6 @@ export function useAgentLogs(agentId: string | null) {
 }
 
 /* ── 에이전트 재시작 ────────────────────────────────────────────────────── */
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 export function useRestartAgent() {
   const qc = useQueryClient();
