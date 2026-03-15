@@ -1,7 +1,7 @@
 /**
  * ui/src/hooks/useAgentStatus.ts — 에이전트 헬스 상태 폴링 훅
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/utils/api";
 
 export interface AgentStatus {
@@ -36,7 +36,58 @@ export function useAgentStatus() {
   return useQuery({
     queryKey: ["agents", "status"],
     queryFn: fetchAgentStatus,
-    refetchInterval: 60_000,  // 60초 폴링
+    refetchInterval: 60_000,
     staleTime: 30_000,
+  });
+}
+
+export function useAgentLogs(agentId: string) {
+  return useQuery({
+    queryKey: ["agents", "logs", agentId],
+    queryFn: async () => {
+      const { data } = await api.get(`/agents/${agentId}/logs`);
+      return data;
+    },
+    enabled: !!agentId,
+    staleTime: 15_000,
+  });
+}
+
+export function useRestartAgent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (agentId: string) => {
+      const { data } = await api.post(`/agents/${agentId}/restart`);
+      return data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+export function usePauseAgent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (agentId: string) => {
+      const { data } = await api.post(`/agents/${agentId}/pause`);
+      return data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+export function useResumeAgent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (agentId: string) => {
+      const { data } = await api.post(`/agents/${agentId}/resume`);
+      return data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["agents"] });
+    },
   });
 }

@@ -2,50 +2,60 @@
 
 여러 AI 에이전트들의 협업 및 경쟁을 통해 최적의 주식 매매 결정을 내리는 자동화 시스템입니다.
 한국 KOSPI/KOSDAQ 시장을 대상으로, 무료 오픈 API를 통해 실시간 데이터를 수집하고
-**3종 LLM(Claude, GPT-4o, Gemini)** 기반의 두 가지 독립적인 트레이딩 전략을 동시에 운용합니다.
+**3종 LLM(Claude, GPT-4o, Gemini)** 기반의 **4가지 독립적인 트레이딩 전략(A/B/RL/S)**을 N-way 블렌딩으로 동시 운용합니다.
+
+> **현재 상태:** Strategy A/B/RL/S 4-way 블렌딩 통합 완료 · 피드백 루프 파이프라인 운영 중 · 관리/모니터링 UI 구축 완료
 
 ---
 
 ## 🏗️ 시스템 아키텍처
 
 ```
-[KRX / KIS Developers / FinanceDataReader]
-              |
-        CollectorAgent
-              |
-        OrchestratorAgent (LangGraph)
-        /                \
-   Strategy A            Strategy B
-   (Tournament)          (Consensus/Debate)
-   Claude x2             Proposer: Claude
-   GPT-4o x2      ───►   Challenger 1: GPT-4o
-   Gemini x1             Challenger 2: Gemini
-        |                Synthesizer: Claude
-        └──────┬──────────────┘
-               ↓
-   PortfolioManagerAgent ──► KIS Developers API (페이퍼/실거래)
-               |
-         NotifierAgent ──► Telegram Bot
-               |
-         [React 대시보드 (Toss 스타일)]
+[KRX / KIS / FinanceDataReader / SearXNG / MinIO S3]
+                    |
+              CollectorAgent ──► S3 Data Lake (Parquet)
+                    |
+         OrchestratorAgent (LangGraph + StrategyRunnerRegistry)
+        /          |          |          \
+  Strategy A   Strategy B  Strategy S  Strategy RL
+  (Tournament) (Consensus) (Search)   (Q-Learning)
+  5 LLM 경쟁   4 LLM 토론  SearXNG    Tabular RL V2
+  A: 0.30       B: 0.30     S: 0.20    RL: 0.20
+        \          |          |          /
+         └────── N-way Signal Blending ──┘
+                    |
+        PortfolioManagerAgent ──► KIS API (페이퍼/실거래)
+                    |
+              NotifierAgent ──► Telegram Bot
+                    |
+         [React 대시보드 + 마켓플레이스]
 ```
 
 ---
 
-## ✨ 두 가지 트레이딩 전략
+## ✨ 네 가지 트레이딩 전략 (N-way 블렌딩)
 
-### Strategy A — 토너먼트 (경쟁)
+### Strategy A — 토너먼트 (경쟁) `가중치 30%`
 - 매일 아침 **5개의 PredictorAgent 인스턴스**가 병렬 실행
 - 각 인스턴스는 서로 다른 LLM과 투자 성향을 가짐 (가치, 기술, 모멘텀, 역추세, 거시)
 - 장 마감 후 가장 정확도가 높은 인스턴스의 시그널이 다음 날 거래에 사용됨
 
-### Strategy B — 합의 (토론)
+### Strategy B — 합의 (토론) `가중치 30%`
 - **4개의 LLM 역할**이 구조화된 토론을 진행
 - Proposer(Claude) → Challenger 1(GPT-4o) + Challenger 2(Gemini) → Synthesizer(Claude)
 - 다라운드 토론(기본 2라운드)과 confidence 임계치(기본 0.67) 기준으로 합의 판정
-- 합의 도달 시 해당 시그널로 거래; 미도달 시 HOLD
 
-두 전략은 **동시에** 운용되며, 사용자가 블렌드 비율을 조정할 수 있습니다.
+### Strategy S — 검색/리서치 `가중치 20%`
+- SearXNG + ScrapeGraphAI 기반 뉴스/리서치 자동 수집
+- 감성 분석 → 시그널 매핑 (긍정→BUY, 부정→SELL)
+- Redis 캐싱 (4시간 TTL), 마켓플레이스 테마 자동 감지와 연동
+
+### Strategy RL — 강화학습 `가중치 20%`
+- Tabular Q-Learning V2: 5-bucket 상태공간 + 기회비용 리워드
+- Walk-forward 교차검증 + Shadow 추론 → 승격 게이트
+- 정책 레지스트리 (tabular/dqn/ppo 네임스페이스)
+
+네 전략은 **동시에** 운용되며, `strategy_blend_weights` 설정으로 가중치를 조정할 수 있습니다.
 
 ---
 
@@ -231,16 +241,17 @@ python3 scripts/validate_rl_trading.py
 
 ---
 
-## 확장 기능 상태 메모
+## 확장 기능 상태
 
-- 강화학습 트레이딩은 기존 Strategy A/B를 대체하지 않고 구조에 추가되는 기능입니다.
-- 검색/스크래핑 리서치 파이프라인도 기존 코어 트레이딩 위에 추가되는 기능입니다.
-- 현재 README 기준 상태 표시는 두 확장 기능 모두 `통합 테스트 진행 중`입니다.
-- 추후 검증이 완료되면 이 상태 문구는 운영 반영 상태에 맞게 갱신해야 합니다.
+| 기능 | 상태 | 설명 |
+|------|------|------|
+| Strategy A (Tournament) | ✅ 운영 중 | 5 Predictor 병렬 경쟁, rolling_accuracy 기반 승자 선택 |
+| Strategy B (Consensus) | ✅ 운영 중 | 4-role 구조화 토론, 다라운드 합의 |
+| Strategy RL (강화학습) | ✅ 통합 완료 | Walk-forward 검증, Shadow→Paper→Real 승격 게이트 |
+| Strategy S (검색/리서치) | ✅ 통합 완료 | SearXNG→ScrapeGraphAI→Claude 파이프라인 |
+| N-way 블렌딩 | ✅ 운영 중 | A:0.3 / B:0.3 / S:0.2 / RL:0.2 가중 합산 |
+| 피드백 루프 | ✅ 운영 중 | LLM 피드백 + RL 재학습 + 백테스트, 16:00 KST 자동 배치 |
+| 관리/모니터링 UI | ✅ 구축 완료 | RL대시보드, 피드백, SystemHealth, DataLake, Audit, Notifications |
+| S3 Data Lake | ✅ 운영 중 | MinIO + Parquet, 피드백 결과·정책 아티팩트 저장 |
 
-### 확장 방향
-
-- RL Trading Lane: 데이터셋/피처 -> 학습 환경 -> 평가 -> 정책 추론 -> PortfolioManager 연결
-- Search Lane: `SearXNG -> 웹 페이지 접속 -> ScrapeGraphAI 파싱 -> Claude CLI 추론`
-
-*Last updated: 2026-03-12*
+*Last updated: 2026-03-16*

@@ -165,32 +165,56 @@ class PredictorAgent:
             ticker_rows = await list_tickers(limit=limit)
             tickers = [r["ticker"] for r in ticker_rows]
 
+        # ── 1단계: 데이터 일괄 조회 (병렬) ──
+        candle_tasks = [fetch_recent_ohlcv(t, days=30) for t in tickers]
+        position_tasks = [get_position(t, account_scope="paper") for t in tickers]
+        all_candles = await asyncio.gather(*candle_tasks, return_exceptions=True)
+        all_positions = await asyncio.gather(*position_tasks, return_exceptions=True)
+
+        # ── 2단계: LLM 추론 (병렬, 동시 실행 수 제한) ──
+        sem = asyncio.Semaphore(3)  # LLM 동시 호출 제한
+
+        async def _predict_one(
+            ticker: str, candles: list, position: dict | None,
+        ) -> PredictionSignal | None:
+            async with sem:
+                try:
+                    llm_output = await self._llm_signal(
+                        ticker=ticker, candles=candles, position=position,
+                    )
+                except Exception as e:
+                    logger.warning("%s 예측 생략 [%s]: %s", self.agent_id, ticker, e)
+                    return None
+                return PredictionSignal(
+                    agent_id=self.agent_id,
+                    llm_model=self.llm_model,
+                    strategy=self.strategy,
+                    ticker=ticker,
+                    signal=llm_output["signal"],
+                    confidence=llm_output.get("confidence"),
+                    target_price=llm_output.get("target_price"),
+                    stop_loss=llm_output.get("stop_loss"),
+                    reasoning_summary=llm_output.get("reasoning_summary"),
+                    trading_date=date.today(),
+                )
+
+        prediction_tasks = []
+        for idx, ticker in enumerate(tickers):
+            candles = all_candles[idx] if not isinstance(all_candles[idx], Exception) else []
+            position = all_positions[idx] if not isinstance(all_positions[idx], Exception) else None
+            prediction_tasks.append(_predict_one(ticker, candles, position))
+
+        predictions = await asyncio.gather(*prediction_tasks)
+
+        # ── 3단계: DB 저장 + 결과 수집 ──
         results: list[PredictionSignal] = []
         failed_tickers: list[str] = []
-        for ticker in tickers:
-            candles = await fetch_recent_ohlcv(ticker, days=30)
-            position = await get_position(ticker, account_scope="paper")
-            try:
-                llm_output = await self._llm_signal(ticker=ticker, candles=candles, position=position)
-            except Exception as e:
-                logger.warning("%s 예측 생략 [%s]: %s", self.agent_id, ticker, e)
-                failed_tickers.append(ticker)
+        for idx, pred in enumerate(predictions):
+            if pred is None:
+                failed_tickers.append(tickers[idx])
                 continue
-
-            signal = PredictionSignal(
-                agent_id=self.agent_id,
-                llm_model=self.llm_model,
-                strategy=self.strategy,
-                ticker=ticker,
-                signal=llm_output["signal"],
-                confidence=llm_output.get("confidence"),
-                target_price=llm_output.get("target_price"),
-                stop_loss=llm_output.get("stop_loss"),
-                reasoning_summary=llm_output.get("reasoning_summary"),
-                trading_date=date.today(),
-            )
-            await insert_prediction(signal)
-            results.append(signal)
+            await insert_prediction(pred)
+            results.append(pred)
 
         # ── Data Lake: 예측 시그널을 Parquet으로 S3에 저장 ─────────────
         for sig in results:

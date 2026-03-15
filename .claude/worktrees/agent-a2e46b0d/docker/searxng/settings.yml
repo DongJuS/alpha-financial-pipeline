@@ -1,0 +1,72 @@
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "agents-investing search"
+  privacylevel: 2
+  enable_doi_resolver: false
+  donation_url: ""
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "ko-KR"
+  autocomplete_min: 4
+  enable_doi_resolver: false
+  default_theme: "simple"
+
+server:
+  port: 8888
+  bind_address: "0.0.0.0"
+  secret_key: "agents-investing-searxng-secret-key-change-in-production"
+  base_url: "http://localhost:8888/"
+  image_proxy: true
+  proxy_auth: ""
+
+ui:
+  static_path: ""
+  templates_path: ""
+  default_theme: "simple"
+  default_locale: "ko"
+  logo_url: ""
+  query_in_title: false
+  infinite_scroll: false
+  center_alignment: false
+
+outgoing:
+  proxies: {}
+  max_request_timeout: 10.0
+  pool_connections: 100
+  pool_maxsize: 100
+
+engines:
+  # Google search
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: false
+    timeout: 5.0
+
+  # Google News
+  - name: google news
+    engine: google_news
+    shortcut: gn
+    disabled: false
+    timeout: 5.0
+
+  # Bing (fallback)
+  - name: bing
+    engine: bing
+    shortcut: b
+    disabled: false
+    timeout: 5.0
+
+  # Naver (Korean search - may require configuration)
+  - name: naver
+    engine: xpath
+    shortcut: nv
+    disabled: true
+    timeout: 5.0
+
+redis:
+  url: "redis://localhost:6379"

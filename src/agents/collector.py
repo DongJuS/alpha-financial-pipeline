@@ -189,16 +189,16 @@ class CollectorAgent:
             "updated_at": point.timestamp_kst.isoformat(),
             "source": source,
         }
-        await redis.set(
-            KEY_LATEST_TICKS.format(ticker=point.ticker),
-            json.dumps(payload, ensure_ascii=False),
-            ex=60,
-        )
-        series_key = KEY_REALTIME_SERIES.format(ticker=point.ticker)
         encoded = json.dumps(payload, ensure_ascii=False)
-        await redis.lpush(series_key, encoded)
-        await redis.ltrim(series_key, 0, 299)
-        await redis.expire(series_key, TTL_REALTIME_SERIES)
+        series_key = KEY_REALTIME_SERIES.format(ticker=point.ticker)
+
+        # Redis pipeline: 4 round trips → 1 round trip
+        pipe = redis.pipeline(transaction=False)
+        pipe.set(KEY_LATEST_TICKS.format(ticker=point.ticker), encoded, ex=60)
+        pipe.lpush(series_key, encoded)
+        pipe.ltrim(series_key, 0, 299)
+        pipe.expire(series_key, TTL_REALTIME_SERIES)
+        await pipe.execute()
 
     async def _get_access_token(self) -> Optional[str]:
         redis = await get_redis()

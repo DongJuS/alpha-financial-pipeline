@@ -208,10 +208,40 @@ Strategy L  → [real] [paper] [virtual]
 
 논의 문서: `.agent/discussions/20260315-independent-portfolio-per-strategy.md`
 
+### Phase 13 — 마켓플레이스 섹터 확장
+
+목표:
+- 증권사 수준의 종목/섹터 커버리지 확보
+- KRX 전체 2,650종목 + ETF 700개 매일 EOD 수집
+- 섹터 히트맵, 랭킹, 테마, ETF, 워치리스트 UI 구축
+- AI 시그널 오버레이 (Strategy A/B/RL/S → 마켓플레이스)
+- 월 ₩4,100 이하 비용으로 운영
+
+작업 항목:
+- [x] `stock_master` + `macro_indicators` + `daily_rankings` + `theme_stocks` + `watchlist` DB 테이블
+- [x] 전체 종목 배치 수집기 (`stock_master_collector.py`, `macro_collector.py`, `ranking_calculator.py`)
+- [x] Redis 캐시 구조 (24h 마스터, 5min 랭킹, 1h 매크로)
+- [x] Marketplace API 15+ 엔드포인트 (`marketplace.py`)
+- [x] 섹터 히트맵/랭킹/테마/ETF/워치리스트 UI (`Marketplace.tsx`)
+- [x] 30개 투자 테마 초기 데이터 (`src/data/themes.py`)
+- [x] 통합 테스트 (`test/test_marketplace_week1.py`)
+
+논의 문서: `.agent/discussions/20260315-marketplace-sector-expansion.md` (Closed)
+
 ## 현재 상태 요약
 
 - 코어 트레이딩 트랙: 구현 완료 및 유지보수 단계
+<<<<<<< HEAD
+- RL 트레이딩: 최소 runnable lane + 실험 관리 구현 완료, 데이터셋/환경 고도화 진행 중
+- 검색/스크래핑 스택: 파이프라인 설계 완료, MVP 구현 완료, SearchRunner Orchestrator 통합 완료
+- N-way 블렌딩: 설계 확정, 구현 완료 (Phase 11), Strategy S 포함 4-way 블렌딩 운영 중
+- 독립 포트폴리오: 향후 계획 (Phase 12)
+- 마켓플레이스: Week 1~5 전체 구현 완료 (Phase 13)
+- 피드백 루프: LLM 피드백 + RL 재학습 + 백테스트 파이프라인 운영 중
+- S3 Data Lake: MinIO + Parquet 기반 데이터 레이크 운영 중
+=======
 - RL 트레이딩: Phase 9 전체 구현 완료 (dataset builder v2, trading env, walk-forward, shadow inference, promotion gate, REST API 17개)
 - 검색/스크래핑 스택: 파이프라인 설계 완료, MVP 구현 완료
 - N-way 블렌딩: 설계 확정, 구현 완료 (Phase 11)
 - 독립 포트폴리오: 핵심 인프라 + Orchestrator 통합 완료 (Phase 12)
+>>>>>>> origin/main
