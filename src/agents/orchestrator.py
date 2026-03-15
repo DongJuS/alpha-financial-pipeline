@@ -11,7 +11,6 @@ import asyncio
 from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 
-
 from src.db.models import AgentHeartbeatRecord, PredictionSignal
 from src.db.queries import (
     get_predictor_performance,
@@ -22,7 +21,7 @@ from src.utils.logging import get_logger
 from src.utils.redis_client import set_heartbeat
 
 if TYPE_CHECKING:
-    from src.agents.orchestrator import StrategyRunner
+    from src.agents.strategy_runner import StrategyRunner
 
 logger = get_logger(__name__)
 
@@ -39,7 +38,7 @@ STRATEGY_BLEND_WEIGHTS = {
 class StrategyRunnerRegistry:
     """전략 러너 (StrategyRunner) 등록 및 관리"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._runners: dict[str, StrategyRunner] = {}
 
     def register(self, runner: StrategyRunner) -> None:
