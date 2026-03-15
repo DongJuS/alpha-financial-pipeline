@@ -43,6 +43,12 @@ export function formatPct(value: number): string {
   return `${sign}${value.toFixed(2)}%`;
 }
 
+/** MDD 포맷 (0.00% / -1.39%) — MDD는 항상 0 이하 */
+export function formatMDD(value: number): string {
+  if (value === 0) return "0.00%";
+  return `-${Math.abs(value).toFixed(2)}%`;
+}
+
 /** 시그널 배지 클래스 */
 export function signalBadgeClass(signal: string): string {
   if (signal === "BUY") return "badge-buy";

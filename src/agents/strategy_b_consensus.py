@@ -101,37 +101,49 @@ class StrategyBConsensus:
             raise RuntimeError(f"Strategy B role config missing: {config_key}")
         return role_configs[config_key]
 
-    async def _ask_json_with_fallback(self, model: str, prompt: str) -> dict[str, Any]:
+    async def _ask_json_with_fallback(self, model: str, prompt: str, temperature: float = 0.5) -> dict[str, Any]:
         last_error: Exception | None = None
-        for provider in self._provider_order_for_model(model):
+        providers_tried = self._provider_order_for_model(model)
+        for i, provider in enumerate(providers_tried):
             try:
                 if provider == "gpt" and self.gpt.is_configured:
-                    return await self.gpt.ask_json(prompt)
-                if provider == "gemini" and self.gemini.is_configured:
-                    return await self.gemini.ask_json(prompt)
-                if provider == "claude" and self.claude.is_configured:
-                    return await self.claude.ask_json(prompt)
+                    result = await self.gpt.ask_json(prompt, temperature=temperature)
+                elif provider == "gemini" and self.gemini.is_configured:
+                    result = await self.gemini.ask_json(prompt, temperature=temperature)
+                elif provider == "claude" and self.claude.is_configured:
+                    result = await self.claude.ask_json(prompt, temperature=temperature)
+                else:
+                    continue
+                if i > 0:
+                    logger.info("LLM fallback 사용: %s → %s (model=%s)", providers_tried[0], provider, model)
+                return result
             except Exception as exc:
                 last_error = exc
-                logger.warning("%s JSON 호출 실패: %s", provider, exc)
+                logger.warning("%s JSON 호출 실패 (model=%s): %s", provider, model, exc)
 
-        raise RuntimeError(f"LLM JSON 호출 실패: model={model}, last_error={last_error}")
+        raise RuntimeError(f"LLM JSON 호출 실패 — 모든 provider 실패: model={model}, tried={providers_tried}, last_error={last_error}")
 
-    async def _ask_text_with_fallback(self, model: str, prompt: str) -> str:
+    async def _ask_text_with_fallback(self, model: str, prompt: str, temperature: float = 0.5) -> str:
         last_error: Exception | None = None
-        for provider in self._provider_order_for_model(model):
+        providers_tried = self._provider_order_for_model(model)
+        for i, provider in enumerate(providers_tried):
             try:
                 if provider == "gpt" and self.gpt.is_configured:
-                    return await self.gpt.ask(prompt)
-                if provider == "gemini" and self.gemini.is_configured:
-                    return await self.gemini.ask(prompt)
-                if provider == "claude" and self.claude.is_configured:
-                    return await self.claude.ask(prompt)
+                    result = await self.gpt.ask(prompt, temperature=temperature)
+                elif provider == "gemini" and self.gemini.is_configured:
+                    result = await self.gemini.ask(prompt, temperature=temperature)
+                elif provider == "claude" and self.claude.is_configured:
+                    result = await self.claude.ask(prompt, temperature=temperature)
+                else:
+                    continue
+                if i > 0:
+                    logger.info("LLM fallback 사용: %s → %s (model=%s)", providers_tried[0], provider, model)
+                return result
             except Exception as exc:
                 last_error = exc
-                logger.warning("%s text 호출 실패: %s", provider, exc)
+                logger.warning("%s text 호출 실패 (model=%s): %s", provider, model, exc)
 
-        raise RuntimeError(f"LLM text 호출 실패: model={model}, last_error={last_error}")
+        raise RuntimeError(f"LLM text 호출 실패 — 모든 provider 실패: model={model}, tried={providers_tried}, last_error={last_error}")
 
     async def _propose(
         self,
@@ -160,7 +172,7 @@ BUY/SELL/HOLD 중 하나를 선택하고 JSON으로 답해라:
   "argument": "핵심 근거 한 문단"
 }}
 """
-        data = await self._ask_json_with_fallback(str(proposer_role["llm_model"]), prompt)
+        data = await self._ask_json_with_fallback(str(proposer_role["llm_model"]), prompt, temperature=0.5)
         signal = str(data.get("signal", "HOLD")).upper()
         if signal not in {"BUY", "SELL", "HOLD"}:
             signal = "HOLD"
@@ -189,7 +201,8 @@ BUY/SELL/HOLD 중 하나를 선택하고 JSON으로 답해라:
 Proposer 주장: {json.dumps(proposer, ensure_ascii=False)}
 반론을 2~3문장으로 작성해라.
 """
-        return await self._ask_text_with_fallback(str(role_config["llm_model"]), prompt)
+        # Challenger는 더 높은 temperature로 다양한 반론 유도
+        return await self._ask_text_with_fallback(str(role_config["llm_model"]), prompt, temperature=0.7)
 
     async def _synthesize(
         self,
@@ -211,7 +224,7 @@ proposer: {json.dumps(proposer, ensure_ascii=False)}
 challenger1: {challenger1}
 challenger2: {challenger2}
 
-아래 임계치 기준을 반드시 적용해 최종 결론을 JSON으로 출력:
+아래 임계치 기준을 반드시 적용해 최종 결론을 JSON으로 추출:
 - consensus_threshold: {self.consensus_threshold:.2f}
 - confidence가 임계치보다 낮으면 consensus_reached=false
 
@@ -223,7 +236,8 @@ challenger2: {challenger2}
   "no_consensus_reason": "string | null"
 }}
 """
-        data = await self._ask_json_with_fallback(str(synthesizer_role["llm_model"]), prompt)
+        # Synthesizer는 낮은 temperature로 일관된 종합 판단
+        data = await self._ask_json_with_fallback(str(synthesizer_role["llm_model"]), prompt, temperature=0.3)
         signal = str(data.get("final_signal", fallback_signal)).upper()
         if signal not in {"BUY", "SELL", "HOLD"}:
             signal = "HOLD"
@@ -404,7 +418,7 @@ async def _main_async(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Strategy B Consensus Runner")
-    parser.add_argument("--tickers", required=True, help="쉼표 구분 티커 목록")
+    parser.add_argument("--tickers", required=True, help="쌍표 구분 티커 목록")
     parser.add_argument("--max-rounds", type=int, default=None, help="최대 토론 라운드 수(기본: 설정값)")
     parser.add_argument(
         "--consensus-threshold",

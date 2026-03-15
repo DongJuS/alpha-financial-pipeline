@@ -151,7 +151,7 @@ export default function Strategy() {
                         </div>
                         <p className="mt-2 text-xs" style={{ color: "var(--text-secondary)" }}>
                           A: {signal.strategy_a_signal ?? "-"} / B: {signal.strategy_b_signal ?? "-"} / confidence{" "}
-                          {signal.combined_confidence != null ? signal.combined_confidence.toFixed(3) : "-"}
+                          {signal.combined_confidence != null ? signal.combined_confidence.toFixed(2) : "-"}
                         </p>
                       </div>
                       <button
@@ -216,7 +216,7 @@ export default function Strategy() {
                     </div>
                     <p className="mt-2 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>
                       {item.date} · rounds {item.rounds} · conf{" "}
-                      {item.confidence !== null ? item.confidence.toFixed(3) : "-"} · consensus{" "}
+                      {item.confidence !== null ? item.confidence.toFixed(2) : "-"} · consensus{" "}
                       {item.consensus_reached ? "yes" : "no"}
                     </p>
                   </button>
@@ -296,7 +296,7 @@ export default function Strategy() {
                 <>
                   <p className="inner-card text-xs leading-6" style={{ color: "var(--text-secondary)" }}>
                     {debate.ticker} · rounds {debate.rounds} · confidence{" "}
-                    {debate.confidence !== null ? debate.confidence.toFixed(3) : "-"} · consensus{" "}
+                    {debate.confidence !== null ? debate.confidence.toFixed(2) : "-"} · consensus{" "}
                     {debate.consensus_reached ? "yes" : "no"}
                   </p>
 
@@ -355,6 +355,143 @@ export default function Strategy() {
               )}
             </div>
           )}
+        </section>
+      </div>
+
+      {/* ── 확장 전략 레이어 ── */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        {/* RL Trading */}
+        <section className="card space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="eyebrow">Extension layer</span>
+              <h2 className="mt-2 text-[20px] font-bold tracking-[-0.03em]" style={{ color: "var(--text-primary)" }}>
+                RL 트레이딩
+              </h2>
+              <p className="mt-1 text-sm leading-6" style={{ color: "var(--text-secondary)" }}>
+                강화학습 기반 정책이 시장 상태를 관찰하고 시그널 후보를 생성합니다. 기존 Strategy A/B를 대체하지 않고 병렬
+                레이어로 동작합니다.
+              </p>
+            </div>
+            <span className="chip">통합 테스트 중</span>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[
+              {
+                id: "rl_data_builder",
+                title: "Data Builder",
+                desc: "시장 데이터·포트폴리오 상태를 RL 학습용 feature dataset으로 변환",
+                status: "planned",
+              },
+              {
+                id: "rl_trainer",
+                title: "Trainer",
+                desc: "환경 정의 + 정책 학습 실행, 모델 artifact/version 생성",
+                status: "planned",
+              },
+              {
+                id: "rl_evaluator",
+                title: "Evaluator",
+                desc: "백테스트, out-of-sample 검증, 리스크 지표 평가",
+                status: "planned",
+              },
+              {
+                id: "rl_policy",
+                title: "Policy Agent",
+                desc: "승인된 정책을 inference 전용으로 로드해 시그널 후보 생성",
+                status: "planned",
+              },
+            ].map((agent) => (
+              <div key={agent.id} className="inner-card">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-bold tracking-[-0.02em]" style={{ color: "var(--text-primary)" }}>
+                    {agent.title}
+                  </p>
+                  <span
+                    className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                    style={{ background: "var(--warning-bg)", color: "var(--warning)" }}
+                  >
+                    {agent.status}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>{agent.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="inner-card space-y-2">
+            <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>운영 원칙</p>
+            <ul className="space-y-1 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>
+              <li>· RL 정책은 직접 브로커를 호출하지 않음</li>
+              <li>· 모든 시그널은 기존 리스크 가드 + PortfolioManager를 통과해야 주문 가능</li>
+              <li>· 학습 데이터와 정책 버전은 추적 가능하게 저장</li>
+            </ul>
+          </div>
+        </section>
+
+        {/* Search / Scraping Research */}
+        <section className="card space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="eyebrow">Extension layer</span>
+              <h2 className="mt-2 text-[20px] font-bold tracking-[-0.03em]" style={{ color: "var(--text-primary)" }}>
+                검색/스크래핑 리서치
+              </h2>
+              <p className="mt-1 text-sm leading-6" style={{ color: "var(--text-secondary)" }}>
+                SearXNG 검색 → 웹 페이지 접속 → ScrapeGraphAI 구조화 → Claude CLI 추론 파이프라인으로 전략 입력을
+                보강합니다.
+              </p>
+            </div>
+            <span className="chip">통합 테스트 중</span>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-1">
+            {[
+              {
+                id: "search_query",
+                title: "Search Query Agent",
+                desc: "종목/테마별 검색 질의 생성, SearXNG 호출, 후보 URL 수집",
+                status: "planned",
+              },
+              {
+                id: "scrape_worker",
+                title: "Scrape Worker Agent",
+                desc: "웹 페이지 fetch/render 후 ScrapeGraphAI로 구조화 데이터 생성",
+                status: "planned",
+              },
+              {
+                id: "claude_extraction",
+                title: "Claude Extraction Agent",
+                desc: "구조화된 페이지 내용을 요약, 근거 추출, 전략/RL용 feature로 정리",
+                status: "planned",
+              },
+            ].map((agent) => (
+              <div key={agent.id} className="inner-card">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-bold tracking-[-0.02em]" style={{ color: "var(--text-primary)" }}>
+                    {agent.title}
+                  </p>
+                  <span
+                    className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                    style={{ background: "var(--warning-bg)", color: "var(--warning)" }}
+                  >
+                    {agent.status}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>{agent.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="inner-card space-y-2">
+            <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>파이프라인 원칙</p>
+            <ul className="space-y-1 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>
+              <li>· Tavily는 사용하지 않음 — SearXNG 자체 호스팅</li>
+              <li>· 검색 결과는 출처와 추출 결과를 함께 저장해 감사 가능</li>
+              <li>· 정보 수집과 구조화만 담당, 직접 주문 권한 없음</li>
+            </ul>
+          </div>
         </section>
       </div>
     </div>

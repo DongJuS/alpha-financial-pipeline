@@ -40,11 +40,11 @@ class PredictorProfile:
 
 
 PROFILES = [
-    PredictorProfile("predictor_1", "claude-3-5-sonnet-latest", "가치 투자형"),
-    PredictorProfile("predictor_2", "claude-3-5-sonnet-latest", "기술적 분석형"),
-    PredictorProfile("predictor_3", "gpt-4o-mini", "모멘텀형"),
-    PredictorProfile("predictor_4", "gpt-4o-mini", "역추세형"),
-    PredictorProfile("predictor_5", "gemini-1.5-pro", "거시경제형"),
+    PredictorProfile("predictor_1", "claude-opus-4-6", "가치 투자형"),
+    PredictorProfile("predictor_2", "claude-opus-4-6", "기술적 분석형"),
+    PredictorProfile("predictor_3", "gemini-3.1-pro-preview", "모멘텀형"),
+    PredictorProfile("predictor_4", "gemini-3.1-pro-preview", "역추세형"),
+    PredictorProfile("predictor_5", "claude-haiku-4-5-20251001", "거시경제형"),
 ]
 
 
@@ -261,8 +261,8 @@ async def _main_async(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Strategy A Tournament Runner")
-    parser.add_argument("--tickers", required=True, help="쉼표 구분 티커 목록")
-    parser.add_argument("--rolling-days", type=int, default=None, help="점수 롤링 윈도우 일수")
+    parser.add_argument("--tickers", required=True, help="쌍표 구분 티커 목록")
+    parser.add_argument("--rolling-days", type=int, default=None, help="점수 롤링 의도우 일수")
     parser.add_argument("--min-samples", type=int, default=None, help="우승자 선정을 위한 최소 채점 샘플 수")
     args = parser.parse_args()
     asyncio.run(_main_async(args))
