@@ -94,6 +94,15 @@ CREATE_TABLES: list[str] = [
         ON predictions (trading_date DESC, strategy, agent_id);
     CREATE INDEX IF NOT EXISTS idx_predictions_ticker_date
         ON predictions (ticker, trading_date DESC);
+    -- N-way 블렌딩 확장: strategy CHECK에 'R'(RL), 'S', 'L' 추가
+    ALTER TABLE predictions
+        DROP CONSTRAINT IF EXISTS predictions_strategy_check;
+    ALTER TABLE predictions
+        ADD CONSTRAINT predictions_strategy_check
+        CHECK (strategy IN ('A', 'B', 'R', 'S', 'L'));
+    -- shadow gate: 미승인 전략은 shadow 로깅만
+    ALTER TABLE predictions
+        ADD COLUMN IF NOT EXISTS is_shadow BOOLEAN DEFAULT FALSE;
     """,
 
     # 4. Strategy A 토너먼트 점수
@@ -353,7 +362,10 @@ CREATE_TABLES: list[str] = [
         DROP CONSTRAINT IF EXISTS trade_history_signal_source_check;
     ALTER TABLE trade_history
         ADD CONSTRAINT trade_history_signal_source_check
-        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL'));
+        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL', 'S', 'L'));
+    -- N-way 블렌딩 메타데이터 (참여 전략/가중치 기록)
+    ALTER TABLE trade_history
+        ADD COLUMN IF NOT EXISTS blend_meta JSONB;
     ALTER TABLE trade_history
         ALTER COLUMN account_scope SET NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_trade_history_ticker_date
@@ -401,7 +413,10 @@ CREATE_TABLES: list[str] = [
         DROP CONSTRAINT IF EXISTS broker_orders_signal_source_check;
     ALTER TABLE broker_orders
         ADD CONSTRAINT broker_orders_signal_source_check
-        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL'));
+        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL', 'S', 'L'));
+    -- N-way 블렌딩 메타데이터
+    ALTER TABLE broker_orders
+        ADD COLUMN IF NOT EXISTS blend_meta JSONB;
     CREATE INDEX IF NOT EXISTS idx_broker_orders_scope_ts
         ON broker_orders (account_scope, requested_at DESC);
     CREATE INDEX IF NOT EXISTS idx_broker_orders_scope_status_ts

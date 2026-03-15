@@ -141,8 +141,59 @@
 2. `train -> evaluate -> infer -> order route` 자동 테스트가 통과한다.
 3. RL이 직접 브로커를 호출하지 않고 `PortfolioManagerAgent`를 통해서만 주문 경로에 들어간다.
 
+### Phase 11 — N-way 블렌딩 + StrategyRunner Registry
+
+목표:
+- 기존 elif 체인을 `StrategyRunner` Protocol + Registry 패턴으로 리팩토링
+- A/B/RL 3개 전략을 N-way `blend_signals()`로 통합
+- 향후 S/L 전략 추가 시 Runner만 구현하면 되는 구조 확보
+
+작업 항목:
+- [x] `StrategyRunner` Protocol + `StrategyRegistry` 신설 (`src/agents/strategy_runner.py`)
+- [x] N-way `blend_signals()` 일반화 (`src/agents/blending.py`)
+- [x] Orchestrator Registry 기반 병렬 실행 리팩토링 + `--strategies` CLI
+- [x] RL V2 시그널 매핑 (`map_v2_action_to_signal`, `normalize_q_confidence`)
+- [x] shadow gate 기반 인프라 (`predictions.is_shadow` 컬럼, `PredictionSignal.is_shadow` 필드)
+- [x] 전략별 가중치 외부화 (`STRATEGY_BLEND_WEIGHTS`)
+- [x] DB 스키마 확장 (`blend_meta JSONB`, `strategy CHECK S/L`, `is_shadow`)
+- [x] `BlendInput` + `NWayBlendResult` 데이터 클래스
+- [x] 통합 테스트 (`test/test_blend_nway.py`)
+
+완료 기준:
+- `--strategies A,B,RL` 플래그로 N개 전략 병렬 실행 + 블렌딩 동작
+- 기존 단독 모드(`--tournament`, `--consensus`, `--rl`)가 그대로 동작
+- shadow 전략 시그널이 DB에 기록되되 blend에는 참여하지 않음
+
+논의 문서: `.agent/discussions/20260314-strategy-ab-rl-extension.md`
+
+### Phase 12 — 전략별 독립 포트폴리오 + 가상 트레이딩 (향후)
+
+목표:
+- 각 전략이 독립적인 포트폴리오를 운용 (블렌딩 → 독립 전환)
+- 전략별 real/paper/virtual 3-모드 운용
+- KIS API 과거 데이터 수집 → 학습/백테스트 → 가상 트레이딩 → 모의 → 실전 승격 파이프라인
+
+전환 포인트:
+- Phase 11의 `StrategyRunner` 인터페이스를 그대로 활용
+- Orchestrator에서 blend 대신 각 Runner의 결과를 개별 PortfolioManager에 전달
+- 전략 코드 변경 없이 Orchestrator 레벨에서만 전환
+
+전체 매트릭스 (최대 5 × 3 = 15개 독립 포트폴리오):
+```
+Strategy A  → [real] [paper] [virtual]
+Strategy B  → [real] [paper] [virtual]
+Strategy RL → [real] [paper] [virtual]
+Strategy S  → [real] [paper] [virtual]
+Strategy L  → [real] [paper] [virtual]
+```
+
+착수 시점: Phase 11 운용 데이터가 쌓이고 전략별 성과 비교가 의미 있는 시점
+논의 문서: `.agent/discussions/20260315-independent-portfolio-per-strategy.md`
+
 ## 현재 상태 요약
 
 - 코어 트레이딩 트랙: 구현 완료 및 유지보수 단계
 - RL 트레이딩: 최소 runnable lane 구현 완료, 통합 테스트 진행 중
 - 검색/스크래핑 스택: 구조 편입 및 설계 단계, 구현은 다음 우선순위
+- N-way 블렌딩: 설계 확정, 구현 착수 단계 (Phase 11)
+- 독립 포트폴리오: 향후 계획 (Phase 12)
