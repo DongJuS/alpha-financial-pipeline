@@ -7,8 +7,8 @@
 
 ## 🎯 현재 스프린트 목표
 
-**Phase 7 — 실거래 준비 완료 검증**
-Phase 1~7 전 구간 구현을 자동 검증 스크립트(`scripts/validate_all_phases.py`)로 100% 달성 상태까지 끌어올렸습니다.
+**Phase 11 — N-way 블렌딩 + StrategyRunner Registry**
+기존 elif 체인을 StrategyRunner Protocol + Registry 패턴으로 리팩토링하고, A/B/RL N-way 블렌딩을 구현했습니다.
 
 ---
 
@@ -76,6 +76,7 @@ Phase 1~7 전 구간 구현을 자동 검증 스크립트(`scripts/validate_all_
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
+| 2026-03-15 | **N-way 블렌딩 + StrategyRunner Registry 구현** — `src/agents/strategy_runner.py`(StrategyRunner Protocol + StrategyRegistry), `src/agents/blending.py`(BlendInput + blend_signals() N-way 일반화), `src/agents/orchestrator.py`(Registry 기반 병렬 실행 + --strategies CLI), `src/agents/rl_trading_v2.py`(map_v2_action_to_signal + normalize_q_confidence), `src/db/models.py`(strategy S/L 추가, is_shadow, blend_meta), `scripts/db/init_db.py`(is_shadow, blend_meta JSONB, strategy CHECK 확장), `src/utils/config.py`(strategy_blend_weights), `test/test_blend_nway.py` 통합 테스트 전체 통과 | ✅ 완료 |
 | 2026-03-15 | 실험 메타데이터 관리 영구 문서화 및 후속 작업 완료 — `domain`별 필수 파라미터 규격화, `expected_impact` 연결 방식, UI 노출 파트 정의를 `docs/EXPERIMENT_TRACKING.md`로 정리하여 영구 문서로 편입 후 종결된 `.agent/discussions/20260314-cross-strategy-performance-management.md` 논의 문서 삭제 처리 | ✅ 완료 |
 | 2026-03-15 | 실험 메타데이터 공통 추적 구조 도입 — `.agent/discussions/20260314-cross-strategy-performance-management.md` 최종 결정에 따라 `config/experiments/`, `config/active/` 디렉터리 기반 GitOps 추적 구조 신설 및 `src/utils/experiment_tracker.py` 구현 | ✅ 완료 |
 | 2026-03-15 | RL 아티팩트 Git 추적 정책 정리 — `.gitignore`를 조정해 `artifacts/` 기본 ignore는 유지하면서 `artifacts/rl/models/README.md`, `artifacts/rl/models/registry.json`은 Git 추적 허용, tabular 정책 JSON/Q-table은 계속 ignore, 향후 DQN/PPO 샘플 가중치용 `artifacts/rl/models/{dqn,ppo}/samples/` 경로를 열고 `.gitkeep`/README 규칙까지 반영 | ✅ 완료 |

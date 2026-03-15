@@ -395,3 +395,54 @@ class TabularQTrainerV2:
             test_start=test_timestamps[0],
             test_end=test_timestamps[-1],
         )
+
+
+# ────────────────────────── V2 시그널 매핑 (N-way 블렌딩용) ──────────────────────────
+
+# V2 action → PredictionSignal 호환 매핑
+_ACTION_TO_SIGNAL = {
+    "BUY": "BUY",
+    "SELL": "SELL",
+    "HOLD": "HOLD",
+    "CLOSE": "HOLD",  # blend 레벨에서는 CLOSE→HOLD (포지션 청산은 PortfolioManager 책임)
+}
+
+
+def map_v2_action_to_signal(action: str) -> str:
+    """V2의 4-action(BUY/SELL/HOLD/CLOSE)을 PredictionSignal 호환 3-signal(BUY/SELL/HOLD)로 변환한다.
+
+    - BUY → BUY
+    - SELL → SELL
+    - HOLD → HOLD
+    - CLOSE → HOLD (blend 레벨; RL 단독 모드에서는 PortfolioManager가 청산 처리)
+    """
+    return _ACTION_TO_SIGNAL.get(action.upper(), "HOLD")
+
+
+def normalize_q_confidence(q_values: dict[str, float]) -> float:
+    """Q-value spread를 0.0~1.0 범위의 confidence로 정규화한다.
+
+    방식: best Q-value와 worst Q-value의 차이(spread)를 min-max 정규화.
+    - spread가 0이면 confidence=0.5 (불확실)
+    - spread가 클수록 confidence가 높아짐
+
+    반환값은 0.3~0.95 범위로 클램핑한다.
+    """
+    if not q_values:
+        return 0.5
+
+    values = list(q_values.values())
+    best = max(values)
+    worst = min(values)
+    spread = best - worst
+
+    if spread <= 0:
+        return 0.5
+
+    # spread를 sigmoid-like 함수로 0~1 매핑
+    # spread가 0.05 이상이면 높은 confidence
+    normalized = min(1.0, spread / 0.10)
+
+    # 0.3 ~ 0.95 범위로 클램핑
+    confidence = 0.3 + normalized * 0.65
+    return round(min(0.95, max(0.3, confidence)), 4)

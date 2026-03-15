@@ -69,13 +69,30 @@
 - **Git 추적 정책(2026-03-15):** `artifacts/`는 기본 ignore를 유지하되, RL 운영 메타파일인 `artifacts/rl/models/README.md`와 `artifacts/rl/models/registry.json`은 Git 추적 허용. tabular 정책 JSON/Q-table은 계속 ignore하고, 향후 DQN/PPO 예제 가중치는 `artifacts/rl/models/dqn/samples/`, `artifacts/rl/models/ppo/samples/` 하위에서만 샘플 형태로 버전 관리
 
 ### 2026-03-14 — Strategy A/B + RL 확장 필요사항 정리
-- **현황:** RL은 `orchestrator --rl`로 독립 실행만 가능 (A/B와 상호 배타)
-- **남은 작업:**
-  1. 블렌딩 확장: `blending.py`에 A+B+RL 3-way 가중치 합산
-  2. 오케스트레이터: elif 체인 → 병렬 실행 구조 전환
-  3. V2 시그널 호환: 숏(-1)/CLOSE 액션 → PredictionSignal 매핑
-  4. DB 스키마: `predictions.strategy` 제약에 'RL' 추가
-  5. RLPolicyStore 경로: `models/<algorithm>/<ticker>/` 하위 구조 사용 (마이그레이션 완료)
+- **현황:** ~~RL은 `orchestrator --rl`로 독립 실행만 가능 (A/B와 상호 배타)~~
+- **해결 완료 (2026-03-15):** N-way 블렌딩 + StrategyRunner Registry로 전면 리팩토링
+  1. ✅ 블렌딩 확장: `BlendInput` + `blend_signals()` N-way 일반화
+  2. ✅ 오케스트레이터: elif 체인 → `StrategyRegistry` 기반 병렬 실행
+  3. ✅ V2 시그널 호환: `map_v2_action_to_signal()` (CLOSE→HOLD), `normalize_q_confidence()`
+  4. ✅ DB 스키마: `predictions.strategy` CHECK에 'R','S','L' 추가, `is_shadow` 컬럼
+  5. ✅ RLPolicyStore 경로: `models/<algorithm>/<ticker>/` 하위 구조 사용 (마이그레이션 완료)
+
+### 2026-03-15 — N-way 블렌딩 + StrategyRunner Registry 구현 완료
+- **결정:** Option B(Strategy Registry) + N-way blend + shadow gate + 가중치 외부화
+- **핵심 변경 파일:**
+  - `src/agents/strategy_runner.py` — `StrategyRunner` Protocol + `StrategyRegistry`
+  - `src/agents/blending.py` — `BlendInput`, `NWayBlendResult`, `blend_signals()` N-way 일반화, 기존 `blend_strategy_signals()` 래퍼 유지
+  - `src/agents/orchestrator.py` — `TournamentRunner`, `ConsensusRunner`, `RLRunner` 래핑, `--strategies A,B,RL` CLI
+  - `src/agents/rl_trading_v2.py` — `map_v2_action_to_signal()`, `normalize_q_confidence()`
+  - `src/db/models.py` — `PredictionSignal.strategy`에 "S"/"L" 추가, `is_shadow` 필드, `PaperOrderRequest.blend_meta`
+  - `scripts/db/init_db.py` — `predictions.is_shadow`, `blend_meta JSONB`, signal_source CHECK 확장
+  - `src/utils/config.py` — `strategy_blend_weights` JSON 설정
+- **설계 원칙:**
+  - 시그널 점수화: BUY=+1, HOLD=0, SELL=-1 가중합 → threshold(0.15) 기반 결정
+  - 가중치 자동 정규화: 활성 전략의 weight 합이 1.0이 되도록
+  - 기존 단독 모드 완전 호환: `--tournament`, `--consensus`, `--rl`, `--blend` 그대로 동작
+  - CLOSE→HOLD: blend 레벨에서는 단순 매핑, 포지션 청산은 PortfolioManager 책임
+  - signal_source는 `BLEND` 통일 + `blend_meta` JSONB로 참여 전략/가중치 기록
 
 ### 2026-03-15 — 공통 실험 메타데이터 추적 구조(GitOps) 도입
 - **결정:** A/B/RL/Search 도메인 전반의 실험 메타데이터를 추적/비교하기 위해 `config/experiments/`와 `config/active/` 디렉터리 기반의 GitOps 구조를 채택함.

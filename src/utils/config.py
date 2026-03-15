@@ -63,6 +63,10 @@ class Settings(BaseSettings):
 
     # ── Strategy ─────────────────────────────────────────────────────────────
     strategy_blend_ratio: float = Field(default=0.50, alias="STRATEGY_BLEND_RATIO")
+    strategy_blend_weights: str = Field(
+        default='{"A": 0.35, "B": 0.35, "RL": 0.30}',
+        alias="STRATEGY_BLEND_WEIGHTS",
+    )
     strategy_a_rolling_days: int = Field(default=5, ge=1, le=30, alias="STRATEGY_A_ROLLING_DAYS")
     strategy_a_min_samples: int = Field(default=3, ge=1, le=50, alias="STRATEGY_A_MIN_SAMPLES")
     strategy_b_max_rounds: int = Field(default=2, ge=1, le=5, alias="STRATEGY_B_MAX_ROUNDS")
