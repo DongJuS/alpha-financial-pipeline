@@ -24,7 +24,7 @@ from src.agents.search_agent import ResearchOutput, SearchAgent
 from src.db.models import PredictionSignal
 
 
-# ────────────────────────── 테스트용 Mock ──────────────────────────
+# ─────────────────────────────────────────────── 테스트용 Mock ──────────────────────────────────────────────
 
 
 class MockSearchAgent:
@@ -59,7 +59,7 @@ class MockSearchAgent:
         pass
 
 
-# ────────────────────────── ResearchOutput → Signal 매핑 테스트 ──────────────────────────
+# ─────────────────────────────────────────────── ResearchOutput → Signal 매핑 테스트 ──────────────────────────────────────────────
 
 
 class TestResearchOutputToSignal(unittest.TestCase):
@@ -192,7 +192,7 @@ class TestResearchOutputToSignal(unittest.TestCase):
         self.assertIn("sources=2", signal.reasoning_summary)
 
 
-# ────────────────────────── ResearchPortfolioManager 테스트 ──────────────────────────
+# ─────────────────────────────────────────────── ResearchPortfolioManager 테스트 ──────────────────────────────────────────────
 
 
 class TestResearchPortfolioManager(unittest.IsolatedAsyncioTestCase):
@@ -356,7 +356,7 @@ class TestResearchPortfolioManager(unittest.IsolatedAsyncioTestCase):
         mock_redis.set.assert_called_once()
 
 
-# ────────────────────────── SearchRunner StrategyRunner 준수 테스트 ──────────────────────────
+# ─────────────────────────────────────────────── SearchRunner StrategyRunner 준수 테스트 ──────────────────────────────────────────────
 
 
 class TestSearchRunnerProtocol(unittest.IsolatedAsyncioTestCase):

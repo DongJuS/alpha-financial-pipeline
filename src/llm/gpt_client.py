@@ -23,13 +23,10 @@ class GPTClient:
         self.api_key = settings.openai_api_key
         self._client: Optional[Any] = None
         self._quota_exhausted = self.__class__._global_quota_exhausted
-
         if is_placeholder_secret(self.api_key):
             return
-
         try:
             from openai import AsyncOpenAI
-
             self._client = AsyncOpenAI(api_key=self.api_key)
         except Exception as e:
             logger.warning("OpenAI SDK 초기화 실패: %s", e)
@@ -48,7 +45,6 @@ class GPTClient:
             raise RuntimeError("GPT client is not configured.")
         if self.__class__._global_quota_exhausted:
             raise RuntimeError("GPT quota exhausted.")
-
         try:
             resp = await self._client.chat.completions.create(
                 model=self.model,
@@ -60,7 +56,7 @@ class GPTClient:
             if self._is_quota_error(e):
                 self._quota_exhausted = True
                 self.__class__._global_quota_exhausted = True
-                logger.warning("OpenAI quota exhausted: GPT 호출을 세션 동안 비활성화합니다.")
+                logger.warning("OpenAI quota exhausted.")
             raise
 
     async def ask_json(self, prompt: str, temperature: float = 0.4) -> dict:
@@ -69,9 +65,7 @@ class GPTClient:
 
 
 def _extract_json(text: str) -> dict:
-    """LLM 응답에서 JSON 객체를 추출합니다."""
     import re
-
     md_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
     if md_match:
         return json.loads(md_match.group(1).strip())

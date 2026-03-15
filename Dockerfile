@@ -16,7 +16,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # Claude CLI 설치 (npm으로 Linux 네이티브 바이너리 설치)
-# 호스트의 ~/.claude/ (인증 토큰)를 docker-compose에서 마운트하여 인증 공유
+# 호스트의 ~/.claude/ (인증 토큰)을 docker-compose에서 마운트하여 인증 공유
 RUN npm install -g @anthropic-ai/claude-code \
     || echo "Claude CLI npm 설치 실패 — 호스트 CLI 마운트로 대체"
 ENV PATH="/root/.claude/bin:/usr/lib/node_modules/.bin:${PATH}"

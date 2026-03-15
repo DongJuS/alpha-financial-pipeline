@@ -25,7 +25,7 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """앱 시작/종료 시 DB·Redis 연결 풀을 초기화/해제합니다."""
+    """앱 시작/종료 시 DB·Redis 연결 끝을 초기화/해제합니다."""
     logger.info("🚀 Alpha Trading System 시작 중...")
     await get_pool()
     await get_redis()
@@ -54,7 +54,7 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# ── CORS ─────────────────────────────────────────────────────────────────────
+# ─── CORS ────────────────────────────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5173"],
@@ -63,7 +63,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── 라우터 등록 ────────────────────────────────────────────────────────────
+# ─── 라우터 등록 ────────────────────────────────────────────────────────────────────────────────────────
 API_PREFIX = "/api/v1"
 
 app.include_router(auth.router, prefix=API_PREFIX, tags=["auth"])
@@ -75,7 +75,7 @@ app.include_router(notifications.router, prefix=f"{API_PREFIX}/notifications", t
 app.include_router(models.router, prefix=f"{API_PREFIX}/models", tags=["models"])
 
 
-# ── 헬스 체크 ─────────────────────────────────────────────────────────────────
+# ─── 헬스 체크 ────────────────────────────────────────────────────────────────────────────────────────
 @app.get("/health", tags=["system"])
 async def health_check() -> dict:
     """서버 및 DB·Redis 연결 상태를 반환합니다."""

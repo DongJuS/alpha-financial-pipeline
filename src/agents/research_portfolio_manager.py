@@ -31,7 +31,7 @@ from src.utils.redis_client import get_redis, set_heartbeat
 logger = get_logger(__name__)
 
 
-# ────────────────────────── Sentiment → Signal 매핑 ──────────────────────────
+# ───────────────────────────────────────── Sentiment → Signal 매핑 ────────────────────────────────────────
 
 SENTIMENT_TO_SIGNAL = {
     "bullish": "BUY",
@@ -93,7 +93,7 @@ def research_output_to_signal(
     )
 
 
-# ────────────────────────── ResearchPortfolioManager ──────────────────────────
+# ───────────────────────────────────────── ResearchPortfolioManager ────────────────────────────────────────
 
 
 class ResearchPortfolioManager:

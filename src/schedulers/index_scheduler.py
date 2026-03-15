@@ -36,7 +36,7 @@ async def _collect_if_market_open() -> None:
 
 
 async def get_scheduler() -> AsyncIOScheduler:
-    """스케줄러 싱글턴을 반환합니다."""
+    """스케줄러 싱글톤을 반환합니다."""
     global _scheduler
     if _scheduler is None:
         _scheduler = AsyncIOScheduler(timezone=str(KST))
@@ -50,7 +50,7 @@ async def start_index_scheduler() -> None:
     _collector = IndexCollector()
     scheduler = await get_scheduler()
 
-    # 이미 스케줄되어 있으면 스킵
+    # 이미 스케줄되어 있으면 스톱
     if scheduler.running:
         logger.info("Index scheduler already running")
         return
