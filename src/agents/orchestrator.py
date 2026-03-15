@@ -26,6 +26,7 @@ load_dotenv(ROOT / ".env")
 from src.agents.collector import CollectorAgent
 from src.agents.notifier import NotifierAgent
 from src.agents.portfolio_manager import PortfolioManagerAgent
+from src.agents.research_portfolio_manager import ResearchPortfolioManager
 from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
 from src.agents.rl_trading import RLPolicyStore
 from src.agents.predictor import PredictorAgent
@@ -97,6 +98,18 @@ class RLRunner:
         return predictions
 
 
+class SearchRunner:
+    """Search/Scraping 리서치를 StrategyRunner로 래핑."""
+
+    name: str = "S"
+
+    def __init__(self, rpm: ResearchPortfolioManager) -> None:
+        self._rpm = rpm
+
+    async def run(self, tickers: list[str]) -> list[PredictionSignal]:
+        return await self._rpm.run_research_cycle(tickers)
+
+
 # ────────────────────────── Orchestrator ──────────────────────────
 
 
@@ -108,6 +121,7 @@ class OrchestratorAgent:
         use_consensus: bool = False,
         use_blend: bool = False,
         use_rl: bool = False,
+        use_search: bool = False,
         strategies: list[str] | None = None,
         tournament_rolling_days: int | None = None,
         tournament_min_samples: int | None = None,
@@ -116,6 +130,9 @@ class OrchestratorAgent:
         rl_tick_collection_seconds: int = 30,
         rl_yahoo_seed_range: str = "10y",
         rl_policy_store: RLPolicyStore | RLPolicyStoreV2 | None = None,
+        search_max_concurrent: int | None = None,
+        search_categories: str | None = None,
+        search_max_sources: int | None = None,
     ) -> None:
         self.agent_id = agent_id
         self.settings = get_settings()
@@ -137,6 +154,7 @@ class OrchestratorAgent:
         self.use_consensus = use_consensus
         self.use_blend = use_blend
         self.use_rl = use_rl
+        self.use_search = use_search
 
         # RL 관련
         self.rl_tick_collection_seconds = max(0, rl_tick_collection_seconds)
@@ -152,12 +170,22 @@ class OrchestratorAgent:
         if needs_rl:
             self.rl_registry_bootstrap = self._bootstrap_rl_policy_store()
 
+        # Search 관련
+        needs_search = use_search or (strategies and "S" in strategies)
+        self.research = ResearchPortfolioManager(
+            agent_id="research_portfolio_manager",
+            max_concurrent_searches=search_max_concurrent or int(self.settings.search_max_concurrent),
+            search_categories=search_categories or self.settings.search_categories,
+            max_sources_per_ticker=search_max_sources or int(self.settings.search_max_sources),
+        ) if needs_search else None
+
         # --strategies 플래그로 N-way 모드 결정
         self._active_strategies = self._resolve_strategies(strategies)
 
         # StrategyRegistry 구성
         self.registry = StrategyRegistry()
         self._rl_runner: RLRunner | None = None
+        self._search_runner: SearchRunner | None = None
         self._setup_registry()
 
         # 가중치 로드
@@ -167,12 +195,13 @@ class OrchestratorAgent:
         """CLI 플래그를 기반으로 활성 전략 목록을 결정한다.
 
         우선순위:
-        1. --strategies A,B,RL (명시적)
+        1. --strategies A,B,RL,S (명시적)
         2. --blend → ["A", "B"]
         3. --tournament → ["A"]
         4. --consensus → ["B"]
         5. --rl → ["RL"]
-        6. 없으면 → [] (single_predictor 모드)
+        6. --search → ["S"]
+        7. 없으면 → [] (single_predictor 모드)
         """
         if strategies:
             return [s.strip().upper() for s in strategies if s.strip()]
@@ -184,6 +213,8 @@ class OrchestratorAgent:
             return ["B"]
         if self.use_rl:
             return ["RL"]
+        if self.use_search:
+            return ["S"]
         return []
 
     def _setup_registry(self) -> None:
@@ -198,6 +229,10 @@ class OrchestratorAgent:
         if "RL" in self._active_strategies:
             self._rl_runner = RLRunner(self.rl)
             self.registry.register(self._rl_runner)
+        if "S" in self._active_strategies:
+            if self.research:
+                self._search_runner = SearchRunner(self.research)
+                self.registry.register(self._search_runner)
 
     def _load_blend_weights(self) -> dict[str, float]:
         """설정에서 전략별 가중치를 로드한다."""
@@ -207,7 +242,7 @@ class OrchestratorAgent:
                 return {k.upper(): float(v) for k, v in weights.items()}
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
             logger.warning("strategy_blend_weights 파싱 실패, 기본값 사용: %s", exc)
-        return {"A": 0.35, "B": 0.35, "RL": 0.30}
+        return {"A": 0.30, "B": 0.30, "RL": 0.20, "S": 0.20}
 
     async def _load_winner_predictions(self, winner_agent_id: str, tickers: list[str]) -> list:
         rows = await fetch(
@@ -460,8 +495,10 @@ class OrchestratorAgent:
             winner = None
             rl_summaries = None
 
+            # RL은 항상 독립적으로 트레이딩 결정을 내린다.
+            # N-way blend에서 RL을 제외하고, RL 시그널은 별도로 PortfolioManager에 전달한다.
             if self.registry.runner_count >= 2:
-                # N-way Registry 병렬 실행
+                # 모든 전략을 병렬 실행
                 all_predictions = await self.registry.run_all(cycle_tickers)
 
                 # RL summaries 추출
@@ -479,14 +516,16 @@ class OrchestratorAgent:
                     blended = self._blend_nway_predictions(non_rl_predictions)
                     blend_meta = self._build_blend_meta(non_rl_predictions)
                     non_rl_orders = await self.portfolio.process_predictions(
-                        blended, signal_source_override="BLEND",
+                        blended,
+                        signal_source_override="BLEND",
                     )
                     orders.extend(non_rl_orders)
                 elif len(non_rl_predictions) == 1:
                     strategy_name = list(non_rl_predictions.keys())[0]
                     preds = list(non_rl_predictions.values())[0]
                     non_rl_orders = await self.portfolio.process_predictions(
-                        preds, signal_source_override=strategy_name,
+                        preds,
+                        signal_source_override=strategy_name,
                     )
                     orders.extend(non_rl_orders)
                     blend_meta = None
@@ -497,9 +536,15 @@ class OrchestratorAgent:
                 rl_orders: list[dict] = []
                 if rl_predictions:
                     rl_orders = await self.portfolio.process_predictions(
-                        rl_predictions, signal_source_override="RL",
+                        rl_predictions,
+                        signal_source_override="RL",
                     )
                     orders.extend(rl_orders)
+                    logger.info(
+                        "RL 독립 실행 완료: predictions=%d, orders=%d",
+                        len(rl_predictions),
+                        len(rl_orders),
+                    )
 
                 # blend_meta에 RL 독립 실행 정보 추가
                 if blend_meta is None:
@@ -515,6 +560,7 @@ class OrchestratorAgent:
                     predictions = list(non_rl_predictions.values())[0]
                 else:
                     predictions = []
+                # predictions 카운트에 RL도 포함
                 total_predicted = len(predictions) + len(rl_predictions)
 
                 non_rl_names = sorted(non_rl_predictions.keys())
@@ -541,6 +587,7 @@ class OrchestratorAgent:
                 )
                 mode_name = {"A": "tournament", "B": "consensus", "RL": "rl"}.get(strategy_name, strategy_name)
                 blend_meta = None
+                total_predicted = len(predictions)
 
             else:
                 # 기본 single predictor
@@ -548,6 +595,7 @@ class OrchestratorAgent:
                 orders = await self.portfolio.process_predictions(predictions)
                 mode_name = "single_predictor"
                 blend_meta = None
+                total_predicted = len(predictions)
 
             total_predicted = locals().get("total_predicted", len(predictions))
 
@@ -624,6 +672,7 @@ async def _main_async(args: argparse.Namespace) -> None:
         use_consensus=args.consensus,
         use_blend=args.blend,
         use_rl=args.rl,
+        use_search=args.search,
         strategies=strategies,
         tournament_rolling_days=args.tournament_rolling_days,
         tournament_min_samples=args.tournament_min_samples,
@@ -631,6 +680,9 @@ async def _main_async(args: argparse.Namespace) -> None:
         consensus_threshold=args.consensus_threshold,
         rl_tick_collection_seconds=args.rl_tick_collection_seconds,
         rl_yahoo_seed_range=args.rl_yahoo_seed_range,
+        search_max_concurrent=args.search_max_concurrent,
+        search_categories=args.search_categories,
+        search_max_sources=args.search_max_sources,
     )
     tickers = args.tickers.split(",") if args.tickers else None
     if args.loop:
@@ -647,10 +699,11 @@ def main() -> None:
     parser.add_argument("--consensus", action="store_true", help="Strategy B 합의/토론 단독 모드")
     parser.add_argument("--blend", action="store_true", help="Strategy A/B 2-way 블렌딩 (하위 호환)")
     parser.add_argument("--rl", action="store_true", help="RL Trading lane 단독 모드")
+    parser.add_argument("--search", action="store_true", help="Search/Scraping 리서치 파이프라인 단독 모드")
     parser.add_argument(
         "--strategies",
         default="",
-        help="쉼표 구분 활성 전략 (예: A,B,RL). --blend, --tournament 등보다 우선",
+        help="쉼표 구분 활성 전략 (예: A,B,RL,S). --blend, --tournament 등보다 우선",
     )
     parser.add_argument(
         "--tournament-rolling-days",
@@ -686,6 +739,23 @@ def main() -> None:
         "--rl-yahoo-seed-range",
         default="10y",
         help="RL mode에서 Yahoo history seed에 사용할 range",
+    )
+    parser.add_argument(
+        "--search-max-concurrent",
+        type=int,
+        default=None,
+        help="Search 최대 병렬 검색 수 (기본: 설정값)",
+    )
+    parser.add_argument(
+        "--search-categories",
+        default=None,
+        help="Search 카테고리 (기본: news)",
+    )
+    parser.add_argument(
+        "--search-max-sources",
+        type=int,
+        default=None,
+        help="Search 종목당 최대 소스 수 (기본: 설정값)",
     )
     parser.add_argument("--interval-seconds", type=int, default=600, help="주기 실행 간격(초)")
     args = parser.parse_args()

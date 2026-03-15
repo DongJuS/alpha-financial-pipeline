@@ -264,9 +264,26 @@ export default function Market() {
           </span>
         </div>
 
+        {(() => {
+          const allSameTime = realtimeData.length > 1 && new Set(realtimeData.map((d) => d.label)).size === 1;
+          if (allSameTime) {
+            return (
+              <div className="flex h-56 items-center justify-center rounded-[28px] border border-dashed border-[var(--line-strong)] bg-white/55 px-6 text-center">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>장 마감 — 마지막 체결가 기준</p>
+                  <p className="mt-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+                    {realtimeData[0]?.current_price?.toLocaleString("ko-KR")}원 · {realtimeData[0]?.label}
+                  </p>
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()}
+
         {realtimeLoading || realtimeData.length === 0 ? (
           <div className="h-56 skeleton" />
-        ) : (
+        ) : realtimeData.length > 1 && new Set(realtimeData.map((d) => d.label)).size === 1 ? null : (
           <div className="chart-container h-56">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={realtimeData} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
