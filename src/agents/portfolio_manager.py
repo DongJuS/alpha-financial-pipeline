@@ -286,6 +286,56 @@ class PortfolioManagerAgent:
             "account_scope": account_scope,
         }
 
+    async def _check_rule_based_exits(
+        self,
+        tickers: list[str],
+        cfg: dict,
+        account_scope: str,
+    ) -> list[PredictionSignal]:
+        """보유 포지션 중 익절/손절 기준에 해당하는 종목을 SELL 시그널로 반환합니다."""
+        from src.db.queries import get_positions_for_scope
+
+        take_profit_pct = float(cfg.get("take_profit_pct", 5.0))
+        stop_loss_pct = float(cfg.get("stop_loss_pct", -3.0))
+        exit_signals: list[PredictionSignal] = []
+
+        positions = await get_positions_for_scope(account_scope)
+        for pos in positions:
+            ticker = str(pos["ticker"])
+            qty = int(pos.get("quantity", 0))
+            if qty <= 0:
+                continue
+
+            avg_price = float(pos.get("avg_price", 0))
+            current_price = float(pos.get("current_price", 0))
+            if avg_price <= 0 or current_price <= 0:
+                continue
+
+            pnl_pct = (current_price - avg_price) / avg_price * 100.0
+
+            reason: str | None = None
+            if pnl_pct >= take_profit_pct:
+                reason = f"규칙 익절 ({pnl_pct:+.2f}% >= +{take_profit_pct}%)"
+            elif pnl_pct <= stop_loss_pct:
+                reason = f"규칙 손절 ({pnl_pct:+.2f}% <= {stop_loss_pct}%)"
+
+            if reason:
+                logger.info("규칙 기반 매도 트리거: %s %s", ticker, reason)
+                exit_signals.append(
+                    PredictionSignal(
+                        agent_id="rule_based_exit",
+                        llm_model="rule",
+                        strategy="EXIT",
+                        ticker=ticker,
+                        signal="SELL",
+                        confidence=1.0,
+                        reasoning_summary=reason,
+                        trading_date=datetime.utcnow().date(),
+                    )
+                )
+
+        return exit_signals
+
     async def process_predictions(
         self,
         predictions: list[PredictionSignal],
@@ -341,10 +391,15 @@ class PortfolioManagerAgent:
                 blocked_scopes.append({"account_scope": account_scope, "pnl_pct": round(pnl_pct, 3)})
                 continue
 
-            for signal in predictions:
+            # 규칙 기반 익절/손절 시그널 추가
+            tickers = [s.ticker for s in predictions]
+            exit_signals = await self._check_rule_based_exits(tickers, cfg, account_scope)
+            combined = list(exit_signals) + list(predictions)
+
+            for signal in combined:
                 order = await self.process_signal(
                     signal,
-                    signal_source_override=signal_source_override,
+                    signal_source_override=signal_source_override or signal.strategy,
                     risk_config=cfg,
                     account_scope_override=account_scope,
                 )

@@ -38,3 +38,4 @@ artifacts/rl/models/ppo/*
 !artifacts/rl/models/ppo/samples/
 !artifacts/rl/models/ppo/samples/**
 .vite/
+.claude/worktrees/

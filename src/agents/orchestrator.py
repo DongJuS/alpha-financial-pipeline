@@ -4,19 +4,23 @@ src/agents/orchestrator.py — OrchestratorAgent with independent portfolio mode
 기본 사이클:
 Collector -> StrategyRegistry(병렬) -> Blender/Independent -> PortfolioManager -> Notifier
 
+여러 StrategyRunner로부터 PredictionSignal을 수집하고,
+N-way 블렌딩을 적용하거나 독립 포트폴리오 모드로 처리하여
+최종 신호를 생성하고 PortfolioManagerAgent로 전달합니다.
+
 --independent-portfolio 플래그로 per-strategy PM 인스턴스 지원.
 """
 from __future__ import annotations
 
-import argparse
 import asyncio
-from datetime import date, datetime
+import argparse
+from datetime import date, datetime, timezone
 import json
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
-
 from dotenv import load_dotenv
+
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -41,7 +45,6 @@ if TYPE_CHECKING:
     from src.agents.portfolio_manager import PortfolioManagerAgent
     from src.agents.notifier import NotifierAgent
 
-setup_logging()
 logger = get_logger(__name__)
 
 # N-way 블렌딩 가중치
@@ -146,6 +149,10 @@ class OrchestratorAgent:
                 initial_capital,
             )
         return self._strategy_virtual_brokers[strategy_id]
+
+    def register_strategy(self, runner: StrategyRunner) -> None:
+        """전략 러너를 등록합니다."""
+        self.registry.register(runner)
 
     async def run_strategies(
         self,
