@@ -8,7 +8,6 @@
 
 ## 📌 Recent Decisions
 
-<<<<<<< HEAD
 ### 2026-03-16 — Strategy S Orchestrator 통합 + 마켓플레이스 Closure
 - **결정:** SearchRunner를 StrategyRunner Protocol로 구현하여 Orchestrator에 등록. 4-way 블렌딩(A:0.3/B:0.3/S:0.2/RL:0.2) 완성.
 - **구현:**
@@ -17,7 +16,7 @@
   - `orchestrator.py` TYPE_CHECKING import 수정
 - **마켓플레이스 Closure:** Week 1~5 전체 구현 완료 확인. `roadmap.md`에 Phase 13 추가. 논의 문서 closed.
 - **README 전면 업데이트:** 4전략 N-way 블렌딩 아키텍처, 확장 상태 표 반영.
-=======
+
 ### 2026-03-16 — Copilot 리뷰 코드 품질 수정 (PR #11 후속)
 - **결정:** PR #11 머지 후 Copilot이 지적한 3가지 타입/파라미터 불일치를 수정.
 - **수정 내역:**
@@ -26,7 +25,6 @@
   3. **orchestrator.py — PromotionCheckResult 필드명:** `readiness.is_ready` → `readiness.ready`. dataclass 필드명은 `ready: bool`.
   4. **WalkForwardResult.overall_approved:** 모든 소비자에서 일관되게 사용 확인 — 변경 불필요.
 - **교훈:** dataclass 반환값을 dict처럼 사용하는 패턴은 런타임까지 발견 안 되므로, 향후 `mypy --strict` 도입 검토 필요.
->>>>>>> origin/main
 
 ### 1. Search Strategy (S) 파이프라인 통합 ✅
 
