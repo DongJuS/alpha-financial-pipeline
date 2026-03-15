@@ -122,12 +122,12 @@
 
 작업 항목:
 - [x] `config/` 기반 공통 메타데이터 실험 추적 구조(GitOps) 확정 및 `ExperimentTracker` 클래스 도입
-- [ ] Search 추출 결과를 Strategy B prompt와 RL feature에 연결
-- [ ] RL policy inference를 signal 후보로 추가하되 기본값은 shadow 또는 paper-only
-- [ ] 대시보드에 검색 출처, RL 평가, 활성 정책 상태 표시
-- [ ] 운영 감사와 통합 테스트 체크리스트 반영
-- [ ] 공통 `ExperimentTracker`를 Strategy A, B, RL, Search 에이전트에 전부 연동 적용
-- [ ] README의 `통합 테스트 진행 중` 문구를 실제 상태에 맞게 갱신
+- [x] Search 추출 결과를 Strategy B prompt와 RL feature에 연결 — `search_bridge.py` + Orchestrator 통합
+- [x] RL policy inference를 signal 후보로 추가하되 기본값은 shadow 또는 paper-only — `RLSignalProvider` (RL_SIGNAL_MODE=shadow 기본)
+- [x] 대시보드에 검색 출처, RL 평가, 활성 정책 상태 표시 — `IntegrationDashboard.tsx` + `/integration/*` API 4개
+- [x] 운영 감사와 통합 테스트 체크리스트 반영 — `IntegrationAuditChecker` 7항목 자동 검증
+- [x] 공통 `ExperimentTracker`를 Strategy A, B, RL, Search 에이전트에 전부 연동 적용 — 4개 에이전트 모두 try/except 래핑
+- [x] README의 `통합 테스트 진행 중` 문구를 실제 상태에 맞게 갱신 — "Phase 10 확장 통합 완료"로 변경
 
 완료 기준:
 - RL/Search 핵심 경로가 paper 환경에서 재현 가능하게 검증됨

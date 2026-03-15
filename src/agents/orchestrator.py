@@ -12,6 +12,7 @@ import argparse
 import asyncio
 from datetime import date, datetime
 import json
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -30,11 +31,13 @@ from src.db.queries import (
     insert_heartbeat,
     insert_prediction,
 )
+from src.integrations.search_bridge import format_research_for_prompt
 from src.utils.aggregate_risk import AggregateRiskMonitor
 from src.utils.config import get_settings
 from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import set_heartbeat
 from src.utils.strategy_promotion import StrategyPromoter
+from src.agents.rl_signal_provider import RLSignalProvider
 
 if TYPE_CHECKING:
     from src.agents.orchestrator import StrategyRunner
@@ -94,6 +97,7 @@ class OrchestratorAgent:
         agent_id: str = "orchestrator",
         strategy_blend_weights: dict[str, float] | None = None,
         independent_portfolio: bool = False,
+        rl_signal_mode: str | None = None,
     ) -> None:
         self.agent_id = agent_id
         self.strategy_blend_weights = strategy_blend_weights or STRATEGY_BLEND_WEIGHTS
@@ -104,9 +108,26 @@ class OrchestratorAgent:
         self._strategy_portfolios: dict[str, PortfolioManagerAgent] = {}
         self._strategy_virtual_brokers: dict[str, VirtualBroker] = {}
 
+        # Phase 10: Research context storage for strategy integration
+        self._research_contexts: dict[str, str] = {}
+
+        # Phase 10.2: RL signal provider configuration
+        self.rl_signal_mode = rl_signal_mode or os.getenv("RL_SIGNAL_MODE", "shadow")
+        self.rl_signal_provider: RLSignalProvider | None = None
+        if self.rl_signal_mode in ("shadow", "paper", "live"):
+            try:
+                self.rl_signal_provider = RLSignalProvider(mode=self.rl_signal_mode)
+                logger.info("RL signal provider initialized in mode: %s", self.rl_signal_mode)
+            except Exception as e:
+                logger.error("Failed to initialize RL signal provider: %s", e)
+
     def register_strategy(self, runner: StrategyRunner) -> None:
         """전략 러너를 등록합니다."""
         self.registry.register(runner)
+
+    def get_research_contexts(self) -> dict[str, str]:
+        """Return research contexts for current cycle (Phase 10 integration)."""
+        return self._research_contexts.copy()
 
     def _get_portfolio_for_strategy(
         self,
@@ -203,6 +224,13 @@ class OrchestratorAgent:
         """
         started = datetime.utcnow()
         try:
+            # ── Phase 10: Fetch research context (optional, graceful degradation) ──
+            try:
+                self._research_contexts = await self._fetch_research_contexts(tickers)
+            except Exception as e:
+                logger.warning(f"Research context fetching failed, continuing without: {e}")
+                self._research_contexts = {}
+
             # ── 전략 병렬 실행 ──
             all_predictions = await self.run_strategies(tickers)
 
@@ -218,11 +246,49 @@ class OrchestratorAgent:
                     "active_strategies": [],
                 }
 
+            # ── Phase 10.2: RL Signal Provider (shadow/paper by default) ──
+            rl_shadow_signals: list[PredictionSignal] = []
+            if self.rl_signal_provider:
+                try:
+                    rl_shadow_signals = await self.rl_signal_provider.run(tickers)
+                    logger.info(
+                        "RL signal provider generated %d signals in %s mode",
+                        len(rl_shadow_signals),
+                        self.rl_signal_mode,
+                    )
+                    # Log shadow signals for monitoring
+                    for sig in rl_shadow_signals:
+                        logger.info(
+                            "RL shadow signal: %s %s (conf=%.2f, is_shadow=%s)",
+                            sig.ticker,
+                            sig.signal,
+                            sig.confidence or 0.0,
+                            sig.is_shadow,
+                        )
+                except Exception as e:
+                    logger.error(
+                        "RL signal provider failed (mode=%s): %s",
+                        self.rl_signal_mode,
+                        e,
+                        exc_info=True,
+                    )
+
+            # ── Record RL shadow signals in DB ──
+            for sig in rl_shadow_signals:
+                try:
+                    await insert_prediction(sig)
+                except Exception as e:
+                    logger.error(
+                        "Failed to record RL shadow signal for %s: %s",
+                        sig.ticker,
+                        e,
+                    )
+
             # 기본 정보
             collected_count = sum(
                 len(preds) for preds in all_predictions.values()
             )
-            predicted_count = collected_count
+            predicted_count = collected_count + len(rl_shadow_signals)
 
             all_orders = []
             promotion_alerts = []
@@ -390,6 +456,42 @@ class OrchestratorAgent:
         from src.agents.notifier import NotifierAgent
 
         return NotifierAgent(agent_id="notifier_for_orchestrator")
+
+    async def _fetch_research_contexts(
+        self, tickers: list[str]
+    ) -> dict[str, str]:
+        """Fetch research context for each ticker (optional integration with SearchAgent).
+
+        Returns:
+            Dictionary mapping ticker to formatted research context string.
+            Returns empty dict if SearchAgent is unavailable or on error.
+        """
+        research_contexts = {}
+        try:
+            from src.agents.search_agent import SearchAgent
+
+            search_agent = SearchAgent()
+            for ticker in tickers:
+                try:
+                    # Run research with a simple query
+                    query = f"{ticker} 투자 분석 최신 소식"
+                    research = await search_agent.run_research(
+                        query,
+                        ticker=ticker,
+                        category="news",
+                        max_sources=3,
+                    )
+                    research_contexts[ticker] = format_research_for_prompt(research)
+                    logger.info(f"Research context fetched for {ticker}")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch research for {ticker}: {e}")
+                    # Continue with other tickers
+            await search_agent.close()
+        except Exception as e:
+            logger.warning(f"SearchAgent unavailable for research enrichment: {e}")
+            # Gracefully degrade - strategies will run without research context
+
+        return research_contexts
 
 
 async def _main_async(args: argparse.Namespace) -> None:
