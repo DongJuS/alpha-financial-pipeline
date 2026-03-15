@@ -6,13 +6,19 @@ import RequireAuth from "@/components/RequireAuth";
 
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Strategy = lazy(() => import("@/pages/Strategy"));
+const RLTrading = lazy(() => import("@/pages/RLTrading"));
+const Feedback = lazy(() => import("@/pages/Feedback"));
 const Models = lazy(() => import("@/pages/Models"));
 const Portfolio = lazy(() => import("@/pages/Portfolio"));
 const Market = lazy(() => import("@/pages/Market"));
 const Marketplace = lazy(() => import("@/pages/Marketplace"));
-const LongTerm = lazy(() => import("@/pages/LongTerm"));
 const PaperTrading = lazy(() => import("@/pages/PaperTrading"));
 const Settings = lazy(() => import("@/pages/Settings"));
+const AgentControl = lazy(() => import("@/pages/AgentControl"));
+const SystemHealth = lazy(() => import("@/pages/SystemHealth"));
+const DataLakePage = lazy(() => import("@/pages/DataLake"));
+const NotificationsPage = lazy(() => import("@/pages/Notifications"));
+const AuditTrailPage = lazy(() => import("@/pages/AuditTrail"));
 
 function RouteFallback() {
   return (
@@ -43,13 +49,19 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={withSuspense(<Dashboard />)} />
           <Route path="/strategy" element={withSuspense(<Strategy />)} />
+          <Route path="/rl-trading" element={withSuspense(<RLTrading />)} />
+          <Route path="/feedback" element={withSuspense(<Feedback />)} />
           <Route path="/models" element={withSuspense(<Models />)} />
           <Route path="/portfolio" element={withSuspense(<Portfolio />)} />
           <Route path="/market" element={withSuspense(<Market />)} />
           <Route path="/marketplace" element={withSuspense(<Marketplace />)} />
-          <Route path="/long-term" element={withSuspense(<LongTerm />)} />
           <Route path="/paper-trading" element={withSuspense(<PaperTrading />)} />
           <Route path="/settings" element={withSuspense(<Settings />)} />
+          <Route path="/agent-control" element={withSuspense(<AgentControl />)} />
+          <Route path="/system-health" element={withSuspense(<SystemHealth />)} />
+          <Route path="/datalake" element={withSuspense(<DataLakePage />)} />
+          <Route path="/notifications" element={withSuspense(<NotificationsPage />)} />
+          <Route path="/audit" element={withSuspense(<AuditTrailPage />)} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

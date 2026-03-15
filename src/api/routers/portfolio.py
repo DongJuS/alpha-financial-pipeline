@@ -359,10 +359,13 @@ async def get_performance(
     mode: str = Query(default="current", pattern=MODE_PATTERN),
 ) -> PerformanceResponse:
     """성과 지표 (수익률, MDD, Sharpe 등)를 반환합니다."""
+    import asyncio as _asyncio
+
     days = _period_to_days(period)
     account_scope = await _resolve_mode_account_scope(mode)
 
-    rows = await fetch(
+    # 두 쿼리를 병렬로 실행
+    rows_task = fetch(
         """
         SELECT ticker, side, price, quantity, amount, executed_at
         FROM trade_history
@@ -373,8 +376,7 @@ async def get_performance(
         account_scope,
         days,
     )
-    metrics = compute_trade_performance([dict(r) for r in rows])
-    benchmark_rows = await fetch(
+    benchmark_task = fetch(
         """
         SELECT
             (timestamp_kst AT TIME ZONE 'Asia/Seoul')::date AS trade_date,
@@ -388,6 +390,8 @@ async def get_performance(
         """,
         days,
     )
+    rows, benchmark_rows = await _asyncio.gather(rows_task, benchmark_task)
+    metrics = compute_trade_performance([dict(r) for r in rows])
     benchmark_pct = None
     if benchmark_rows:
         first_close = float(benchmark_rows[0]["avg_close"])

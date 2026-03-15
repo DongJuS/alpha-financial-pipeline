@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from dotenv import load_dotenv
 
+<<<<<<< HEAD
+=======
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -28,6 +30,7 @@ load_dotenv(ROOT / ".env")
 
 from src.brokers import build_virtual_broker
 from src.brokers.virtual_broker import VirtualBroker
+>>>>>>> origin/main
 from src.db.models import AgentHeartbeatRecord, PredictionSignal
 from src.db.queries import (
     get_predictor_performance,
@@ -41,9 +44,13 @@ from src.utils.redis_client import set_heartbeat
 from src.utils.strategy_promotion import StrategyPromoter
 
 if TYPE_CHECKING:
+<<<<<<< HEAD
+    from src.agents.strategy_runner import StrategyRunner
+=======
     from src.agents.orchestrator import StrategyRunner
     from src.agents.portfolio_manager import PortfolioManagerAgent
     from src.agents.notifier import NotifierAgent
+>>>>>>> origin/main
 
 setup_logging()
 logger = get_logger(__name__)
@@ -61,7 +68,7 @@ STRATEGY_BLEND_WEIGHTS = {
 class StrategyRunnerRegistry:
     """전략 러너 (StrategyRunner) 등록 및 관리"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._runners: dict[str, StrategyRunner] = {}
 
     def register(self, runner: StrategyRunner) -> None:
