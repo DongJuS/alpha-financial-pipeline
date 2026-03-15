@@ -201,10 +201,10 @@ Strategy L  → [real] [paper] [virtual]
 - [x] 승격 API: 3개 엔드포인트 (promotion-status, promotion-readiness, promote)
 
 다음 작업:
-- [ ] Docker 환경 통합 테스트 (pytest)
-- [ ] 대시보드에 전략별 모드/성과/승격 상태 UI 추가
-- [ ] 전략별 가상 자금 잔고 대시보드 표시
-- [ ] 백테스트 시뮬레이션 모드 (과거 데이터 기반 가상 트레이딩)
+- [x] Docker 환경 통합 테스트 (pytest) — `feature/docker-pytest-integration` 브랜치, pytest 인프라 구축 완료
+- [x] 대시보드에 전략별 모드/성과/승격 상태 UI 추가 — `feature/s3-datalake-strategy-dashboard` 브랜치
+- [x] 전략별 가상 자금 잔고 대시보드 표시 — `feature/s3-datalake-strategy-dashboard` 브랜치
+- [x] 백테스트 시뮬레이션 모드 (과거 데이터 기반 가상 트레이딩) — `BacktestEngine` + REST API 구현 완료
 
 논의 문서: `.agent/discussions/20260315-independent-portfolio-per-strategy.md`
 
@@ -214,4 +214,5 @@ Strategy L  → [real] [paper] [virtual]
 - RL 트레이딩: Phase 9 전체 구현 완료 (dataset builder v2, trading env, walk-forward, shadow inference, promotion gate, REST API 17개)
 - 검색/스크래핑 스택: 파이프라인 설계 완료, MVP 구현 완료
 - N-way 블렌딩: 설계 확정, 구현 완료 (Phase 11)
-- 독립 포트폴리오: 핵심 인프라 + Orchestrator 통합 완료 (Phase 12)
+- 독립 포트폴리오: Phase 12 전체 완료 (독립 PM, 가상 트레이딩, 대시보드, 백테스트, Docker 테스트)
+- 다음 단계: Phase 10 확장 통합 운영 (Search↔Strategy B/RL 연결, ExperimentTracker 통합)
