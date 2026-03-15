@@ -27,7 +27,7 @@ def _resolve_cli_path(cmd: str) -> str:
         ]:
             if os.path.isfile(p) and os.access(p, os.X_OK):
                 return p
-    return cmd  # 원본 반환 (실행 시 에러로 잡혀)
+    return cmd  # 원본 반환 (실행 시 에러로 잡힘)
 
 
 def build_cli_command(template: str, model: str) -> list[str]:
