@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from src.brokers.kis import KISPaperApiClient, KISPaperBroker, KISRealApiClient, KISRealBroker
 from src.brokers.paper import PaperBroker, PaperBrokerExecution
-from src.brokers.virtual_broker import VirtualBroker
 from src.utils.account_scope import normalize_account_scope
 from src.utils.config import Settings, get_settings
 from src.utils.logging import get_logger
@@ -50,8 +49,8 @@ def build_real_broker(settings: Settings | None = None):
 
 
 def build_virtual_broker(settings: Settings | None = None):
-    broker_settings = settings or get_settings()
-    return VirtualBroker(settings=broker_settings)
+    from src.brokers.virtual_broker import VirtualBroker
+    return VirtualBroker()
 
 
 def build_broker_for_scope(account_scope: str, settings: Settings | None = None):
@@ -69,7 +68,6 @@ __all__ = [
     "KISPaperBroker",
     "KISRealApiClient",
     "KISRealBroker",
-    "VirtualBroker",
     "build_broker_for_scope",
     "build_paper_broker",
     "build_real_broker",
