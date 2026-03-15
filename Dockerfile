@@ -10,10 +10,16 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Claude CLI 설치
-RUN curl -fsSL https://cli.anthropic.com/install.sh | sh 2>/dev/null \
-    || echo "Claude CLI 설치 스킵 (호스트 바이너리 마운트로 대체 가능)"
-ENV PATH="/root/.claude/bin:${PATH}"
+# Node.js 설치 (Claude CLI npm 패키지에 필요)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Claude CLI 설치 (npm으로 Linux 네이티브 바이너리 설치)
+# 호스트의 ~/.claude/ (인증 토큰)를 docker-compose에서 마운트하여 인증 공유
+RUN npm install -g @anthropic-ai/claude-code \
+    || echo "Claude CLI npm 설치 실패 — 호스트 CLI 마운트로 대체"
+ENV PATH="/root/.claude/bin:/usr/lib/node_modules/.bin:${PATH}"
 
 COPY requirements.txt .
 RUN pip install --upgrade pip \
