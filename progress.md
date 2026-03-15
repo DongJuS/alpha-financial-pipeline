@@ -185,6 +185,7 @@ S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아
 - [x] N-way Signal Blending 구조 (A:0.3, B:0.3, S:0.2, RL:0.2)
 - [x] Signal blending 로직
 - [x] Circuit Breaker & Rules 적용
+- [x] Strategy S (SearchRunner) Orchestrator 통합 **← COMPLETED in this session**
 - [ ] 성능 최적화 및 튜닝
 
 ---
@@ -242,9 +243,13 @@ S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아
 |------|------|------|
 | `src/agents/search_agent.py` | ✅ 구현 | SearchAgent MVP |
 | `src/agents/research_portfolio_manager.py` | ✅ 구현 | ResearchPortfolioManager + sentiment→signal 매핑 |
+| `src/agents/search_runner.py` | ✅ 구현 | SearchRunner (Strategy S StrategyRunner 구현) |
 | `src/agents/index_collector.py` | ✅ 구현 | IndexCollector (KOSPI/KOSDAQ) |
+| `src/agents/orchestrator.py` | ✅ 수정 | TYPE_CHECKING 임포트 수정 + SearchRunner 통합 준비 |
 | `src/schedulers/index_scheduler.py` | ✅ 구현 | APScheduler로 지수 수집 자동화 |
-| `test/test_search_runner.py` | ✅ 구현 | Strategy S 통합 테스트 |
+| `src/utils/config.py` | ✅ 확인 | strategy_blend_weights: S:0.20 이미 구성됨 |
+| `test/test_search_runner.py` | ✅ 수정 | SearchRunner 임포트 경로 수정 |
+| `test/test_search_runner_integration.py` | ✅ 구현 | Strategy S Orchestrator 통합 테스트 |
 | `MEMORY.md` | ✅ 업데이트 | 기술적 결정 기록 |
 | `docs/AGENTS.md` | ✅ 업데이트 | 멀티 에이전트 정의 |
 
@@ -252,13 +257,32 @@ S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아
 
 ## 🎯 Next Immediate Tasks
 
+<<<<<<< HEAD
+1. [x] Orchestrator에 Strategy S 통합 (SearchRunner 등록) **← COMPLETED**
+2. [x] Strategy S 가중치를 블렌딩에 반영 (`strategy_blend_weights["S"] = 0.20`) **← CONFIRMED**
+3. [x] AST 검증 + 코드 품질 검증 통과
+4. [x] README 업데이트 (4전략 N-way 블렌딩 반영, 확장 상태 표 추가)
+5. [x] Copilot 리뷰 코드 품질 이슈 수정 (risk_summary, StrategyPromoter, PromotionCheckResult)
+6. [x] 마켓플레이스 논의 문서 Closure
+7. [x] 성능 최적화 및 튜닝 **← COMPLETED**
+   - [x] Predictor: 종목별 데이터 조회·LLM 호출 asyncio.gather 병렬화
+   - [x] Collector: Redis 4 round trip → 1 pipeline
+   - [x] Blending: 5개 루프 → 단일 패스 리팩토링
+   - [x] Combined signals: Redis 5분 캐싱 추가
+   - [x] Portfolio performance: trade+benchmark 쿼리 병렬 실행
+=======
 1. [ ] Orchestrator에 Strategy S 통합 (SearchRunner 등록)
 2. [ ] Strategy S 가중치를 블렌딩에 반영 (`strategy_blend_weights["S"] = 0.20`)
 3. [ ] 통합 테스트 실행
 4. [ ] README 업데이트 ("통합 테스트 진행 중" → "운영 반영")
 5. [x] Copilot 리뷰 코드 품질 이슈 수정 (PR #11 머지 후속)
+>>>>>>> origin/main
 
 ---
 
 *Last updated: 2026-03-16*
+<<<<<<< HEAD
+*성능 최적화 완료 — Predictor 병렬화, Redis 파이프라이닝, Blending 단일패스, 캐싱*
+=======
 *Copilot 리뷰 코드 품질 수정 — orchestrator.py risk_summary/StrategyPromoter 파라미터/필드명 불일치 해결*
+>>>>>>> origin/main

@@ -130,40 +130,48 @@ def blend_signals(inputs: list[BlendInput]) -> NWayBlendResult:
             participating_strategies=[],
         )
 
-    # 시그널 정규화
-    cleaned: list[BlendInput] = []
+    # ── 단일 패스: 정규화 + 가중치 합산 + 충돌 감지를 한 번에 처리 ──
+    total_weight = 0.0
+    cleaned_signals: list[tuple[str, str, float, float]] = []  # (strategy, sig, conf, weight)
+
     for inp in inputs:
         sig = (inp.signal or "HOLD").upper()
         if sig not in VALID_SIGNALS:
             sig = "HOLD"
-        cleaned.append(BlendInput(
-            strategy=inp.strategy,
-            signal=sig,
-            confidence=max(0.0, min(1.0, float(inp.confidence))),
-            weight=max(0.0, float(inp.weight)),
-        ))
+        conf = max(0.0, min(1.0, float(inp.confidence)))
+        w = max(0.0, float(inp.weight))
+        total_weight += w
+        cleaned_signals.append((inp.strategy, sig, conf, w))
 
-    # 가중치 정규화
-    normalized = normalize_weights(cleaned)
+    # 가중치 정규화 + 점수/confidence 계산을 한 번에
+    weighted_score = 0.0
+    weighted_confidence = 0.0
+    has_buy = False
+    has_sell = False
+    participating: list[str] = []
+    weight_map: dict[str, float] = {}
+    signal_map: dict[str, str] = {}
+    confidence_map: dict[str, float] = {}
 
-    # 가중합 점수 계산
-    weighted_score = sum(
-        SIGNAL_SCORE[inp.signal] * inp.weight * inp.confidence
-        for inp in normalized
-    )
+    norm_factor = total_weight if total_weight > 0 else 1.0
+    equal_w = 1.0 / max(1, len(cleaned_signals)) if total_weight <= 0 else 0.0
 
-    # 가중 confidence 합산
-    weighted_confidence = sum(
-        inp.confidence * inp.weight
-        for inp in normalized
-    )
+    for strategy, sig, conf, raw_w in cleaned_signals:
+        w = (raw_w / norm_factor) if total_weight > 0 else equal_w
+        weighted_score += SIGNAL_SCORE[sig] * w * conf
+        weighted_confidence += conf * w
+        if sig == "BUY":
+            has_buy = True
+        elif sig == "SELL":
+            has_sell = True
+        participating.append(strategy)
+        weight_map[strategy] = round(w, 4)
+        signal_map[strategy] = sig
+        confidence_map[strategy] = round(conf, 4)
 
-    # 충돌 감지: BUY와 SELL이 동시에 존재
-    signals_present = {inp.signal for inp in normalized if inp.signal != "HOLD"}
-    conflict = "BUY" in signals_present and "SELL" in signals_present
+    conflict = has_buy and has_sell
 
     # 시그널 결정: threshold 기반
-    # confidence-weighted score를 사용하므로 threshold를 0.15로 설정
     threshold = 0.15
     if weighted_score > threshold:
         final_signal = "BUY"
@@ -171,11 +179,6 @@ def blend_signals(inputs: list[BlendInput]) -> NWayBlendResult:
         final_signal = "SELL"
     else:
         final_signal = "HOLD"
-
-    participating = [inp.strategy for inp in normalized]
-    weight_map = {inp.strategy: round(inp.weight, 4) for inp in normalized}
-    signal_map = {inp.strategy: inp.signal for inp in normalized}
-    confidence_map = {inp.strategy: round(inp.confidence, 4) for inp in normalized}
 
     return NWayBlendResult(
         signal=final_signal,
