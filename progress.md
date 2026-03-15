@@ -28,6 +28,14 @@
 - [x] `scripts/db/init_db.py` — strategy_promotions, aggregate_risk_snapshots 테이블
 - [x] 테스트 4개 파일 (14개 클래스) + AST 검증 스크립트 88/88 통과
 
+### 🔄 완료 — Phase 12 후속 과제
+
+- [x] Docker 환경 통합 pytest 실행 (`docker-compose.test.yml`, `pytest.ini`, `scripts/run_docker_tests.sh`)
+- [x] 대시보드에 전략별 모드/성과/승격 상태 UI 추가 (`GET /strategy/dashboard-status`, `StrategyDashboard.tsx`)
+- [x] 전략별 가상 자금 잔고 대시보드 표시 (`VirtualBalanceCard` 컴포넌트, 가상 총 자산/PnL 헤더)
+- [x] 백테스트 시뮬레이션 모드 (`src/services/backtest_engine.py`, `POST /backtest/run`, `POST /backtest/run/summary`)
+- [x] 백테스트 AST 구조 검증 테스트 (`test/test_backtest_engine.py` 38건)
+
 ### 🔄 완료된 Phase 2 기존 항목
 
 - [x] `src/agents/collector.py` — CollectorAgent MVP (FinanceDataReader 일봉 수집)
@@ -90,6 +98,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
+| 2026-03-15 | **Phase 12 후속 과제 완료** — Docker pytest 통합(`docker-compose.test.yml`), 전략별 대시보드 UI(`GET /strategy/dashboard-status` + `StrategyDashboard.tsx` — 모드/성과/승격 상태/가상 자금 잔고 통합 표시), 백테스트 시뮬레이션 엔진(`BacktestEngine` — 4가지 시그널 전략, 슬리피지/수수료/MDD/Sharpe/Profit Factor, `POST /backtest/run` + `/run/summary`), AST 검증 테스트 63건 추가 | ✅ 완료 |
 | 2026-03-15 | **S3 Data Lake (MinIO + Parquet) 구현** — `docker-compose.yml`(MinIO 서비스+S3 env), `src/utils/s3_client.py`(boto3 싱글턴, CRUD 유틸), `src/services/datalake.py`(7 DataType enum, PyArrow 스키마, Parquet 직렬화, Hive 파티셔닝), `collector.py`(틱 100건 배치 + 일봉 S3 저장), `predictor.py`(예측 시그널 S3 저장), `paper.py`(주문 기록 S3 저장), `main.py`(S3 버킷 자동 생성), `architecture.md`(Data Lake 아키텍처 문서화), `test/test_datalake.py`(10개 테스트), `.env.example`/`config.py`/`tech_stack.md`/`requirements.txt` 업데이트 | ✅ 완료 |
 | 2026-03-15 | **Phase 9 RL Trading Lane 완료** — `src/agents/rl_dataset_builder_v2.py`(기술지표+매크로 컨텍스트 확장), `src/agents/rl_environment.py`(Gymnasium 호환 TradingEnv 4-action), `src/agents/rl_walk_forward.py`(N-fold expanding/sliding 교차검증), `src/agents/rl_shadow_inference.py`(ShadowInferenceEngine + PaperPromotionCriteria/RealPromotionCriteria 승격 게이트), `src/api/routers/rl.py`(17개 REST 엔드포인트 — 정책/실험/평가/학습/walk-forward/shadow/promotion), `test/test_phase9_rl.py`(통합 테스트 5개 클래스), 전체 AST 구문 검증 통과 | ✅ 완료 |
 | 2026-03-15 | **Phase 2 후속 — 독립 포트폴리오 인프라** — VirtualBroker(슬리피지/부분체결/체결지연), StrategyPromoter(virtual→paper→real 승격), AggregateRiskMonitor(단일종목 노출/전략 중복도), Historical OHLCV 벌크 수집(FinanceDataReader+KIS API), promote_strategy CLI, 승격 API 3개, DB 스키마 확장(strategy_promotions, aggregate_risk_snapshots, 5개 테이블 virtual CHECK/strategy_id 추가), 테스트 88/88 통과 | ✅ 완료 |
@@ -147,6 +156,7 @@ Phase 7 실거래 준비        ██████████  100% ✅
 Phase 8 Search Foundation ██████████  100% ✅
 Phase 9 RL Trading Lane   ██████████  100% ✅ (전체 구현 완료)
 S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아키텍처 문서화)
+Phase 12 후속 과제        ██████████  100% ✅ (Docker pytest, 대시보드, 백테스트)
 ```
 
 ## 🚀 다음 실행 명령어
@@ -193,4 +203,4 @@ cd ui && npm install && npm run dev
 ---
 
 *Last updated: 2026-03-15*
-*Phase 9 RL Trading Lane 전체 구현 완료 — dataset builder v2, trading environment, walk-forward, shadow inference, promotion gate, REST API 17개 엔드포인트*
+*Phase 12 후속 과제 전체 완료 — Docker pytest 통합, 전략별 대시보드 UI (모드/성과/승격/가상자금), 백테스트 시뮬레이션 엔진 (4가지 시그널, API 2개 엔드포인트)*
