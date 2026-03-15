@@ -248,7 +248,7 @@ CREATE_TABLES: list[str] = [
         DROP CONSTRAINT IF EXISTS portfolio_config_primary_account_scope_check;
     ALTER TABLE portfolio_config
         ADD CONSTRAINT portfolio_config_primary_account_scope_check
-        CHECK (primary_account_scope IN ('paper', 'real'));
+        CHECK (primary_account_scope IN ('paper', 'real', 'virtual'));
     -- 단일 행 보장용 초기값 삽입 (이미 있으면 무시)
     INSERT INTO portfolio_config
         (
@@ -279,7 +279,9 @@ CREATE_TABLES: list[str] = [
         DROP CONSTRAINT IF EXISTS trading_accounts_account_scope_check;
     ALTER TABLE trading_accounts
         ADD CONSTRAINT trading_accounts_account_scope_check
-        CHECK (account_scope IN ('paper', 'real'));
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    ALTER TABLE trading_accounts
+        ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
     INSERT INTO trading_accounts (
         account_scope, broker_name, account_label, base_currency,
         seed_capital, cash_balance, buying_power, total_equity, is_active
@@ -315,13 +317,16 @@ CREATE_TABLES: list[str] = [
         DROP CONSTRAINT IF EXISTS portfolio_positions_account_scope_check;
     ALTER TABLE portfolio_positions
         ADD CONSTRAINT portfolio_positions_account_scope_check
-        CHECK (account_scope IN ('paper', 'real'));
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    ALTER TABLE portfolio_positions
+        ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
     ALTER TABLE portfolio_positions
         ALTER COLUMN account_scope SET NOT NULL;
     ALTER TABLE portfolio_positions
         DROP CONSTRAINT IF EXISTS portfolio_positions_ticker_key;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_ticker_scope
-        ON portfolio_positions (ticker, account_scope);
+    DROP INDEX IF EXISTS idx_positions_ticker_scope;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_ticker_scope_strategy
+        ON portfolio_positions (ticker, account_scope, COALESCE(strategy_id, ''));
     CREATE INDEX IF NOT EXISTS idx_positions_scope
         ON portfolio_positions (account_scope, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_positions_ticker
@@ -357,12 +362,14 @@ CREATE_TABLES: list[str] = [
         DROP CONSTRAINT IF EXISTS trade_history_account_scope_check;
     ALTER TABLE trade_history
         ADD CONSTRAINT trade_history_account_scope_check
-        CHECK (account_scope IN ('paper', 'real'));
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    ALTER TABLE trade_history
+        ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
     ALTER TABLE trade_history
         DROP CONSTRAINT IF EXISTS trade_history_signal_source_check;
     ALTER TABLE trade_history
         ADD CONSTRAINT trade_history_signal_source_check
-        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL', 'S', 'L'));
+        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL', 'S', 'L', 'EXIT', 'VIRTUAL'));
     -- N-way 블렌딩 메타데이터 (참여 전략/가중치 기록)
     ALTER TABLE trade_history
         ADD COLUMN IF NOT EXISTS blend_meta JSONB;
@@ -408,12 +415,14 @@ CREATE_TABLES: list[str] = [
         DROP CONSTRAINT IF EXISTS broker_orders_account_scope_check;
     ALTER TABLE broker_orders
         ADD CONSTRAINT broker_orders_account_scope_check
-        CHECK (account_scope IN ('paper', 'real'));
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    ALTER TABLE broker_orders
+        ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
     ALTER TABLE broker_orders
         DROP CONSTRAINT IF EXISTS broker_orders_signal_source_check;
     ALTER TABLE broker_orders
         ADD CONSTRAINT broker_orders_signal_source_check
-        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL', 'S', 'L'));
+        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL', 'S', 'L', 'EXIT', 'VIRTUAL'));
     -- N-way 블렌딩 메타데이터
     ALTER TABLE broker_orders
         ADD COLUMN IF NOT EXISTS blend_meta JSONB;
@@ -442,7 +451,9 @@ CREATE_TABLES: list[str] = [
         DROP CONSTRAINT IF EXISTS account_snapshots_account_scope_check;
     ALTER TABLE account_snapshots
         ADD CONSTRAINT account_snapshots_account_scope_check
-        CHECK (account_scope IN ('paper', 'real'));
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    ALTER TABLE account_snapshots
+        ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
     CREATE INDEX IF NOT EXISTS idx_account_snapshots_scope_ts
         ON account_snapshots (account_scope, snapshot_at DESC);
     """,
@@ -668,10 +679,211 @@ CREATE_TABLES: list[str] = [
     CREATE INDEX IF NOT EXISTS idx_research_outputs_query
         ON research_outputs (query_id);
     """,
+
+    # ── 마켓플레이스 확장 테이블 ────────────────────────────────────────────────
+
+    # 22. 종목 마스터 (KRX 전종목 + ETF/ETN)
+    """
+    CREATE TABLE IF NOT EXISTS stock_master (
+        ticker          VARCHAR(10) PRIMARY KEY,
+        name            TEXT NOT NULL,
+        market          VARCHAR(10) NOT NULL CHECK (market IN ('KOSPI', 'KOSDAQ', 'KONEX')),
+        sector          VARCHAR(80),
+        industry        VARCHAR(120),
+        market_cap      BIGINT,
+        listing_date    DATE,
+        is_etf          BOOLEAN NOT NULL DEFAULT FALSE,
+        is_etn          BOOLEAN NOT NULL DEFAULT FALSE,
+        is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+        tier            VARCHAR(10) DEFAULT 'universe' CHECK (tier IN ('core', 'extended', 'universe')),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_stock_master_market
+        ON stock_master (market, is_active);
+    CREATE INDEX IF NOT EXISTS idx_stock_master_sector
+        ON stock_master (sector);
+    CREATE INDEX IF NOT EXISTS idx_stock_master_tier
+        ON stock_master (tier, market_cap DESC NULLS LAST);
+    CREATE INDEX IF NOT EXISTS idx_stock_master_etf
+        ON stock_master (is_etf) WHERE is_etf = TRUE;
+    """,
+
+    # 23. 테마 → 종목 매핑
+    """
+    CREATE TABLE IF NOT EXISTS theme_stocks (
+        id          BIGSERIAL PRIMARY KEY,
+        theme_slug  VARCHAR(60) NOT NULL,
+        theme_name  TEXT NOT NULL,
+        ticker      VARCHAR(10) NOT NULL,
+        is_leader   BOOLEAN NOT NULL DEFAULT FALSE,
+        added_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (theme_slug, ticker)
+    );
+    CREATE INDEX IF NOT EXISTS idx_theme_stocks_slug
+        ON theme_stocks (theme_slug);
+    CREATE INDEX IF NOT EXISTS idx_theme_stocks_ticker
+        ON theme_stocks (ticker);
+    """,
+
+    # 24. 매크로 지표 (해외지수/환율/원자재/금리)
+    """
+    CREATE TABLE IF NOT EXISTS macro_indicators (
+        id              BIGSERIAL PRIMARY KEY,
+        category        VARCHAR(30) NOT NULL CHECK (category IN ('index', 'currency', 'commodity', 'rate')),
+        symbol          VARCHAR(30) NOT NULL,
+        name            TEXT NOT NULL,
+        value           NUMERIC(18, 4) NOT NULL,
+        change_pct      NUMERIC(8, 4),
+        previous_close  NUMERIC(18, 4),
+        snapshot_date   DATE NOT NULL,
+        source          VARCHAR(30) NOT NULL DEFAULT 'fdr',
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (symbol, snapshot_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_macro_indicators_category
+        ON macro_indicators (category, snapshot_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_macro_indicators_symbol
+        ON macro_indicators (symbol, snapshot_date DESC);
+    """,
+
+    # 25. 일별 사전 계산 랭킹
+    """
+    CREATE TABLE IF NOT EXISTS daily_rankings (
+        id              BIGSERIAL PRIMARY KEY,
+        ranking_date    DATE NOT NULL,
+        ranking_type    VARCHAR(30) NOT NULL CHECK (ranking_type IN (
+            'market_cap', 'volume', 'turnover', 'gainer', 'loser', 'new_high', 'new_low'
+        )),
+        rank            INTEGER NOT NULL CHECK (rank >= 1),
+        ticker          VARCHAR(10) NOT NULL,
+        name            TEXT NOT NULL,
+        value           NUMERIC(18, 4),
+        change_pct      NUMERIC(8, 4),
+        extra           JSONB,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (ranking_date, ranking_type, rank)
+    );
+    CREATE INDEX IF NOT EXISTS idx_daily_rankings_date_type
+        ON daily_rankings (ranking_date DESC, ranking_type);
+    """,
+
+    # 26. 관심 종목 (watchlist)
+    """
+    CREATE TABLE IF NOT EXISTS watchlist (
+        id                  BIGSERIAL PRIMARY KEY,
+        user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        group_name          VARCHAR(60) NOT NULL DEFAULT 'default',
+        ticker              VARCHAR(10) NOT NULL,
+        name                TEXT NOT NULL,
+        price_alert_above   INTEGER,
+        price_alert_below   INTEGER,
+        added_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (user_id, group_name, ticker)
+    );
+    CREATE INDEX IF NOT EXISTS idx_watchlist_user
+        ON watchlist (user_id, group_name);
+    CREATE INDEX IF NOT EXISTS idx_watchlist_ticker
+        ON watchlist (ticker);
+    """,
+
+    # ── 전략 승격 + 리스크 스냅샷 테이블 ──────────────────────────────────────
+
+    # 27. 전략 승격 기록
+    """
+    CREATE TABLE IF NOT EXISTS strategy_promotions (
+        id                  BIGSERIAL PRIMARY KEY,
+        strategy_id         VARCHAR(10) NOT NULL,
+        from_mode           VARCHAR(10) NOT NULL CHECK (from_mode IN ('virtual', 'paper', 'real')),
+        to_mode             VARCHAR(10) NOT NULL CHECK (to_mode IN ('virtual', 'paper', 'real')),
+        criteria_snapshot   JSONB,
+        actual_snapshot     JSONB,
+        approved_by         VARCHAR(50) NOT NULL DEFAULT 'system',
+        forced              BOOLEAN NOT NULL DEFAULT FALSE,
+        promoted_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_strategy_promotions_strategy
+        ON strategy_promotions (strategy_id, promoted_at DESC);
+    """,
+
+    # 28. 합산 리스크 스냅샷
+    """
+    CREATE TABLE IF NOT EXISTS aggregate_risk_snapshots (
+        id              BIGSERIAL PRIMARY KEY,
+        risk_data       JSONB NOT NULL,
+        snapshot_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_aggregate_risk_snapshots_at
+        ON aggregate_risk_snapshots (snapshot_at DESC);
+    """,
+
+    # ── account_scope CHECK 확장 (virtual 추가) ─────────────────────────────
+    """
+    ALTER TABLE trading_accounts
+        DROP CONSTRAINT IF EXISTS trading_accounts_account_scope_check;
+    ALTER TABLE trading_accounts
+        ADD CONSTRAINT trading_accounts_account_scope_check
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    """,
+
+    """
+    ALTER TABLE portfolio_positions
+        DROP CONSTRAINT IF EXISTS portfolio_positions_account_scope_check;
+    ALTER TABLE portfolio_positions
+        ADD CONSTRAINT portfolio_positions_account_scope_check
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    """,
+
+    """
+    ALTER TABLE trade_history
+        DROP CONSTRAINT IF EXISTS trade_history_account_scope_check;
+    ALTER TABLE trade_history
+        ADD CONSTRAINT trade_history_account_scope_check
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    """,
+
+    """
+    ALTER TABLE broker_orders
+        DROP CONSTRAINT IF EXISTS broker_orders_account_scope_check;
+    ALTER TABLE broker_orders
+        ADD CONSTRAINT broker_orders_account_scope_check
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    """,
+
+    """
+    ALTER TABLE account_snapshots
+        DROP CONSTRAINT IF EXISTS account_snapshots_account_scope_check;
+    ALTER TABLE account_snapshots
+        ADD CONSTRAINT account_snapshots_account_scope_check
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    """,
+
+    # ── strategy_id 컬럼 추가 (이미 없으면) ──────────────────────────────────
+    """
+    ALTER TABLE trading_accounts ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
+    ALTER TABLE portfolio_positions ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
+    ALTER TABLE trade_history ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
+    ALTER TABLE broker_orders ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
+    ALTER TABLE account_snapshots ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
+    """,
+
+    # ── signal_source CHECK 확장 (VIRTUAL, EXIT 추가) ──────────────────────
+    """
+    ALTER TABLE trade_history
+        DROP CONSTRAINT IF EXISTS trade_history_signal_source_check;
+    ALTER TABLE broker_orders
+        DROP CONSTRAINT IF EXISTS broker_orders_signal_source_check;
+    """,
 ]
 
 DROP_TABLES_SQL = """
 DROP TABLE IF EXISTS
+    aggregate_risk_snapshots,
+    strategy_promotions,
+    watchlist,
+    daily_rankings,
+    macro_indicators,
+    theme_stocks,
+    stock_master,
     research_outputs,
     page_extractions,
     search_results,

@@ -324,3 +324,110 @@ async def get_combined_signals(
         )
 
     return CombinedResponse(blend_ratio=ratio, signals=signals)
+
+
+# ── 전략 승격 API ──────────────────────────────────────────────────────────
+
+
+class PromotionReadinessResponse(BaseModel):
+    strategy_id: str
+    from_mode: str
+    to_mode: str
+    ready: bool
+    criteria: dict
+    actual: dict
+    failures: list[str]
+    message: str
+
+
+class PromotionRequest(BaseModel):
+    from_mode: str
+    to_mode: str
+    force: bool = False
+
+
+class PromotionResponse(BaseModel):
+    success: bool
+    strategy_id: str
+    from_mode: str
+    to_mode: str
+    message: str
+
+
+class StrategyStatusItem(BaseModel):
+    strategy_id: str
+    active_modes: list[str]
+    promotion_readiness: dict
+
+
+@router.get("/promotion-status")
+async def get_promotion_status(
+    _: Annotated[dict, Depends(get_current_user)],
+) -> list[StrategyStatusItem]:
+    """모든 전략의 현재 모드와 승격 준비 상태를 반환합니다."""
+    from src.utils.strategy_promotion import StrategyPromoter
+
+    promoter = StrategyPromoter()
+    statuses = await promoter.get_all_strategy_status()
+    return [StrategyStatusItem(**s) for s in statuses]
+
+
+@router.get("/{strategy_id}/promotion-readiness", response_model=PromotionReadinessResponse)
+async def get_promotion_readiness(
+    strategy_id: str,
+    _: Annotated[dict, Depends(get_current_user)],
+    from_mode: str = Query(default="virtual"),
+    to_mode: str = Query(default="paper"),
+) -> PromotionReadinessResponse:
+    """특정 전략의 승격 준비 상태를 확인합니다."""
+    from src.utils.strategy_promotion import StrategyPromoter
+
+    promoter = StrategyPromoter()
+    check = await promoter.evaluate_promotion_readiness(
+        strategy_id=strategy_id.upper(),
+        from_mode=from_mode,
+        to_mode=to_mode,
+    )
+    return PromotionReadinessResponse(
+        strategy_id=check.strategy_id,
+        from_mode=check.from_mode,
+        to_mode=check.to_mode,
+        ready=check.ready,
+        criteria=check.criteria,
+        actual=check.actual,
+        failures=check.failures,
+        message=check.message,
+    )
+
+
+@router.post("/{strategy_id}/promote", response_model=PromotionResponse)
+async def promote_strategy(
+    strategy_id: str,
+    body: PromotionRequest,
+    user: Annotated[dict, Depends(get_current_user)],
+) -> PromotionResponse:
+    """전략을 다음 모드로 승격합니다."""
+    from src.utils.strategy_promotion import StrategyPromoter
+
+    promoter = StrategyPromoter()
+    result = await promoter.promote_strategy(
+        strategy_id=strategy_id.upper(),
+        from_mode=body.from_mode,
+        to_mode=body.to_mode,
+        force=body.force,
+        approved_by=user.get("email", "api_user"),
+    )
+
+    if not result.success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.message,
+        )
+
+    return PromotionResponse(
+        success=result.success,
+        strategy_id=result.strategy_id,
+        from_mode=result.from_mode,
+        to_mode=result.to_mode,
+        message=result.message,
+    )
