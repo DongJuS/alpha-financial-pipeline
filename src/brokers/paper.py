@@ -5,11 +5,13 @@ src/brokers/paper.py — 내부 모의주문 브로커
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import uuid4
 
 from src.db.models import PaperOrderRequest
 from src.db.queries import get_position, get_trading_account, insert_broker_order, insert_trade, save_position, update_broker_order_status, upsert_trading_account
 from src.services.account_state import recompute_account_state
+from src.services.datalake import store_orders as datalake_store_orders
 from src.utils.account_scope import AccountScope, normalize_account_scope
 
 
@@ -109,6 +111,21 @@ class PaperBroker:
             avg_fill_price=order.price,
             broker_order_id=client_order_id,
         )
+
+        # ── Data Lake: 주문 기록을 Parquet으로 S3에 저장 ──────────────
+        await datalake_store_orders([{
+            "ticker": order.ticker,
+            "timestamp": datetime.now(),
+            "side": order.signal,
+            "quantity": order.quantity,
+            "price": float(order.price),
+            "order_type": "MARKET",
+            "account_scope": scope,
+            "strategy": order.signal_source or "",
+            "status": "FILLED",
+            "broker_order_id": client_order_id,
+        }])
+
         account_state = await self.sync_account_state(scope, snapshot_source="paper_broker")
 
         return PaperBrokerExecution(
