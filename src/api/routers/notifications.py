@@ -146,3 +146,47 @@ async def update_preferences(
         json.dumps(merged),
     )
     return {"message": "알림 설정이 업데이트되었습니다.", "preferences": merged}
+
+
+@router.get("/stats")
+async def get_notification_stats(
+    _: Annotated[dict, Depends(get_current_user)],
+) -> dict:
+    """알림 발송 통계 (성공률, 유형별, 일별 추이)를 반환합니다."""
+    from src.utils.db_client import fetchrow as _fetchrow
+
+    summary = await _fetchrow(
+        """
+        SELECT
+            COUNT(*) AS total_sent,
+            ROUND(AVG(CASE WHEN success THEN 1.0 ELSE 0.0 END), 4) AS success_rate
+        FROM notification_history
+        """
+    )
+
+    by_type_rows = await fetch(
+        """
+        SELECT event_type, COUNT(*) AS cnt
+        FROM notification_history
+        GROUP BY event_type
+        """
+    )
+
+    daily_rows = await fetch(
+        """
+        SELECT to_char(sent_at::date, 'YYYY-MM-DD') AS date,
+               COUNT(*) AS cnt,
+               COUNT(*) FILTER (WHERE success) AS success_cnt
+        FROM notification_history
+        WHERE sent_at >= NOW() - INTERVAL '14 days'
+        GROUP BY sent_at::date
+        ORDER BY sent_at::date DESC
+        """
+    )
+
+    return {
+        "total_sent": int(summary["total_sent"]) if summary else 0,
+        "success_rate": float(summary["success_rate"]) if summary and summary["success_rate"] else None,
+        "by_type": {r["event_type"]: int(r["cnt"]) for r in by_type_rows},
+        "daily_trend": [dict(r) for r in daily_rows],
+    }

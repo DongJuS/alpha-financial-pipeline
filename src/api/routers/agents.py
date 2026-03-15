@@ -261,3 +261,47 @@ async def restart_agent(
     )
 
     return {"message": f"'{agent_id}' 재시작 신호가 발행되었습니다."}
+
+
+@router.post("/{agent_id}/pause")
+async def pause_agent(
+    agent_id: str,
+    _: Annotated[dict, Depends(get_admin_user)],
+) -> dict:
+    """에이전트 일시정지 신호를 발행합니다 (관리자 전용)."""
+    if agent_id not in AGENT_IDS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"에이전트 '{agent_id}'를 찾을 수 없습니다.",
+        )
+
+    import json
+    from src.utils.redis_client import publish_message, TOPIC_ALERTS
+
+    await publish_message(
+        TOPIC_ALERTS,
+        json.dumps({"type": "pause_request", "agent_id": agent_id, "requested_by": "admin"}),
+    )
+    return {"message": f"'{agent_id}' 일시정지 신호가 발행되었습니다."}
+
+
+@router.post("/{agent_id}/resume")
+async def resume_agent(
+    agent_id: str,
+    _: Annotated[dict, Depends(get_admin_user)],
+) -> dict:
+    """에이전트 재개 신호를 발행합니다 (관리자 전용)."""
+    if agent_id not in AGENT_IDS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"에이전트 '{agent_id}'를 찾을 수 없습니다.",
+        )
+
+    import json
+    from src.utils.redis_client import publish_message, TOPIC_ALERTS
+
+    await publish_message(
+        TOPIC_ALERTS,
+        json.dumps({"type": "resume_request", "agent_id": agent_id, "requested_by": "admin"}),
+    )
+    return {"message": f"'{agent_id}' 재개 신호가 발행되었습니다."}

@@ -3,12 +3,18 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 const NAV_ITEMS = [
   { to: "/dashboard", label: "홈", description: "자산 현황" },
   { to: "/strategy", label: "전략", description: "A/B 교차검증" },
+  { to: "/rl-trading", label: "RL", description: "강화학습 트레이딩" },
+  { to: "/feedback", label: "성과 분석", description: "피드백 루프" },
   { to: "/models", label: "모델 관리", description: "페르소나와 역할" },
   { to: "/market", label: "마켓", description: "실시간 데이터" },
   { to: "/marketplace", label: "마켓플레이스", description: "섹터·랭킹·매크로" },
-  { to: "/long-term", label: "장기투자", description: "준비 중인 화면" },
   { to: "/paper-trading", label: "모의 투자", description: "KIS 페이퍼 계좌" },
   { to: "/portfolio", label: "내 계좌", description: "성과와 리스크" },
+  { to: "/agent-control", label: "에이전트", description: "상태·제어" },
+  { to: "/system-health", label: "헬스", description: "시스템 모니터링" },
+  { to: "/datalake", label: "데이터", description: "S3 레이크" },
+  { to: "/notifications", label: "알림", description: "알림 센터" },
+  { to: "/audit", label: "감사", description: "감사 추적" },
   { to: "/settings", label: "설정", description: "운영 정책" },
 ];
 
