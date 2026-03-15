@@ -35,14 +35,28 @@ KEY_REALTIME_SERIES = "redis:cache:realtime_series:{ticker}"
 KEY_MACRO_CONTEXT = "memory:macro_context"
 KEY_MARKET_INDEX = "redis:cache:market_index"
 
+# ── 마켓플레이스 확장 키 패턴 ──────────────────────────────────────────────────
+KEY_STOCK_MASTER = "redis:cache:stock_master"                    # 전체 종목 마스터
+KEY_SECTOR_MAP = "redis:cache:sector_map"                        # 섹터 → 종목 매핑
+KEY_THEME_MAP = "redis:cache:theme_map"                          # 테마 → 종목 매핑
+KEY_RANKINGS = "redis:cache:rankings:{ranking_type}"             # 랭킹 (타입별)
+KEY_MACRO = "redis:cache:macro:{category}"                       # 매크로 지표 (카테고리별)
+KEY_ETF_LIST = "redis:cache:etf_list"                            # ETF/ETN 목록
+
 # ── TTL 상수 (초) ────────────────────────────────────────────────────────────
-TTL_HEARTBEAT = 90
-TTL_KIS_TOKEN = 23 * 3600
-TTL_KRX_HOLIDAYS = 24 * 3600
-TTL_LATEST_TICKS = 60
-TTL_REALTIME_SERIES = 3600
-TTL_MACRO_CONTEXT = 4 * 3600
-TTL_MARKET_INDEX = 120
+TTL_HEARTBEAT = 90          # 90초 — 에이전트 생존 신호
+TTL_KIS_TOKEN = 23 * 3600   # 23시간 — KIS OAuth 토큰
+TTL_KRX_HOLIDAYS = 24 * 3600  # 24시간 — KRX 휴장일
+TTL_LATEST_TICKS = 60       # 60초 — 실시간 시세 캐시
+TTL_REALTIME_SERIES = 3600  # 1시간 — 실시간 시계열 캐시
+TTL_MACRO_CONTEXT = 4 * 3600  # 4시간 — 거시경제 컨텍스트
+TTL_MARKET_INDEX = 120      # 120초 — 시장 지수 캐시
+TTL_STOCK_MASTER = 24 * 3600   # 24시간 — 종목 마스터
+TTL_SECTOR_MAP = 24 * 3600     # 24시간 — 섹터 매핑
+TTL_THEME_MAP = 24 * 3600      # 24시간 — 테마 매핑
+TTL_RANKINGS = 300              # 5분 — 랭킹 (장중 빈번 갱신)
+TTL_MACRO = 3600                # 1시간 — 매크로 지표
+TTL_ETF_LIST = 24 * 3600       # 24시간 — ETF 목록
 
 
 async def get_redis() -> aioredis.Redis:
