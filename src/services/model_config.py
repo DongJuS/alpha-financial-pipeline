@@ -11,120 +11,34 @@ from src.db.queries import (
 )
 from src.llm.claude_client import ClaudeClient
 from src.llm.gemini_client import GeminiClient
-from src.llm.gpt_client import GPTClient
 
 SUPPORTED_MODEL_OPTIONS = [
-    {
-        "model": "claude-3-5-sonnet-latest",
-        "provider": "claude",
-        "label": "Claude 3.5 Sonnet",
-        "description": "복합 추론과 합의 정리에 강한 기본 모델",
-    },
-    {
-        "model": "gpt-4o-mini",
-        "provider": "gpt",
-        "label": "GPT-4o mini",
-        "description": "빠른 응답과 반론 생성에 적합한 기본 모델",
-    },
-    {
-        "model": "gemini-1.5-pro",
-        "provider": "gemini",
-        "label": "Gemini 1.5 Pro",
-        "description": "대안 시나리오와 폭넓은 관점 점검에 적합한 기본 모델",
-    },
+    # ── Claude (CLI) ────────────────────────────────────────────
+    {"model": "claude-opus-4-6", "provider": "claude", "label": "Claude Opus 4.6", "description": "최상위 추론 · 에이전트 팀 · 1M 컨텍스트"},
+    {"model": "claude-sonnet-4-6", "provider": "claude", "label": "Claude Sonnet 4.6", "description": "Opus급 지능 · Sonnet 가격 · 일상 분석 최적"},
+    {"model": "claude-haiku-4-5-20251001", "provider": "claude", "label": "Claude Haiku 4.5", "description": "빠른 응답 · 저비용 · 단순 작업에 적합"},
+    {"model": "claude-sonnet-4-5-20250514", "provider": "claude", "label": "Claude Sonnet 4.5", "description": "이전 세대 Sonnet · 코딩 특화"},
+    {"model": "claude-opus-4-5-20251114", "provider": "claude", "label": "Claude Opus 4.5", "description": "이전 세대 Opus · 안정적 추론"},
+    {"model": "claude-3-5-sonnet-latest", "provider": "claude", "label": "Claude 3.5 Sonnet", "description": "레거시 호환 · 복합 추론"},
+    # ── Gemini (OAuth/ADC) ──────────────────────────────────────
+    {"model": "gemini-2.5-pro-preview-06-05", "provider": "gemini", "label": "Gemini 2.5 Pro", "description": "최신 Pro · 복합 추론 · 100만 토큰 컨텍스트"},
+    {"model": "gemini-2.5-flash-preview-05-20", "provider": "gemini", "label": "Gemini 2.5 Flash", "description": "차세대 Flash · 사고 모드 · 빠른 응답"},
+    {"model": "gemini-2.0-flash", "provider": "gemini", "label": "Gemini 2.0 Flash", "description": "안정 Flash · 에이전트 경험 최적화"},
+    {"model": "gemini-2.0-flash-lite", "provider": "gemini", "label": "Gemini 2.0 Flash Lite", "description": "초경량 · 최저비용 · 대량 처리"},
+    {"model": "gemini-1.5-pro", "provider": "gemini", "label": "Gemini 1.5 Pro", "description": "레거시 호환 · 검증된 추론 성능"},
+    {"model": "gemini-1.5-flash", "provider": "gemini", "label": "Gemini 1.5 Flash", "description": "레거시 Flash · 빠른 응답"},
 ]
 
 DEFAULT_MODEL_ROLE_CONFIGS = [
-    {
-        "config_key": "strategy_a_predictor_1",
-        "strategy_code": "A",
-        "role": "predictor",
-        "role_label": "Predictor 1",
-        "agent_id": "predictor_1",
-        "llm_model": "claude-3-5-sonnet-latest",
-        "persona": "가치 투자형",
-        "execution_order": 1,
-    },
-    {
-        "config_key": "strategy_a_predictor_2",
-        "strategy_code": "A",
-        "role": "predictor",
-        "role_label": "Predictor 2",
-        "agent_id": "predictor_2",
-        "llm_model": "claude-3-5-sonnet-latest",
-        "persona": "기술적 분석형",
-        "execution_order": 2,
-    },
-    {
-        "config_key": "strategy_a_predictor_3",
-        "strategy_code": "A",
-        "role": "predictor",
-        "role_label": "Predictor 3",
-        "agent_id": "predictor_3",
-        "llm_model": "gpt-4o-mini",
-        "persona": "모멘텀형",
-        "execution_order": 3,
-    },
-    {
-        "config_key": "strategy_a_predictor_4",
-        "strategy_code": "A",
-        "role": "predictor",
-        "role_label": "Predictor 4",
-        "agent_id": "predictor_4",
-        "llm_model": "gpt-4o-mini",
-        "persona": "역추세형",
-        "execution_order": 4,
-    },
-    {
-        "config_key": "strategy_a_predictor_5",
-        "strategy_code": "A",
-        "role": "predictor",
-        "role_label": "Predictor 5",
-        "agent_id": "predictor_5",
-        "llm_model": "gemini-1.5-pro",
-        "persona": "거시경제형",
-        "execution_order": 5,
-    },
-    {
-        "config_key": "strategy_b_proposer",
-        "strategy_code": "B",
-        "role": "proposer",
-        "role_label": "Proposer",
-        "agent_id": "consensus_proposer",
-        "llm_model": "claude-3-5-sonnet-latest",
-        "persona": "핵심 매매 가설을 세우는 수석 분석가",
-        "execution_order": 1,
-    },
-    {
-        "config_key": "strategy_b_challenger_1",
-        "strategy_code": "B",
-        "role": "challenger",
-        "role_label": "Challenger 1",
-        "agent_id": "consensus_challenger_1",
-        "llm_model": "gpt-4o-mini",
-        "persona": "가설의 약점을 빠르게 파고드는 반론가",
-        "execution_order": 2,
-    },
-    {
-        "config_key": "strategy_b_challenger_2",
-        "strategy_code": "B",
-        "role": "challenger",
-        "role_label": "Challenger 2",
-        "agent_id": "consensus_challenger_2",
-        "llm_model": "gemini-1.5-pro",
-        "persona": "거시 변수와 대안을 점검하는 반론가",
-        "execution_order": 3,
-    },
-    {
-        "config_key": "strategy_b_synthesizer",
-        "strategy_code": "B",
-        "role": "synthesizer",
-        "role_label": "Synthesizer",
-        "agent_id": "consensus_synthesizer",
-        "llm_model": "claude-3-5-sonnet-latest",
-        "persona": "토론을 종합해 최종 결론을 내리는 조정자",
-        "execution_order": 4,
-    },
+    {"config_key": "strategy_a_predictor_1", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 1", "agent_id": "predictor_1", "llm_model": "claude-sonnet-4-6", "persona": "가치 투자형", "execution_order": 1},
+    {"config_key": "strategy_a_predictor_2", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 2", "agent_id": "predictor_2", "llm_model": "claude-sonnet-4-6", "persona": "기술적 분석형", "execution_order": 2},
+    {"config_key": "strategy_a_predictor_3", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 3", "agent_id": "predictor_3", "llm_model": "gemini-2.0-flash", "persona": "모멘텀형", "execution_order": 3},
+    {"config_key": "strategy_a_predictor_4", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 4", "agent_id": "predictor_4", "llm_model": "gemini-2.5-flash-preview-05-20", "persona": "역추세형", "execution_order": 4},
+    {"config_key": "strategy_a_predictor_5", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 5", "agent_id": "predictor_5", "llm_model": "claude-haiku-4-5-20251001", "persona": "거시경제형", "execution_order": 5},
+    {"config_key": "strategy_b_proposer", "strategy_code": "B", "role": "proposer", "role_label": "Proposer", "agent_id": "consensus_proposer", "llm_model": "claude-sonnet-4-6", "persona": "핵심 매매 가설을 세우는 수석 분석가", "execution_order": 1},
+    {"config_key": "strategy_b_challenger_1", "strategy_code": "B", "role": "challenger", "role_label": "Challenger 1", "agent_id": "consensus_challenger_1", "llm_model": "gemini-2.5-pro-preview-06-05", "persona": "가설의 약점을 빠르게 파고드는 반론가", "execution_order": 2},
+    {"config_key": "strategy_b_challenger_2", "strategy_code": "B", "role": "challenger", "role_label": "Challenger 2", "agent_id": "consensus_challenger_2", "llm_model": "gemini-2.0-flash", "persona": "거시 변수와 대안을 점검하는 반론가", "execution_order": 3},
+    {"config_key": "strategy_b_synthesizer", "strategy_code": "B", "role": "synthesizer", "role_label": "Synthesizer", "agent_id": "consensus_synthesizer", "llm_model": "claude-opus-4-6", "persona": "토론을 종합해 최종 결론을 내리는 조정자", "execution_order": 4},
 ]
 
 SUPPORTED_MODEL_VALUES = {item["model"] for item in SUPPORTED_MODEL_OPTIONS}
@@ -171,31 +85,25 @@ def provider_name_for_model(model: str) -> str:
     text = model.lower()
     if "claude" in text:
         return "claude"
-    if "gpt" in text:
-        return "gpt"
     if "gemini" in text:
         return "gemini"
     raise ValueError(f"지원하지 않는 provider 모델명입니다: {model}")
 
 
 def provider_status() -> list[dict]:
-    claude = ClaudeClient(model="claude-3-5-sonnet-latest")
-    gpt = GPTClient(model="gpt-4o-mini")
-    gemini = GeminiClient(model="gemini-1.5-pro")
+    claude = ClaudeClient(model="claude-sonnet-4-6")
+    gemini = GeminiClient(model="gemini-2.0-flash")
     return [
         {
             "provider": "claude",
-            "default_model": "claude-3-5-sonnet-latest",
+            "mode": "CLI",
+            "default_model": "claude-sonnet-4-6",
             "configured": claude.is_configured,
         },
         {
-            "provider": "gpt",
-            "default_model": "gpt-4o-mini",
-            "configured": gpt.is_configured,
-        },
-        {
             "provider": "gemini",
-            "default_model": "gemini-1.5-pro",
+            "mode": "OAuth (ADC)",
+            "default_model": "gemini-2.0-flash",
             "configured": gemini.is_configured,
         },
     ]
