@@ -40,3 +40,56 @@ export function useAgentStatus() {
     staleTime: 30_000,
   });
 }
+
+/* ── 에이전트 로그 조회 ─────────────────────────────────────────────────── */
+
+export interface AgentLogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
+async function fetchAgentLogs(agentId: string): Promise<AgentLogEntry[]> {
+  const { data } = await api.get<AgentLogEntry[]>(`/agents/${agentId}/logs`);
+  return data;
+}
+
+export function useAgentLogs(agentId: string | null) {
+  return useQuery({
+    queryKey: ["agents", "logs", agentId],
+    queryFn: () => fetchAgentLogs(agentId as string),
+    enabled: agentId !== null,
+    refetchInterval: 30_000,
+  });
+}
+
+/* ── 에이전트 재시작 ────────────────────────────────────────────────────── */
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+export function useRestartAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (agentId: string) => {
+      const { data } = await api.post(`/agents/${agentId}/restart`);
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["agents", "status"] });
+    },
+  });
+}
+
+/* ── Dual Execution 실행 ────────────────────────────────────────────────── */
+
+export function useRunDualExecution() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post("/agents/dual-execution/run");
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["agents", "status"] });
+    },
+  });
+}

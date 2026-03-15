@@ -135,3 +135,59 @@ export function useDebateList(limit = 30) {
     refetchInterval: 60_000,
   });
 }
+
+/* ── 전략 승격 (Strategy Promotion) ────────────────────────────────────── */
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+export interface PromotionStatus {
+  strategy_id: string;
+  current_mode: string;
+  can_promote: boolean;
+  requirements: Record<string, { met: boolean; label: string }>;
+}
+
+export interface PromotionReadiness {
+  strategy_id: string;
+  target_mode: string;
+  ready: boolean;
+  checks: { key: string; passed: boolean; message: string }[];
+}
+
+async function fetchPromotionStatus(): Promise<PromotionStatus[]> {
+  const { data } = await api.get<PromotionStatus[]>("/strategy/promotion-status");
+  return data;
+}
+
+async function fetchPromotionReadiness(strategyId: string): Promise<PromotionReadiness> {
+  const { data } = await api.get<PromotionReadiness>(`/strategy/${strategyId}/promotion-readiness`);
+  return data;
+}
+
+export function usePromotionStatus() {
+  return useQuery({
+    queryKey: ["strategy", "promotion-status"],
+    queryFn: fetchPromotionStatus,
+    refetchInterval: 60_000,
+  });
+}
+
+export function usePromotionReadiness(strategyId: string | null) {
+  return useQuery({
+    queryKey: ["strategy", "promotion-readiness", strategyId],
+    queryFn: () => fetchPromotionReadiness(strategyId as string),
+    enabled: strategyId !== null,
+  });
+}
+
+export function usePromoteStrategy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (strategyId: string) => {
+      const { data } = await api.post(`/strategy/${strategyId}/promote`);
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["strategy"] });
+    },
+  });
+}
