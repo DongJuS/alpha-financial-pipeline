@@ -21,7 +21,7 @@ import {
   useTradeHistory,
   type PerformanceMetrics,
 } from "@/hooks/usePortfolio";
-import { formatKRW, formatPct } from "@/utils/api";
+import { formatKRW, formatMDD, formatPct } from "@/utils/api";
 
 const PERIOD_OPTIONS: PerformanceMetrics["period"][] = ["daily", "weekly", "monthly", "all"];
 
@@ -106,25 +106,28 @@ export default function Portfolio() {
       {/* KPI Grid */}
       <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <article className="card">
-          <p className="kpi-label">수익률</p>
+          <p className="kpi-label">실현 수익률</p>
           <p className={`number-lg mt-1 ${(perf?.return_pct ?? 0) >= 0 ? "text-profit" : "text-loss"}`}>
             {perfLoading ? "—" : formatPct(perf?.return_pct ?? 0)}
           </p>
+          <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>매도 완료 기준</p>
         </article>
         <article className="card">
           <p className="kpi-label">최대 낙폭 (MDD)</p>
-          <p className="number-lg mt-1 text-loss">{perfLoading ? "—" : formatPct(perf?.max_drawdown_pct ?? 0)}</p>
+          <p className="number-lg mt-1 text-loss">
+            {perfLoading ? "—" : formatMDD(perf?.max_drawdown_pct ?? 0)}
+          </p>
         </article>
         <article className="card">
           <p className="kpi-label">Sharpe Ratio</p>
           <p className="number-lg mt-1" style={{ color: "var(--text-primary)" }}>
-            {perfLoading ? "—" : perf?.sharpe_ratio == null ? "—" : perf.sharpe_ratio.toFixed(3)}
+            {perfLoading ? "—" : perf?.sharpe_ratio == null ? "—" : perf.sharpe_ratio.toFixed(2)}
           </p>
         </article>
         <article className="card">
           <p className="kpi-label">승률</p>
           <p className="number-lg mt-1" style={{ color: "var(--text-primary)" }}>
-            {perfLoading ? "—" : `${Math.round((perf?.win_rate ?? 0) * 100)}%`}
+            {perfLoading ? "—" : (perf?.win_rate === 0 && perf?.total_trades === 0) || perf?.win_rate == null ? "—" : perf.win_rate === 0 ? "매도 없음" : `${Math.round(perf.win_rate * 100)}%`}
           </p>
           <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>거래 {(perf?.total_trades ?? 0).toLocaleString()}건</p>
         </article>

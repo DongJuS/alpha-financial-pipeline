@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     # ── Strategy ─────────────────────────────────────────────────────────────
     strategy_blend_ratio: float = Field(default=0.50, alias="STRATEGY_BLEND_RATIO")
     strategy_blend_weights: str = Field(
-        default='{"A": 0.35, "B": 0.35, "RL": 0.30}',
+        default='{"A": 0.30, "B": 0.30, "RL": 0.20, "S": 0.20}',
         alias="STRATEGY_BLEND_WEIGHTS",
     )
     strategy_a_rolling_days: int = Field(default=5, ge=1, le=30, alias="STRATEGY_A_ROLLING_DAYS")
@@ -76,6 +76,9 @@ class Settings(BaseSettings):
         le=1.0,
         alias="STRATEGY_B_CONSENSUS_THRESHOLD",
     )
+    search_max_concurrent: str = Field(default="3", alias="SEARCH_MAX_CONCURRENT")
+    search_categories: str = Field(default="news", alias="SEARCH_CATEGORIES")
+    search_max_sources: str = Field(default="5", alias="SEARCH_MAX_SOURCES")
     real_trading_confirmation_code: str = Field(
         default="CONFIRM_REAL_TRADING_2026",
         alias="REAL_TRADING_CONFIRMATION_CODE",
