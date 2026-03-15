@@ -1,13 +1,13 @@
 """
-src/agents/orchestrator.py — OrchestratorAgent (N-way blend + Registry)
+src/agents/orchestrator.py — OrchestratorAgent (N-way blend + Registry + RL 독립)
 
 기본 사이클:
-Collector -> StrategyRegistry(병렬) -> Blender -> PortfolioManager -> Notifier
+Collector -> StrategyRegistry(병렬) -> Blender(A/B만) + RL(독립) -> PortfolioManager -> Notifier
 
+RL은 블렌딩에 참여하지 않고 독립적으로 트레이딩 결정을 내린다.
+--strategies A,B,RL 실행 시 A+B는 블렌딩되고, RL은 별도로 PortfolioManager에 전달된다.
 기존 단독 모드(--tournament, --consensus, --rl)와 2-way --blend 모두 하위 호환.
---strategies A,B,RL 플래그로 N-way blend 가능.
 """
-
 from __future__ import annotations
 
 import argparse
@@ -461,22 +461,67 @@ class OrchestratorAgent:
             rl_summaries = None
 
             if self.registry.runner_count >= 2:
-                # N-way Registry 병렬 실행 → blend
+                # N-way Registry 병렬 실행
                 all_predictions = await self.registry.run_all(cycle_tickers)
 
                 # RL summaries 추출
                 if self._rl_runner and self._rl_runner.last_summaries:
                     rl_summaries = self._rl_runner.last_summaries
 
-                # N-way blend
-                predictions = self._blend_nway_predictions(all_predictions)
-                blend_meta = self._build_blend_meta(all_predictions)
+                # RL 시그널을 분리: RL은 블렌딩에 참여하지 않고 독립 실행
+                rl_predictions = all_predictions.pop("RL", [])
+                non_rl_predictions = all_predictions  # RL이 제거된 나머지
 
-                orders = await self.portfolio.process_predictions(
-                    predictions,
-                    signal_source_override="BLEND",
-                )
-                mode_name = f"blend_nway({','.join(self.registry.active_names)})"
+                orders: list[dict] = []
+
+                # 1) 비-RL 전략: 2개 이상이면 블렌딩, 1개면 단독 실행
+                if len(non_rl_predictions) >= 2:
+                    blended = self._blend_nway_predictions(non_rl_predictions)
+                    blend_meta = self._build_blend_meta(non_rl_predictions)
+                    non_rl_orders = await self.portfolio.process_predictions(
+                        blended, signal_source_override="BLEND",
+                    )
+                    orders.extend(non_rl_orders)
+                elif len(non_rl_predictions) == 1:
+                    strategy_name = list(non_rl_predictions.keys())[0]
+                    preds = list(non_rl_predictions.values())[0]
+                    non_rl_orders = await self.portfolio.process_predictions(
+                        preds, signal_source_override=strategy_name,
+                    )
+                    orders.extend(non_rl_orders)
+                    blend_meta = None
+                else:
+                    blend_meta = None
+
+                # 2) RL 독립 실행: RL이 스스로 결정한 시그널을 직접 PortfolioManager에 전달
+                rl_orders: list[dict] = []
+                if rl_predictions:
+                    rl_orders = await self.portfolio.process_predictions(
+                        rl_predictions, signal_source_override="RL",
+                    )
+                    orders.extend(rl_orders)
+
+                # blend_meta에 RL 독립 실행 정보 추가
+                if blend_meta is None:
+                    blend_meta = {}
+                blend_meta["rl_independent"] = True
+                blend_meta["rl_predictions"] = len(rl_predictions)
+                blend_meta["rl_orders"] = len(rl_orders)
+
+                # 비-RL 예측 결과 (notifier 카운트용)
+                if len(non_rl_predictions) >= 2:
+                    predictions = blended
+                elif non_rl_predictions:
+                    predictions = list(non_rl_predictions.values())[0]
+                else:
+                    predictions = []
+                total_predicted = len(predictions) + len(rl_predictions)
+
+                non_rl_names = sorted(non_rl_predictions.keys())
+                if non_rl_names:
+                    mode_name = f"blend_nway({','.join(non_rl_names)})+rl_independent"
+                else:
+                    mode_name = "rl_independent"
 
             elif self.registry.runner_count == 1:
                 # 단일 전략 (기존 단독 모드 호환)
@@ -489,7 +534,7 @@ class OrchestratorAgent:
                 if self._rl_runner and self._rl_runner.last_summaries:
                     rl_summaries = self._rl_runner.last_summaries
 
-                source_override = strategy_name if strategy_name in ("A", "B", "RL") else None
+                source_override = strategy_name if strategy_name in ("A", "B", "RL", "S") else None
                 orders = await self.portfolio.process_predictions(
                     predictions,
                     signal_source_override=source_override,
@@ -504,15 +549,17 @@ class OrchestratorAgent:
                 mode_name = "single_predictor"
                 blend_meta = None
 
+            total_predicted = locals().get("total_predicted", len(predictions))
+
             await self.notifier.send_cycle_summary(
                 collected=collected_count,
-                predicted=len(predictions),
+                predicted=total_predicted,
                 orders=len(orders),
             )
 
             result = {
                 "collected": collected_count,
-                "predicted": len(predictions),
+                "predicted": total_predicted,
                 "orders": len(orders),
                 "winner_agent_id": winner,
                 "rl_summaries": rl_summaries,
