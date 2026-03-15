@@ -29,6 +29,7 @@ from src.db.queries import (
 from src.llm.claude_client import ClaudeClient
 from src.llm.gemini_client import GeminiClient
 from src.llm.gpt_client import GPTClient
+from src.services.datalake import store_predictions as datalake_store_predictions
 from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import TOPIC_SIGNALS, publish_message, set_heartbeat
 
@@ -153,6 +154,22 @@ class PredictorAgent:
             )
             await insert_prediction(signal)
             results.append(signal)
+
+        # ── Data Lake: 예측 시그널을 Parquet으로 S3에 저장 ─────────────
+        for sig in results:
+            await datalake_store_predictions(
+                sig.ticker,
+                [{
+                    "ticker": sig.ticker,
+                    "timestamp": datetime.now(),
+                    "strategy": sig.strategy or self.strategy,
+                    "signal": sig.signal,
+                    "confidence": sig.confidence or 0.0,
+                    "target_price": float(sig.target_price) if sig.target_price else 0.0,
+                    "stop_loss": float(sig.stop_loss) if sig.stop_loss else 0.0,
+                    "reasoning": sig.reasoning_summary or "",
+                }],
+            )
 
         if self.strategy == "A":
             await upsert_tournament_score(

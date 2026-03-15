@@ -116,6 +116,13 @@ class Settings(BaseSettings):
     # ── 전략 승격 기준 오버라이드 ──────────────────────────────────────────
     promotion_criteria_override: str = Field(default="", alias="PROMOTION_CRITERIA_OVERRIDE")
 
+    # ── S3 / MinIO Data Lake ──────────────────────────────────────────────────
+    s3_endpoint_url: str = Field(default="http://localhost:9000", alias="S3_ENDPOINT_URL")
+    s3_access_key: str = Field(default="alpha_minio", alias="S3_ACCESS_KEY")
+    s3_secret_key: str = Field(default="alpha_minio_secret", alias="S3_SECRET_KEY")
+    s3_bucket_name: str = Field(default="alpha-lake", alias="S3_BUCKET_NAME")
+    s3_region: str = Field(default="ap-northeast-2", alias="S3_REGION")
+
     # ── Logging ──────────────────────────────────────────────────────────────
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 

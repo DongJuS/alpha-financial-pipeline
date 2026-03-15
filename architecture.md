@@ -200,6 +200,7 @@ Claude x2 / GPT x2 / Gemini x1  Claude / GPT-4o / Gemini
 | Hot | Redis | ≤24h | 실시간 틱, 진행 중 토론 상태, 헬스비트, OAuth 토큰 |
 | Warm | PostgreSQL | 90일 | 거래 이력, 예측 기록, 토너먼트 점수, 토론 전문 |
 | Cold | PostgreSQL Archive | 무기한 | 연간 성과, 주요 이벤트 로그 |
+| Archive | S3 Data Lake (MinIO) | 무기한 | 원시 데이터 전체 (Parquet), RL 학습/백테스트용 |
 
 ### 주요 PostgreSQL 테이블
 
@@ -222,6 +223,93 @@ Claude x2 / GPT x2 / Gemini x1  Claude / GPT-4o / Gemini
 | `krx:holidays:{year}` | 24h | KRX 휴장일 캘린더 |
 | `redis:cache:latest_ticks:{ticker}` | 60s | 실시간 시세 캐시 |
 | `memory:macro_context` | 4h | 거시경제 컨텍스트 |
+
+### S3 Data Lake (MinIO + Parquet)
+
+운영 데이터베이스(PostgreSQL)와 별도로, 모든 원시 데이터를 장기 보관하는 **읽기 전용 아카이브**입니다.
+분석, RL 학습, 백테스트 등 배치 워크로드에 활용합니다.
+
+**인프라:**
+
+| 구성요소 | 개발 환경 | 프로덕션 |
+|----------|-----------|----------|
+| 오브젝트 스토리지 | MinIO (Docker) | AWS S3 |
+| 직렬화 포맷 | Apache Parquet (Snappy 압축) | 동일 |
+| 클라이언트 | boto3 (s3v4 서명) | 동일 |
+
+개발→프로덕션 전환 시 `S3_ENDPOINT_URL`만 변경하면 됩니다.
+
+**단일 버킷 구조:**
+
+```
+alpha-lake/                          ← 버킷 (1개)
+├── ticks/                           ← 실시간 틱 데이터
+│   └── year=2026/month=03/day=15/
+│       ├── 005930.parquet           ← 삼성전자
+│       └── 000660.parquet           ← SK하이닉스
+├── daily_bars/                      ← 일봉 OHLCV
+│   └── year=2026/month=03/day=15/
+│       └── 005930.parquet
+├── macro/                           ← 거시경제 지표
+│   └── year=2026/month=03/day=15/
+│       └── macro_snapshot.parquet
+├── search/                          ← 검색/스크래핑 결과
+│   └── year=2026/month=03/day=15/
+│       └── searxng_results.parquet
+├── research/                        ← 리서치 분석 결과
+│   └── year=2026/month=03/day=15/
+│       └── analysis.parquet
+├── predictions/                     ← AI 예측 시그널
+│   └── year=2026/month=03/day=15/
+│       └── 005930.parquet
+└── orders/                          ← 주문 실행 기록
+    └── year=2026/month=03/day=15/
+        └── order_12345.parquet
+```
+
+파티셔닝은 `{data_type}/year=YYYY/month=MM/day=DD/{filename}.parquet` Hive 스타일을 따릅니다.
+하나의 버킷에서 prefix 기반으로 데이터를 분리하며, 접근 정책이나 수명주기가 달라질 경우에만 버킷을 분리합니다.
+
+**7가지 데이터 타입:**
+
+| DataType | 쓰기 에이전트 | 설명 |
+|----------|--------------|------|
+| `ticks` | CollectorAgent | 실시간 체결 틱 (100건 배치 플러시) |
+| `daily_bars` | CollectorAgent | 일봉 OHLCV (FDR, Yahoo) |
+| `macro` | CollectorAgent | 거시경제 지표 스냅샷 |
+| `search` | SearchAgent | SearXNG 검색 결과 |
+| `research` | SearchAgent | ScrapeGraphAI + Claude 분석 |
+| `predictions` | PredictorAgent | 전략 A/B 예측 시그널 |
+| `orders` | PortfolioManager | 주문 실행 결과 |
+
+**데이터 흐름:**
+
+```
+CollectorAgent ──┬── ticks (100건 버퍼 → 플러시)
+                 ├── daily_bars
+                 └── macro
+                            ↘
+SearchAgent ────┬── search       boto3
+                └── research  ──────→  MinIO / S3
+                            ↗         (alpha-lake)
+PredictorAgent ── predictions
+PortfolioManager ── orders
+```
+
+**구현 파일:**
+
+| 파일 | 역할 |
+|------|------|
+| `src/utils/s3_client.py` | boto3 싱글턴 클라이언트, CRUD 유틸리티 |
+| `src/services/datalake.py` | PyArrow 스키마 정의, Parquet 직렬화, 편의 함수 |
+| `src/api/main.py` | FastAPI 시작 시 버킷 자동 생성 (실패해도 서버 기동) |
+
+**설계 원칙:**
+
+1. Data Lake는 **읽기 전용 아카이브**입니다. 운영 쿼리는 PostgreSQL을 사용합니다.
+2. S3 저장 실패는 경고만 남기고 서비스를 중단하지 않습니다 (graceful degradation).
+3. 틱 데이터는 네트워크 부하를 줄이기 위해 100건 단위로 배치 플러시합니다.
+4. 모든 Parquet 파일은 Snappy 압축 + 컬럼 통계 + 페이지 인덱스를 포함합니다.
 
 ---
 
@@ -324,5 +412,5 @@ ui/src/
 2. 모든 전략 계열 기능은 `paper first` 원칙을 유지합니다.
 3. 주문 권한은 계속 `PortfolioManagerAgent`에 집중합니다.
 
-*Last updated: 2026-03-12*
+*Last updated: 2026-03-15*
 

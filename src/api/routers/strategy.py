@@ -431,3 +431,205 @@ async def promote_strategy(
         to_mode=result.to_mode,
         message=result.message,
     )
+
+
+# ── 전략 대시보드 종합 API ────────────────────────────────────────────────
+
+
+class StrategyPerformanceItem(BaseModel):
+    strategy_id: str
+    mode: str
+    trading_days: int
+    total_trades: int
+    return_pct: float
+    max_drawdown_pct: float
+    sharpe_ratio: Optional[float] = None
+    win_rate: float
+
+
+class VirtualBalanceItem(BaseModel):
+    strategy_id: str
+    initial_capital: int
+    cash_balance: int
+    position_market_value: int
+    total_equity: int
+    unrealized_pnl: int
+    unrealized_pnl_pct: float
+    position_count: int
+
+
+class StrategyDashboardItem(BaseModel):
+    strategy_id: str
+    active_modes: list[str]
+    allocated_capital: int
+    promotion_readiness: dict
+    performance: list[StrategyPerformanceItem]
+    virtual_balance: Optional[VirtualBalanceItem] = None
+
+
+class StrategyDashboardResponse(BaseModel):
+    strategies: list[StrategyDashboardItem]
+    last_updated: str
+
+
+@router.get("/dashboard-status", response_model=StrategyDashboardResponse)
+async def get_strategy_dashboard_status(
+    _: Annotated[dict, Depends(get_current_user)],
+) -> StrategyDashboardResponse:
+    """전략별 모드/성과/승격 상태/가상 자금 잔고를 종합 반환합니다."""
+    import json as _json
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo as _ZI
+
+    from src.utils.strategy_promotion import StrategyPromoter
+    from src.utils.performance import compute_trade_performance
+
+    settings = get_settings()
+    promoter = StrategyPromoter()
+
+    try:
+        modes_map = _json.loads(settings.strategy_modes)
+    except (ValueError, TypeError):
+        modes_map = {}
+
+    try:
+        capital_map = _json.loads(settings.strategy_capital_allocation)
+    except (ValueError, TypeError):
+        capital_map = {}
+
+    strategies = ["A", "B", "RL", "S", "L"]
+    result: list[StrategyDashboardItem] = []
+
+    for sid in strategies:
+        active_modes_raw = modes_map.get(sid, [])
+        if isinstance(active_modes_raw, str):
+            active_modes_raw = [active_modes_raw]
+        active_modes: list[str] = active_modes_raw
+        allocated_capital = int(capital_map.get(sid, settings.virtual_initial_capital))
+
+        # 승격 준비 상태
+        promo_readiness: dict = {}
+        valid_paths = [("virtual", "paper"), ("paper", "real")]
+        for from_m, to_m in valid_paths:
+            if from_m in active_modes and to_m not in active_modes:
+                check = await promoter.evaluate_promotion_readiness(sid, from_m, to_m)
+                promo_readiness[f"{from_m}_to_{to_m}"] = {
+                    "ready": check.ready,
+                    "failures": check.failures,
+                    "actual": check.actual,
+                    "criteria": check.criteria,
+                }
+
+        # 모드별 성과
+        performances: list[StrategyPerformanceItem] = []
+        for mode in active_modes:
+            trade_rows = await fetch(
+                """
+                SELECT ticker, side, price, quantity, amount, executed_at
+                FROM trade_history
+                WHERE account_scope = $1
+                  AND (strategy_id = $2 OR ($2 IS NULL AND strategy_id IS NULL))
+                ORDER BY executed_at
+                """,
+                mode,
+                sid,
+            )
+            days_count = await fetchrow(
+                """
+                SELECT COUNT(DISTINCT executed_at::date) AS cnt
+                FROM trade_history
+                WHERE account_scope = $1
+                  AND (strategy_id = $2 OR ($2 IS NULL AND strategy_id IS NULL))
+                """,
+                mode,
+                sid,
+            )
+            if trade_rows:
+                perf = compute_trade_performance([dict(r) for r in trade_rows])
+            else:
+                perf = {
+                    "return_pct": 0.0,
+                    "max_drawdown_pct": 0.0,
+                    "sharpe_ratio": None,
+                    "total_trades": 0,
+                    "win_rate": 0.0,
+                }
+            performances.append(
+                StrategyPerformanceItem(
+                    strategy_id=sid,
+                    mode=mode,
+                    trading_days=int(days_count["cnt"]) if days_count else 0,
+                    total_trades=perf["total_trades"],
+                    return_pct=perf["return_pct"],
+                    max_drawdown_pct=perf["max_drawdown_pct"],
+                    sharpe_ratio=perf.get("sharpe_ratio"),
+                    win_rate=perf.get("win_rate", 0.0),
+                )
+            )
+
+        # 가상 자금 잔고 (virtual 모드일 때만)
+        vbal: Optional[VirtualBalanceItem] = None
+        if "virtual" in active_modes:
+            positions = await fetch(
+                """
+                SELECT ticker, name, quantity, avg_price, current_price
+                FROM portfolio_positions
+                WHERE account_scope = 'virtual'
+                  AND COALESCE(strategy_id, '') = $1
+                  AND quantity > 0
+                """,
+                sid,
+            )
+            pos_value = sum(
+                int(r["quantity"]) * int(r["current_price"]) for r in positions
+            )
+            pos_cost = sum(
+                int(r["quantity"]) * int(r["avg_price"]) for r in positions
+            )
+            unrealized = pos_value - pos_cost
+
+            # 실현 손익 기반 남은 현금 계산
+            realized_pnl_row = await fetchrow(
+                """
+                SELECT
+                    COALESCE(SUM(CASE WHEN side='BUY' THEN -amount ELSE amount END), 0) AS net_cash_flow
+                FROM trade_history
+                WHERE account_scope = 'virtual'
+                  AND (strategy_id = $1 OR ($1 IS NULL AND strategy_id IS NULL))
+                """,
+                sid,
+            )
+            net_cash_flow = int(realized_pnl_row["net_cash_flow"]) if realized_pnl_row else 0
+            cash_balance = allocated_capital + net_cash_flow
+            total_equity = cash_balance + pos_value
+            unrealized_pct = (
+                round(unrealized / pos_cost * 100, 2) if pos_cost > 0 else 0.0
+            )
+
+            vbal = VirtualBalanceItem(
+                strategy_id=sid,
+                initial_capital=allocated_capital,
+                cash_balance=cash_balance,
+                position_market_value=pos_value,
+                total_equity=total_equity,
+                unrealized_pnl=unrealized,
+                unrealized_pnl_pct=unrealized_pct,
+                position_count=len(positions),
+            )
+
+        result.append(
+            StrategyDashboardItem(
+                strategy_id=sid,
+                active_modes=active_modes,
+                allocated_capital=allocated_capital,
+                promotion_readiness=promo_readiness,
+                performance=performances,
+                virtual_balance=vbal,
+            )
+        )
+
+    kst_now = _dt.now(_ZI("Asia/Seoul"))
+    return StrategyDashboardResponse(
+        strategies=result,
+        last_updated=kst_now.strftime("%Y-%m-%dT%H:%M:%S+09:00"),
+    )

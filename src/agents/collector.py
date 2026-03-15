@@ -27,6 +27,8 @@ load_dotenv(ROOT / ".env")
 
 from src.db.models import AgentHeartbeatRecord, MarketDataPoint
 from src.db.queries import insert_heartbeat, upsert_market_data
+from src.services.datalake import store_daily_bars as datalake_store_daily_bars
+from src.services.datalake import store_tick_batch as datalake_store_tick_batch
 from src.services.yahoo_finance import fetch_daily_bars
 from src.utils.config import get_settings, kis_app_key_for_scope, kis_app_secret_for_scope
 from src.utils.logging import get_logger, setup_logging
@@ -48,10 +50,13 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 class CollectorAgent:
+    TICK_BATCH_SIZE = 100  # S3 업로드 배치 크기
+
     def __init__(self, agent_id: str = "collector_agent") -> None:
         self.agent_id = agent_id
         self.settings = get_settings()
         self._last_hb_db_at: Optional[datetime] = None
+        self._tick_buffer: dict[str, list[dict]] = {}  # ticker -> [tick records]
 
     def _account_scope(self) -> str:
         return "paper" if self.settings.kis_is_paper_trading else "real"
@@ -554,6 +559,27 @@ class CollectorAgent:
 
         saved = await upsert_market_data(points)
 
+        # ── Data Lake: 일봉 데이터를 Parquet으로 S3에 저장 ─────────────
+        for ticker, name, market in selected:
+            ticker_bars = [
+                {
+                    "ticker": p.ticker,
+                    "date": p.timestamp_kst.date(),
+                    "open": float(p.open),
+                    "high": float(p.high),
+                    "low": float(p.low),
+                    "close": float(p.close),
+                    "volume": p.volume,
+                    "change_rate": p.change_pct or 0.0,
+                    "market_cap": 0,
+                    "source": "fdr",
+                }
+                for p in points
+                if p.ticker == ticker
+            ]
+            if ticker_bars:
+                await datalake_store_daily_bars(ticker, ticker_bars)
+
         for point in latest_points:
             await self._cache_latest_tick(point, source="fdr_daily")
 
@@ -656,6 +682,28 @@ class CollectorAgent:
                 )
 
         saved = await upsert_market_data(points)
+
+        # ── Data Lake: Yahoo 일봉 데이터를 Parquet으로 S3에 저장 ───────
+        for ticker, name, market in selected:
+            ticker_bars = [
+                {
+                    "ticker": p.ticker,
+                    "date": p.timestamp_kst.date(),
+                    "open": float(p.open),
+                    "high": float(p.high),
+                    "low": float(p.low),
+                    "close": float(p.close),
+                    "volume": p.volume,
+                    "change_rate": p.change_pct or 0.0,
+                    "market_cap": 0,
+                    "source": "yahoo",
+                }
+                for p in points
+                if p.ticker == ticker
+            ]
+            if ticker_bars:
+                await datalake_store_daily_bars(ticker, ticker_bars)
+
         await self._beat(
             status="healthy",
             last_action=f"Yahoo 일봉 수집 완료 ({saved}건)",
@@ -721,6 +769,11 @@ class CollectorAgent:
                             elapsed = asyncio.get_running_loop().time() - started
                             if elapsed >= duration_seconds:
                                 logger.info("KIS WebSocket 수집 종료 (duration=%ss)", duration_seconds)
+                                # 잔여 틱 버퍼 S3 플러시
+                                for t, buf in self._tick_buffer.items():
+                                    if buf:
+                                        await datalake_store_tick_batch(t, buf)
+                                self._tick_buffer.clear()
                                 await self._beat(
                                     status="healthy",
                                     last_action=f"실시간 수집 종료 ({received}건)",
@@ -794,6 +847,25 @@ class CollectorAgent:
                         )
 
                         received += 1
+
+                        # ── Data Lake: 틱 버퍼 적재 + 배치 S3 플러시 ──
+                        tick_record = {
+                            "ticker": ticker,
+                            "timestamp": now_kst,
+                            "price": float(price),
+                            "volume": int(volume),
+                            "change_rate": 0.0,
+                            "bid_price": 0.0,
+                            "ask_price": 0.0,
+                            "total_volume": int(volume),
+                            "total_amount": 0,
+                        }
+                        buf = self._tick_buffer.setdefault(ticker, [])
+                        buf.append(tick_record)
+                        if len(buf) >= self.TICK_BATCH_SIZE:
+                            await datalake_store_tick_batch(ticker, buf)
+                            self._tick_buffer[ticker] = []
+
                         await self._beat(
                             status="healthy",
                             last_action=f"KIS 틱 수집중 ({received}건)",
@@ -806,6 +878,12 @@ class CollectorAgent:
                     logger.error("KIS WebSocket 재연결 한도 초과")
                     break
                 await asyncio.sleep(min(reconnects * 2, 10))
+
+        # 잔여 틱 버퍼 S3 플러시
+        for t, buf in self._tick_buffer.items():
+            if buf:
+                await datalake_store_tick_batch(t, buf)
+        self._tick_buffer.clear()
 
         if fallback_on_error:
             logger.warning("WebSocket 실패로 폴백: FDR 스냅샷 수집 모드")
