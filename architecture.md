@@ -88,30 +88,30 @@ agents-investing/
           │
           │ redis:topic:market_data
           ▼
-   OrchestratorAgent (LangGraph StateGraph)
-   ┌──────────────────────────────────┐
-   │                                  │
-   ▼                                  ▼
-Strategy A (Tournament)         Strategy B (Debate)
-5개 PredictorAgent 인스턴스      Proposer → Challengers → Synthesizer
-Claude x2 / GPT x2 / Gemini x1  Claude / GPT-4o / Gemini
-          │                                  │
-          └──────────┬───────────────────────┘
-                     │ redis:topic:signals
-                     ▼
-            PortfolioManagerAgent
-            리스크 규칙 검증 (하드코딩)
-            KIS Developers API
-            PostgreSQL: portfolio_positions, trade_history
-                     │
-                     │ redis:topic:orders
-                     ▼
-              NotifierAgent
-              Telegram Bot
-                     │
-                     ▼
-              [React 대시보드]
-              FastAPI REST API
+   OrchestratorAgent (N-way StrategyRegistry)
+   ┌───────────────────────────────────────────────────────┐
+   │                                                       │
+   ▼              ▼              ▼              ▼
+Strategy A   Strategy B   Strategy RL   Strategy S
+Tournament   Debate      RL Trading    Search/Research
+(A)          (B)         (RL)          (S)
+   │              │              │              │
+   └──────────────┴──────────────┴──────────────┘
+                  │ N-way blend + weights
+                  ▼
+        PortfolioManagerAgent
+        리스크 규칙 검증 (하드코딩)
+        KIS Developers API
+        PostgreSQL: portfolio_positions, trade_history
+                  │
+                  │ redis:topic:orders
+                  ▼
+           NotifierAgent
+           Telegram Bot
+                  │
+                  ▼
+           [React 대시보드]
+           FastAPI REST API
 ```
 
 ---
