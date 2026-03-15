@@ -235,8 +235,10 @@ python3 scripts/validate_rl_trading.py
 
 - 강화학습 트레이딩은 기존 Strategy A/B를 대체하지 않고 구조에 추가되는 기능입니다.
 - 검색/스크래핑 리서치 파이프라인도 기존 코어 트레이딩 위에 추가되는 기능입니다.
-- 현재 README 기준 상태 표시는 두 확장 기능 모두 `통합 테스트 진행 중`입니다.
-- 추후 검증이 완료되면 이 상태 문구는 운영 반영 상태에 맞게 갱신해야 합니다.
+- 현재 README 기준 상태 표시: **Phase 10 확장 통합 완료 — Search/RL/A/B 에이전트 통합 운영 중**
+  - ExperimentTracker와 통합되어 모든 에이전트(Strategy A/B, RL, Search)의 실험 메타데이터를 자동 기록
+  - 운영 감시 및 성능 추적을 위한 AggregateRiskMonitor, StrategyPromoter 구성
+  - Integration Audit Checker로 Phase 10 완성도 검증 가능
 
 ### 확장 방향
 

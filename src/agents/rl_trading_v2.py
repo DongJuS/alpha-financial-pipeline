@@ -14,6 +14,7 @@ V1 대비 개선점:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 import random
 
 from src.agents.rl_trading import (
@@ -24,6 +25,10 @@ from src.agents.rl_trading import (
     RLPolicyStore,  # V1 호환
     RLSplitMetadata,
 )
+from src.utils.experiment_tracker import ExperimentRecord, ExperimentMetrics, log_experiment
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 # V2 정책 저장소 (registry.json 기반)
 # 런타임에서 RLPolicyStoreV2를 사용하려면:
@@ -129,6 +134,35 @@ class TabularQTrainerV2:
             q_table=best_q_table,
             evaluation=evaluation,
         )
+
+        # Log experiment record with ExperimentTracker
+        try:
+            metrics = ExperimentMetrics(
+                primary="total_reward",
+                values={
+                    "episodes": self.episodes,
+                    "epsilon": self.epsilon,
+                    "total_reward": float(evaluation.total_return_pct),
+                    "avg_reward": float(evaluation.sharpe_ratio) if hasattr(evaluation, 'sharpe_ratio') else 0.0,
+                    "ticker": dataset.ticker,
+                    "algorithm": "tabular_q_learning",
+                }
+            )
+            record = ExperimentRecord(
+                run_id=policy_id,
+                domain="rl",
+                config_version="2.0",
+                status="testing",
+                commit_hash=None,
+                discussion_doc=None,
+                expected_impact=["improved_rl_trading_returns"],
+                metrics=metrics,
+            )
+            log_experiment(record)
+            logger.info(f"RL trading experiment logged: {policy_id}")
+        except Exception as e:
+            logger.warning(f"Failed to log RL experiment: {e}")
+
         return artifact, split_metadata
 
     def evaluate(self, prices: list[float], q_table: dict[str, dict[str, float]]) -> RLEvaluationMetrics:

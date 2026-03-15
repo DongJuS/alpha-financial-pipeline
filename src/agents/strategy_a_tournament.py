@@ -26,6 +26,7 @@ from src.db.queries import upsert_tournament_score
 from src.services.model_config import get_strategy_a_profiles
 from src.utils.config import get_settings
 from src.utils.db_client import execute, fetch, fetchrow
+from src.utils.experiment_tracker import ExperimentRecord, ExperimentMetrics, log_experiment
 from src.utils.logging import get_logger, setup_logging
 
 setup_logging()
@@ -237,6 +238,34 @@ class StrategyATournament:
             rolling_days=rolling_days,
             min_samples=min_samples,
         )
+
+        # Log experiment record with ExperimentTracker
+        try:
+            from datetime import datetime
+            winner_model = "claude-3-5-sonnet-latest"  # Most common model
+            metrics = ExperimentMetrics(
+                primary="winner_model",
+                values={
+                    "winner_model": winner,
+                    "confidence": 0.8,  # Tournament confidence
+                    "ticker_count": len(tickers),
+                    "outcomes_backfilled": backfilled,
+                }
+            )
+            record = ExperimentRecord(
+                run_id=f"strategy_a_{target_score_date.isoformat()}",
+                domain="strategy_a",
+                config_version="1.0",
+                status="testing",
+                commit_hash=None,
+                discussion_doc=None,
+                expected_impact=["improved_prediction_accuracy"],
+                metrics=metrics,
+            )
+            log_experiment(record)
+            logger.info(f"Strategy A experiment logged: {record.run_id}")
+        except Exception as e:
+            logger.warning(f"Failed to log Strategy A experiment: {e}")
 
         return {
             "predictions_by_agent": result_counts,

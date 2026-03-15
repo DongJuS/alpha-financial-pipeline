@@ -59,7 +59,7 @@ class MarketContext:
 
 @dataclass
 class EnrichedRLDataset:
-    """기술 지표 + 매크로 컨텍스트가 포함된 확장 데이터셋."""
+    """기술 지표 + 매크로 컨텍스트 + 리서치 특성이 포함된 확장 데이터셋."""
 
     ticker: str
     closes: list[float]
@@ -71,6 +71,7 @@ class EnrichedRLDataset:
     data_hash: str  # SHA256 first 12 chars
     feature_count: int  # 총 feature 수
     created_at: str
+    research_features: Optional[dict] = None  # Research-derived features (sentiment, confidence, etc.)
 
     def to_dict(self) -> dict:
         return {
@@ -84,6 +85,7 @@ class EnrichedRLDataset:
             "data_hash": self.data_hash,
             "feature_count": self.feature_count,
             "created_at": self.created_at,
+            "research_features": self.research_features,
         }
 
 
@@ -207,6 +209,7 @@ class RLDatasetBuilderV2:
         seconds: int | None = None,
         limit: int | None = None,
         enrich: bool = True,
+        research_features: Optional[dict] = None,
     ) -> EnrichedRLDataset:
         """확장 데이터셋 구축.
 
@@ -217,6 +220,7 @@ class RLDatasetBuilderV2:
             seconds: tick 간격 시 초 단위 범위
             limit: 최대 row 수
             enrich: True면 기술 지표 + 매크로 컨텍스트 추가
+            research_features: Optional research-derived features dict
         """
         resolved_interval = interval or self.default_interval
         query_days = days if resolved_interval == "daily" else None
@@ -263,6 +267,7 @@ class RLDatasetBuilderV2:
             data_hash=compute_data_hash(closes),
             feature_count=feature_count,
             created_at=datetime.now(timezone.utc).isoformat(),
+            research_features=research_features,
         )
 
     def _compute_technical(

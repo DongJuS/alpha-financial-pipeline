@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from src.utils.searxng_client import SearXNGClient, SearchResult
 from src.utils.reasoning_client import ReasoningClient
 from src.utils.logging import get_logger
+from src.utils.experiment_tracker import ExperimentRecord, ExperimentMetrics, log_experiment
 
 logger = get_logger(__name__)
 
@@ -161,6 +162,36 @@ class SearchAgent:
         # Step 5: Store results (if DB available)
         if self.db_pool:
             await self._store_research(query, search_results, extraction_results, output, ticker)
+
+        # Log experiment record with ExperimentTracker
+        try:
+            extracted_count = len([e for e in extraction_results if e.status == "extracted"])
+            extraction_rate = (extracted_count / len(extraction_results)) if extraction_results else 0.0
+            metrics = ExperimentMetrics(
+                primary="extraction_success_rate",
+                values={
+                    "sources_found": len(search_results),
+                    "extraction_success_rate": float(extraction_rate),
+                    "sentiment": output.sentiment,
+                    "confidence": float(output.confidence),
+                    "ticker": ticker or "none",
+                    "query_length": len(query),
+                }
+            )
+            record = ExperimentRecord(
+                run_id=f"search_{ticker or 'general'}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}",
+                domain="search",
+                config_version="1.0",
+                status="testing",
+                commit_hash=None,
+                discussion_doc=None,
+                expected_impact=["improved_research_quality"],
+                metrics=metrics,
+            )
+            log_experiment(record)
+            logger.info(f"Search agent experiment logged: {record.run_id}")
+        except Exception as e:
+            logger.warning(f"Failed to log search experiment: {e}")
 
         return output
 

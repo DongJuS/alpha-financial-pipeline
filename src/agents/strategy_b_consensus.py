@@ -30,6 +30,7 @@ from src.llm.gemini_client import GeminiClient
 from src.llm.gpt_client import GPTClient
 from src.services.model_config import get_strategy_b_roles
 from src.utils.config import get_settings
+from src.utils.experiment_tracker import ExperimentRecord, ExperimentMetrics, log_experiment
 from src.utils.logging import get_logger, setup_logging
 
 setup_logging()
@@ -139,6 +140,7 @@ class StrategyBConsensus:
         candles: list[dict],
         round_no: int,
         prior_context: str | None = None,
+        research_context: str | None = None,
     ) -> dict[str, Any]:
         proposer_role = await self._role_config("strategy_b_proposer")
 
@@ -147,12 +149,13 @@ class StrategyBConsensus:
             for c in candles[:20]
         ]
         prior = f"\n이전 라운드 요약: {prior_context}\n" if prior_context else "\n"
+        research = f"\n{research_context}\n" if research_context else "\n"
         prompt = f"""
 너는 한국주식 토론의 Proposer다.
 현재 페르소나: {proposer_role['persona']}
 라운드: {round_no}
 티커 {ticker}의 최근 데이터: {json.dumps(compact, ensure_ascii=False)}
-{prior}
+{research}{prior}
 BUY/SELL/HOLD 중 하나를 선택하고 JSON으로 답해라:
 {{
   "signal": "BUY|SELL|HOLD",
@@ -249,7 +252,11 @@ challenger2: {challenger2}
             no_consensus_reason=None if consensus else no_reason,
         )
 
-    async def run_for_ticker(self, ticker: str) -> PredictionSignal:
+    async def run_for_ticker(
+        self,
+        ticker: str,
+        research_context: str | None = None,
+    ) -> PredictionSignal:
         started = datetime.utcnow()
         await self._ensure_role_configs()
         candles = await fetch_recent_ohlcv(ticker=ticker, days=30)
@@ -257,12 +264,17 @@ challenger2: {challenger2}
         round_payloads: list[dict[str, Any]] = []
         synthesis: DebateResult | None = None
 
+        # Log if research context is provided
+        if research_context:
+            logger.info(f"Strategy B debate for {ticker} with research context")
+
         for round_no in range(1, self.max_rounds + 1):
             proposer = await self._propose(
                 ticker=ticker,
                 candles=candles,
                 round_no=round_no,
                 prior_context=prior_context,
+                research_context=research_context if round_no == 1 else None,
             )
             challenger1 = await self._challenge(
                 "Challenger1",
@@ -377,11 +389,47 @@ challenger2: {challenger2}
             trading_date=date.today(),
         )
         await insert_prediction(signal)
+
+        # Log experiment record with ExperimentTracker
+        try:
+            metrics = ExperimentMetrics(
+                primary="consensus_reached",
+                values={
+                    "consensus_reached": synthesis.consensus_reached,
+                    "confidence": float(synthesis.confidence),
+                    "rounds": actual_rounds,
+                    "models_used": 3,  # proposer, 2 challengers, synthesizer
+                    "ticker": ticker,
+                }
+            )
+            record = ExperimentRecord(
+                run_id=f"strategy_b_{ticker}_{date.today().isoformat()}",
+                domain="strategy_b",
+                config_version="1.0",
+                status="testing",
+                commit_hash=None,
+                discussion_doc=None,
+                expected_impact=["improved_consensus_quality"],
+                metrics=metrics,
+            )
+            log_experiment(record)
+            logger.info(f"Strategy B experiment logged: {record.run_id}")
+        except Exception as e:
+            logger.warning(f"Failed to log Strategy B experiment: {e}")
+
         return signal
 
-    async def run(self, tickers: list[str]) -> list[PredictionSignal]:
+    async def run(
+        self,
+        tickers: list[str],
+        research_contexts: dict[str, str] | None = None,
+    ) -> list[PredictionSignal]:
         await self._ensure_role_configs()
-        tasks = [self.run_for_ticker(t) for t in tickers]
+        research_contexts = research_contexts or {}
+        tasks = [
+            self.run_for_ticker(t, research_context=research_contexts.get(t))
+            for t in tickers
+        ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         signals: list[PredictionSignal] = []
         for ticker, result in zip(tickers, results):

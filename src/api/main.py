@@ -11,7 +11,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routers import agents, auth, backtest, market, marketplace, models, notifications, portfolio, rl, strategy
+from src.api.routers import agents, auth, backtest, market, marketplace, models, notifications, phase10, portfolio, rl, strategy
 from src.utils.config import get_settings
 from src.utils.db_client import close_pool, get_pool
 from src.utils.logging import get_logger, setup_logging
@@ -76,6 +76,7 @@ app.include_router(models.router, prefix=f"{API_PREFIX}/models", tags=["models"]
 app.include_router(marketplace.router, prefix=f"{API_PREFIX}/marketplace", tags=["marketplace"])
 app.include_router(rl.router, prefix=f"{API_PREFIX}/rl", tags=["rl"])
 app.include_router(backtest.router, prefix=f"{API_PREFIX}/backtest", tags=["backtest"])
+app.include_router(phase10.router, prefix=f"{API_PREFIX}/integration", tags=["integration"])
 
 
 # ── 헬스 체크 ─────────────────────────────────────────────────────────────────
