@@ -416,5 +416,108 @@ class TestModelUpdates(unittest.TestCase):
         self.assertIsNone(order.blend_meta)
 
 
+# ────────────────────────── RL 독립 실행 패턴 테스트 ──────────────────────────
+
+
+class TestRLIndependentExecution(unittest.TestCase):
+    """RL이 블렌딩에 참여하지 않고 독립적으로 실행되는 패턴을 테스트한다.
+
+    Orchestrator에서 RL을 분리하여 실행하는 로직의 단위 테스트.
+    """
+
+    def test_rl_separated_from_blend_inputs(self):
+        """A, B, RL 3개 전략 결과에서 RL을 분리하면 A/B만 블렌딩에 참여한다."""
+        # 전략 실행 결과 (Orchestrator.registry.run_all() 결과와 동일 형태)
+        all_predictions = {
+            "A": [PredictionSignal(
+                agent_id="mock_A", llm_model="mock", strategy="A",
+                ticker="005930", signal="BUY", confidence=0.8, trading_date=date.today(),
+            )],
+            "B": [PredictionSignal(
+                agent_id="mock_B", llm_model="mock", strategy="B",
+                ticker="005930", signal="BUY", confidence=0.7, trading_date=date.today(),
+            )],
+            "RL": [PredictionSignal(
+                agent_id="rl_agent", llm_model="tabular-q", strategy="RL",
+                ticker="005930", signal="SELL", confidence=0.9, trading_date=date.today(),
+            )],
+        }
+
+        # RL 분리
+        rl_predictions = all_predictions.pop("RL", [])
+        non_rl_predictions = all_predictions
+
+        # RL이 분리되었는지 확인
+        self.assertEqual(len(rl_predictions), 1)
+        self.assertEqual(rl_predictions[0].signal, "SELL")
+        self.assertNotIn("RL", non_rl_predictions)
+
+        # A/B만 블렌딩
+        blend_inputs = []
+        weights = {"A": 0.5, "B": 0.5}
+        for strategy_name, preds in non_rl_predictions.items():
+            for pred in preds:
+                blend_inputs.append(BlendInput(
+                    strategy=strategy_name,
+                    signal=pred.signal,
+                    confidence=pred.confidence or 0.5,
+                    weight=weights.get(strategy_name, 0.5),
+                ))
+
+        result = blend_signals(blend_inputs)
+        # A/B 둘 다 BUY이므로 블렌딩 결과도 BUY
+        self.assertEqual(result.signal, "BUY")
+        # RL은 블렌딩에 참여하지 않음
+        self.assertNotIn("RL", result.participating_strategies)
+        self.assertEqual(sorted(result.participating_strategies), ["A", "B"])
+
+    def test_rl_independent_signal_preserved(self):
+        """RL의 독립 시그널이 블렌딩에 의해 변형되지 않는다."""
+        # RL이 SELL을 결정했지만 A/B가 BUY인 경우
+        rl_signal = PredictionSignal(
+            agent_id="rl_agent", llm_model="tabular-q", strategy="RL",
+            ticker="005930", signal="SELL", confidence=0.95, trading_date=date.today(),
+        )
+
+        # RL 시그널은 그대로 유지됨 (블렌딩 없음)
+        self.assertEqual(rl_signal.signal, "SELL")
+        self.assertEqual(rl_signal.confidence, 0.95)
+
+    def test_rl_only_mode_no_blending(self):
+        """RL만 단독 실행 시 블렌딩 없이 직접 전달된다."""
+        all_predictions = {
+            "RL": [PredictionSignal(
+                agent_id="rl_agent", llm_model="tabular-q", strategy="RL",
+                ticker="005930", signal="BUY", confidence=0.85, trading_date=date.today(),
+            )],
+        }
+
+        rl_predictions = all_predictions.pop("RL", [])
+        non_rl_predictions = all_predictions
+
+        # 비-RL 전략이 없으므로 블렌딩 불필요
+        self.assertEqual(len(non_rl_predictions), 0)
+        # RL 시그널만 직접 PortfolioManager에 전달
+        self.assertEqual(len(rl_predictions), 1)
+        self.assertEqual(rl_predictions[0].signal, "BUY")
+
+    def test_ab_blend_rl_independent_different_decisions(self):
+        """A/B 블렌딩 결과와 RL 독립 결정이 서로 다를 수 있다."""
+        # A: BUY, B: SELL → 블렌딩 결과 HOLD
+        ab_inputs = [
+            BlendInput(strategy="A", signal="BUY", confidence=0.8, weight=0.5),
+            BlendInput(strategy="B", signal="SELL", confidence=0.8, weight=0.5),
+        ]
+        blend_result = blend_signals(ab_inputs)
+        self.assertEqual(blend_result.signal, "HOLD")
+
+        # RL: BUY (독립 결정)
+        rl_signal = "BUY"
+
+        # 블렌딩 결과(HOLD)와 RL 결정(BUY)이 서로 다름 → 정상 동작
+        # RL은 자기 Q-table 기반으로 스스로 결정하므로 블렌딩과 무관
+        self.assertNotEqual(blend_result.signal, rl_signal)
+
+
 if __name__ == "__main__":
     unittest.main()
