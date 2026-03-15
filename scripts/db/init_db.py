@@ -785,10 +785,100 @@ CREATE_TABLES: list[str] = [
     CREATE INDEX IF NOT EXISTS idx_watchlist_ticker
         ON watchlist (ticker);
     """,
+
+    # ── 전략 승격 + 리스크 스냅샷 테이블 ──────────────────────────────────────
+
+    # 27. 전략 승격 기록
+    """
+    CREATE TABLE IF NOT EXISTS strategy_promotions (
+        id                  BIGSERIAL PRIMARY KEY,
+        strategy_id         VARCHAR(10) NOT NULL,
+        from_mode           VARCHAR(10) NOT NULL CHECK (from_mode IN ('virtual', 'paper', 'real')),
+        to_mode             VARCHAR(10) NOT NULL CHECK (to_mode IN ('virtual', 'paper', 'real')),
+        criteria_snapshot   JSONB,
+        actual_snapshot     JSONB,
+        approved_by         VARCHAR(50) NOT NULL DEFAULT 'system',
+        forced              BOOLEAN NOT NULL DEFAULT FALSE,
+        promoted_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_strategy_promotions_strategy
+        ON strategy_promotions (strategy_id, promoted_at DESC);
+    """,
+
+    # 28. 합산 리스크 스냅샷
+    """
+    CREATE TABLE IF NOT EXISTS aggregate_risk_snapshots (
+        id              BIGSERIAL PRIMARY KEY,
+        risk_data       JSONB NOT NULL,
+        snapshot_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_aggregate_risk_snapshots_at
+        ON aggregate_risk_snapshots (snapshot_at DESC);
+    """,
+
+    # ── account_scope CHECK 확장 (virtual 추가) ─────────────────────────────
+    """
+    ALTER TABLE trading_accounts
+        DROP CONSTRAINT IF EXISTS trading_accounts_account_scope_check;
+    ALTER TABLE trading_accounts
+        ADD CONSTRAINT trading_accounts_account_scope_check
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    """,
+
+    """
+    ALTER TABLE portfolio_positions
+        DROP CONSTRAINT IF EXISTS portfolio_positions_account_scope_check;
+    ALTER TABLE portfolio_positions
+        ADD CONSTRAINT portfolio_positions_account_scope_check
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    """,
+
+    """
+    ALTER TABLE trade_history
+        DROP CONSTRAINT IF EXISTS trade_history_account_scope_check;
+    ALTER TABLE trade_history
+        ADD CONSTRAINT trade_history_account_scope_check
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    """,
+
+    """
+    ALTER TABLE broker_orders
+        DROP CONSTRAINT IF EXISTS broker_orders_account_scope_check;
+    ALTER TABLE broker_orders
+        ADD CONSTRAINT broker_orders_account_scope_check
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    """,
+
+    """
+    ALTER TABLE account_snapshots
+        DROP CONSTRAINT IF EXISTS account_snapshots_account_scope_check;
+    ALTER TABLE account_snapshots
+        ADD CONSTRAINT account_snapshots_account_scope_check
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    """,
+
+    # ── strategy_id 컬럼 추가 (이미 없으면) ──────────────────────────────────
+    """
+    ALTER TABLE trading_accounts ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
+    ALTER TABLE portfolio_positions ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
+    ALTER TABLE trade_history ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
+    ALTER TABLE broker_orders ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
+    ALTER TABLE account_snapshots ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
+    """,
+
+    # ── signal_source CHECK 확장 (VIRTUAL, EXIT 추가) ──────────────────────
+    """
+    ALTER TABLE trade_history
+        DROP CONSTRAINT IF EXISTS trade_history_signal_source_check;
+    ALTER TABLE broker_orders
+        DROP CONSTRAINT IF EXISTS broker_orders_signal_source_check;
+    """,
 ]
 
 DROP_TABLES_SQL = """
 DROP TABLE IF EXISTS
+    aggregate_risk_snapshots,
+    strategy_promotions,
     watchlist,
     daily_rankings,
     macro_indicators,
