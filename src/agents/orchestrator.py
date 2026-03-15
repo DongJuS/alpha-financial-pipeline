@@ -4,26 +4,27 @@ src/agents/orchestrator.py — OrchestratorAgent with independent portfolio mode
 기본 사이클:
 Collector -> StrategyRegistry(병렬) -> Blender/Independent -> PortfolioManager -> Notifier
 
---independent-portfolio 플래그로 per-strategy PM 인스턴스 지원.
-src/agents/orchestrator.py — OrchestratorAgent
-
 여러 StrategyRunner로부터 PredictionSignal을 수집하고,
-N-way 되른 블렌딩 남 최종 신호를 돌처 차단기를 적용하여
-PortfolioManagerAgent로 전달합니다.
+N-way 블렌딩을 적용하거나 독립 포트폴리오 모드로 처리하여
+최종 신호를 생성하고 PortfolioManagerAgent로 전달합니다.
+
+--independent-portfolio 플래그로 per-strategy PM 인스턴스 지원.
 """
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime
+import argparse
+from datetime import date, datetime, timezone
 import json
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
-
 from dotenv import load_dotenv
-from datetime import date, datetime, timezone
-from typing import TYPE_CHECKING
 
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+load_dotenv(ROOT / ".env")
 
 from src.brokers import build_virtual_broker
 from src.brokers.virtual_broker import VirtualBroker
@@ -74,41 +75,6 @@ class StrategyRunnerRegistry:
 
     def list_runners(self) -> list[str]:
         """등록된 모든 러너를 목록으로 반환합니다."""
-from src.utils.logging import get_logger
-from src.utils.redis_client import set_heartbeat
-
-if TYPE_CHECKING:
-    from src.agents.orchestrator import StrategyRunner
-
-logger = get_logger(__name__)
-
-# N-way 블렌딩 가중캘
-# A: 토너먼트 (30%), B: 토론 (30%), S: 검색 (20%), RL: 강화학습 (20%)
-STRATEGY_BLEND_WEIGHTS = {
-    "A": 0.30,
-    "B": 0.30,
-    "S": 0.20,
-    "RL": 0.20,
-}
-
-
-class StrategyRunnerRegistry:
-    """전략 러너 (StrategyRunner) 등록 및 관리"""
-
-    def __init__(self):
-        self._runners: dict[str, StrategyRunner] = {}
-
-    def register(self, runner: StrategyRunner) -> None:
-        """전략 러너를 등록합니다."""
-        self._runners[runner.name] = runner
-        logger.info(f"Registered strategy runner: {runner.name}")
-
-    def get(self, name: str) -> StrategyRunner | None:
-        """전략 러너를 달는 단담닝닙다."""
-        return self._runners.get(name)
-
-    def list_runners(self) -> list[str]:
-        """등록된 모든 러너를 닜연즈 처리로 반환합니다."""
         return list(self._runners.keys())
 
 
@@ -125,14 +91,6 @@ class OrchestratorAgent:
        - True: 전략별 독립 PM 인스턴스로 라우팅 + 집계 위험 모니터링
     3. 최종 주문 + 위험 모니터링 + 승격 준비 확인
     4. PortfolioManagerAgent로 전달
-    N-way 블렌딩을 적용한 다 돌을 적용하여
-    최종 매매 신호를 채잰다.
-
-    단순 예샤:
-    1. 모든 러너 동시 ì°¸ 남
-    2. 등록된 단담닝닙다가 강도를 남 남그른닱단당 메커니즘는닱닱드
-    3. 최촣 강도 당닉다 + 돍아뀘비낅닉다매 처리 남 최종 매다무 신호 남
-    4. PortfolioManagerAgent로 남 남
     """
 
     def __init__(
@@ -198,11 +156,6 @@ class OrchestratorAgent:
         tickers: list[str],
     ) -> dict[str, list[PredictionSignal]]:
         """모든 등록된 러너를 병렬 실행합니다.
-    async def run_strategies(
-        self,
-        tickers: list[str],
-    ) -> dict[str, list[PredictionSignal]]:
-        """모든 등록된 러너를 병렬 동단답다.
 
         Returns:
             {
@@ -290,8 +243,8 @@ class OrchestratorAgent:
                 risk_monitor = AggregateRiskMonitor()
                 risk_summary = await risk_monitor.get_risk_summary()
 
-                if risk_summary.get("violations"):
-                    risk_violations = risk_summary.get("violations", [])
+                if risk_summary.warnings:
+                    risk_violations = risk_summary.warnings
                     logger.warning(
                         "Aggregate risk violations detected: %s",
                         risk_violations,
@@ -335,10 +288,12 @@ class OrchestratorAgent:
                     try:
                         readiness = (
                             await promoter.evaluate_promotion_readiness(
-                                strategy_name
+                                strategy_name,
+                                from_mode="virtual",
+                                to_mode="paper",
                             )
                         )
-                        if readiness and readiness.is_ready:
+                        if readiness and readiness.ready:
                             alert_msg = (
                                 f"전략 {strategy_name} 승격 준비 완료: "
                                 f"{readiness.from_mode} → "
@@ -475,7 +430,6 @@ def main() -> None:
     args = parser.parse_args()
     asyncio.run(_main_async(args))
 
-            else:
-                result[runner_name] = signals
 
-        return result
+if __name__ == "__main__":
+    main()
