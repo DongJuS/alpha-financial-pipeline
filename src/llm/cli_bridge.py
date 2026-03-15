@@ -22,6 +22,8 @@ def _resolve_cli_path(cmd: str) -> str:
             os.path.expanduser("~/.claude/bin/claude"),
             "/root/.claude/bin/claude",
             "/usr/local/bin/claude",
+            "/usr/lib/node_modules/.bin/claude",       # npm global (Docker)
+            "/usr/local/lib/node_modules/.bin/claude",  # npm global (alt)
         ]:
             if os.path.isfile(p) and os.access(p, os.X_OK):
                 return p
@@ -55,6 +57,8 @@ def is_cli_available(command: list[str]) -> bool:
         os.path.expanduser("~/.claude/bin/claude"),
         "/usr/local/bin/claude",
         "/root/.claude/bin/claude",
+        "/usr/lib/node_modules/.bin/claude",
+        "/usr/local/lib/node_modules/.bin/claude",
     ]
     cmd_name = command[0]
     if cmd_name == "claude":
