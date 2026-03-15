@@ -47,7 +47,7 @@ class PaperOrderRequest(BaseModel):
     signal: Literal["BUY", "SELL", "HOLD"]
     quantity: int = Field(default=1, ge=1)
     price: int = Field(..., ge=0)
-    signal_source: Literal["A", "B", "BLEND", "RL"] = "A"
+    signal_source: Literal["A", "B", "BLEND", "RL", "S"] = "A"
     agent_id: str = "portfolio_manager_agent"
     account_scope: AccountScope = "paper"
     blend_meta: Optional[dict] = None
