@@ -29,6 +29,7 @@ class SupportedModelItem(BaseModel):
 
 class ProviderStatusItem(BaseModel):
     provider: str
+    mode: str
     default_model: str
     configured: bool
 
@@ -91,3 +92,60 @@ async def update_model_config(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     return await _build_response()
+
+
+@router.get("/debug-providers")
+async def debug_providers() -> dict:
+    """Provider 연결 상태 디버그 정보 — 문제 진단용."""
+    import os
+    import shutil
+
+    from src.llm.cli_bridge import build_cli_command, is_cli_available
+    from src.llm.gemini_client import load_gemini_oauth_credentials
+    from src.utils.config import get_settings
+
+    settings = get_settings()
+
+    # Claude 진단
+    cli_template = settings.anthropic_cli_command
+    cli_command = build_cli_command(cli_template, model="claude-3-5-sonnet-latest")
+    claude_which = shutil.which("claude") if cli_command else None
+    claude_known_paths = {
+        p: os.path.isfile(p)
+        for p in [
+            os.path.expanduser("~/.claude/bin/claude"),
+            "/root/.claude/bin/claude",
+            "/usr/local/bin/claude",
+            "/usr/lib/node_modules/.bin/claude",
+            "/usr/local/lib/node_modules/.bin/claude",
+        ]
+    }
+
+    # Gemini 진단
+    gcloud_cred_env = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    adc_paths = {
+        p: os.path.isfile(p)
+        for p in [
+            os.path.expanduser("~/.config/gcloud/application_default_credentials.json"),
+            "/root/.config/gcloud/application_default_credentials.json",
+        ]
+    }
+    gemini_creds, gemini_project = load_gemini_oauth_credentials()
+
+    return {
+        "claude": {
+            "env_ANTHROPIC_CLI_COMMAND": cli_template,
+            "built_command": cli_command,
+            "shutil_which_claude": claude_which,
+            "is_cli_available": is_cli_available(cli_command),
+            "known_paths": claude_known_paths,
+            "api_key_set": bool(settings.anthropic_api_key and settings.anthropic_api_key != "sk-ant-..."),
+        },
+        "gemini": {
+            "env_GOOGLE_APPLICATION_CREDENTIALS": gcloud_cred_env,
+            "adc_file_paths": adc_paths,
+            "oauth_credentials_loaded": gemini_creds is not None,
+            "oauth_project_id": gemini_project,
+            "api_key_set": bool(settings.gemini_api_key and settings.gemini_api_key != "AI..."),
+        },
+    }
