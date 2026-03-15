@@ -318,11 +318,65 @@ ui/src/
 - 권장 흐름은 `SearXNG -> 웹 페이지 접속 -> ScrapeGraphAI 파싱 -> Claude CLI 추론` 입니다.
 - 이 레이어는 정보 수집과 구조화만 담당하며 직접 주문 권한을 갖지 않습니다.
 
+### 피드백 루프 레이어
+
+S3 Data Lake에 저장된 과거 데이터를 읽어 모델 성능을 지속적으로 개선하는 자동 피드백 파이프라인입니다.
+
+**데이터 흐름:**
+
+```
+S3 Data Lake (alpha-lake)
+    │
+    ├── predictions + daily_bars → datalake_reader
+    │       │
+    │       ├── llm_feedback ── 정확도/P&L/오류 패턴 분석
+    │       │       └── Redis 캐시 → PredictorAgent 프롬프트 자동 주입
+    │       │
+    │       ├── rl_retrain_pipeline ── daily_bars → RLDataset → 재학습
+    │       │       └── walk-forward 검증 → 기존 정책 비교 → 자동 배포
+    │       │
+    │       └── backtest_engine ── 시그널 재생 → 가상 포트폴리오 시뮬레이션
+    │               └── 전략 간 성과 비교 (A vs B vs RL)
+    │
+    └── feedback_orchestrator ── 일일 배치 (장 마감 후 통합 실행)
+            └── 결과를 S3 research/ 파티션에 보관
+```
+
+**구현 파일:**
+
+| 파일 | 역할 |
+|------|------|
+| `src/services/datalake_reader.py` | S3 Parquet 읽기, predictions+outcomes 매칭, 정확도 통계 |
+| `src/services/llm_feedback.py` | 오류 패턴 분석, 프롬프트 컨텍스트 생성, Redis 캐시 |
+| `src/services/rl_retrain_pipeline.py` | S3 daily_bars → RL 재학습 → walk-forward → 배포 |
+| `src/services/backtest_engine.py` | 시그널 기반 가상 거래 시뮬레이션, 전략 간 비교 |
+| `src/services/feedback_orchestrator.py` | 일일 배치 통합 실행, 결과 S3 보관 |
+| `src/api/routers/feedback.py` | REST API 7개 엔드포인트 |
+
+**API 엔드포인트:**
+
+```
+GET  /api/v1/feedback/accuracy           # 예측 정확도 통계
+GET  /api/v1/feedback/llm-context/{strategy}  # LLM 피드백 컨텍스트 확인
+POST /api/v1/feedback/backtest           # 백테스트 실행
+POST /api/v1/feedback/backtest/compare   # 전략 간 백테스트 비교
+POST /api/v1/feedback/rl/retrain/{ticker}  # 단일 종목 RL 재학습
+POST /api/v1/feedback/rl/retrain-all     # 전체 종목 RL 일괄 재학습
+POST /api/v1/feedback/cycle              # 피드백 사이클 수동 실행
+```
+
+**설계 원칙:**
+
+1. 모든 피드백은 S3 Data Lake 읽기 전용으로 동작합니다 (운영 DB 부하 없음).
+2. 피드백 실패 시 기존 동작에 영향 없습니다 (graceful degradation).
+3. LLM 프롬프트 주입은 Redis 캐시 기반이며, 캐시 없으면 기존 프롬프트 그대로 사용합니다.
+4. RL 재학습은 walk-forward 검증 + 기존 정책 대비 비교를 통과해야 배포됩니다.
+
 ### 확장 원칙
 
 1. 새 기능은 기존 시스템을 대체하지 않고 레이어로 추가합니다.
 2. 모든 전략 계열 기능은 `paper first` 원칙을 유지합니다.
 3. 주문 권한은 계속 `PortfolioManagerAgent`에 집중합니다.
 
-*Last updated: 2026-03-12*
+*Last updated: 2026-03-16*
 

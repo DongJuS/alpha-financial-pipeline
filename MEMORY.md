@@ -116,6 +116,22 @@
 - **운영 승격:** 운영 환경은 무조건 `config/active/`만 바라보도록 제한하며, 승격(Promotion)은 설정 파일을 이 폴더로 복사하는 행위로 명확히 정의함.
 - **코드 레벨:** `src/utils/experiment_tracker.py` (`ExperimentTracker` 클래스)를 통해 모든 도메인의 로깅 JSON 스키마를 단일화함.
 
+### 2026-03-16 — 피드백 루프 파이프라인 도입 (S3 Data Lake → 모델 개선)
+- **결정:** S3 Data Lake에 저장된 과거 데이터를 읽어 LLM/RL 모델 성능을 지속적으로 개선하는 자동 피드백 루프를 구축.
+- **배경:** S3에 7가지 DataType을 쓰는 인프라는 있었지만, 읽어서 개선하는 경로가 전혀 없었음. `download_bytes()`, `list_objects()` 등 읽기 함수는 존재하나 한 번도 호출되지 않는 상태.
+- **4개 파이프라인:**
+  1. **LLM 피드백 루프** (`llm_feedback.py`): predictions+daily_bars 매칭 → 정확도/P&L/오류 패턴 분석(BUY 편향, 과도한 자신감, 반복 실패, 연속 실패, HOLD 남발) → Redis 캐시 → PredictorAgent 프롬프트 자동 주입
+  2. **RL 재학습** (`rl_retrain_pipeline.py`): S3 daily_bars → RLDataset → TabularQTrainerV2 → walk-forward 검증 → 기존 정책 대비 비교 → 합격 시 RLPolicyStoreV2 저장
+  3. **백테스트 엔진** (`backtest_engine.py`): 시그널 기반 가상 포트폴리오 시뮬레이션(슬리피지+수수료+종목별 최대 비중), 전략 간 비교(A vs B vs RL)
+  4. **피드백 오케스트레이터** (`feedback_orchestrator.py`): 일일 배치로 3개 파이프라인 통합 실행
+- **PredictorAgent 연동:** `_get_feedback_context()` → Redis에서 `feedback:llm_context:{strategy}` 읽기 → 프롬프트 맨 앞에 주입. 캐시 없으면 기존 프롬프트 그대로 (graceful degradation).
+- **REST API:** `src/api/routers/feedback.py`에 7개 엔드포인트 (정확도 조회, LLM 컨텍스트 확인, 백테스트 실행/비교, RL 단일/일괄 재학습, 피드백 사이클 수동 트리거)
+- **설계 원칙:**
+  - 모든 읽기는 S3 Data Lake 전용 (운영 DB 부하 없음)
+  - 실패 시 서비스 중단 없음 (graceful degradation)
+  - RL 재학습은 walk-forward + 기존 정책 비교 통과 필수
+  - Redis 캐시 TTL 24시간, 매일 장 마감 후 갱신
+
 ### 2026-03-15 — Phase 9 RL Trading Lane 전체 구현 완료
 - **결정:** Phase 9의 남은 5개 작업 항목을 모두 구현하여 RL Trading Lane을 완성.
 - **구현 항목:**

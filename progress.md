@@ -90,6 +90,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
+| 2026-03-16 | **피드백 루프 파이프라인 구현** — `src/services/datalake_reader.py`(S3 Parquet 읽기, predictions+outcomes 매칭, 전략별 정확도 통계), `src/services/llm_feedback.py`(오류 패턴 분석 5가지, 프롬프트 컨텍스트 자동 생성, Redis 캐시), `src/services/rl_retrain_pipeline.py`(S3 daily_bars→RL 재학습→walk-forward 검증→기존 정책 비교→자동 배포), `src/services/backtest_engine.py`(시그널 기반 가상 포트폴리오 시뮬레이션, 전략 간 비교), `src/services/feedback_orchestrator.py`(일일 배치 통합 실행), `src/api/routers/feedback.py`(REST API 7개 엔드포인트), `predictor.py`(피드백 컨텍스트 프롬프트 자동 주입), `test/test_feedback_pipeline.py`(7개 클래스 20+ 테스트), architecture.md 피드백 루프 섹션 추가, 전체 AST 9/9 통과 | ✅ 완료 |
 | 2026-03-15 | **S3 Data Lake (MinIO + Parquet) 구현** — `docker-compose.yml`(MinIO 서비스+S3 env), `src/utils/s3_client.py`(boto3 싱글턴, CRUD 유틸), `src/services/datalake.py`(7 DataType enum, PyArrow 스키마, Parquet 직렬화, Hive 파티셔닝), `collector.py`(틱 100건 배치 + 일봉 S3 저장), `predictor.py`(예측 시그널 S3 저장), `paper.py`(주문 기록 S3 저장), `main.py`(S3 버킷 자동 생성), `architecture.md`(Data Lake 아키텍처 문서화), `test/test_datalake.py`(10개 테스트), `.env.example`/`config.py`/`tech_stack.md`/`requirements.txt` 업데이트 | ✅ 완료 |
 | 2026-03-15 | **Phase 9 RL Trading Lane 완료** — `src/agents/rl_dataset_builder_v2.py`(기술지표+매크로 컨텍스트 확장), `src/agents/rl_environment.py`(Gymnasium 호환 TradingEnv 4-action), `src/agents/rl_walk_forward.py`(N-fold expanding/sliding 교차검증), `src/agents/rl_shadow_inference.py`(ShadowInferenceEngine + PaperPromotionCriteria/RealPromotionCriteria 승격 게이트), `src/api/routers/rl.py`(17개 REST 엔드포인트 — 정책/실험/평가/학습/walk-forward/shadow/promotion), `test/test_phase9_rl.py`(통합 테스트 5개 클래스), 전체 AST 구문 검증 통과 | ✅ 완료 |
 | 2026-03-15 | **Phase 2 후속 — 독립 포트폴리오 인프라** — VirtualBroker(슬리피지/부분체결/체결지연), StrategyPromoter(virtual→paper→real 승격), AggregateRiskMonitor(단일종목 노출/전략 중복도), Historical OHLCV 벌크 수집(FinanceDataReader+KIS API), promote_strategy CLI, 승격 API 3개, DB 스키마 확장(strategy_promotions, aggregate_risk_snapshots, 5개 테이블 virtual CHECK/strategy_id 추가), 테스트 88/88 통과 | ✅ 완료 |
@@ -147,6 +148,7 @@ Phase 7 실거래 준비        ██████████  100% ✅
 Phase 8 Search Foundation ██████████  100% ✅
 Phase 9 RL Trading Lane   ██████████  100% ✅ (전체 구현 완료)
 S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아키텍처 문서화)
+Feedback Loop Pipeline    ██████████  100% ✅ (LLM피드백+RL재학습+백테스트+API)
 ```
 
 ## 🚀 다음 실행 명령어
