@@ -64,11 +64,11 @@ class PortfolioManagerAgent:
     @classmethod
     def _enabled_account_scopes_from_config(cls, cfg: dict, strategy_id: Optional[str] = None) -> list[str]:
         if strategy_id is not None:
-            # For independent portfolio per strategy, use strategy_modes config
-            import json
-            strategy_modes_str = cfg.get("strategy_modes", '{}')
+            # For independent portfolio per strategy, use strategy_modes from Settings (env var)
+            from src.utils.config import get_settings
+            settings = get_settings()
             try:
-                strategy_modes = json.loads(strategy_modes_str)
+                strategy_modes = json.loads(settings.strategy_modes)
                 return strategy_modes.get(strategy_id, [])
             except (json.JSONDecodeError, AttributeError):
                 pass
@@ -227,11 +227,11 @@ class PortfolioManagerAgent:
 
             # Determine seed capital based on strategy and account scope
             if is_virtual and strategy_id:
-                # For virtual scope with strategy, use strategy-specific capital allocation
-                import json
-                capital_allocation_str = cfg.get("strategy_capital_allocation", '{}')
+                # For virtual scope with strategy, use strategy-specific capital allocation from Settings
+                from src.utils.config import get_settings
+                settings = get_settings()
                 try:
-                    capital_allocation = json.loads(capital_allocation_str)
+                    capital_allocation = json.loads(settings.strategy_capital_allocation)
                     paper_seed_capital = int(capital_allocation.get(strategy_id, 2_000_000))
                 except (json.JSONDecodeError, AttributeError):
                     paper_seed_capital = 2_000_000

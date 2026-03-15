@@ -315,6 +315,7 @@ class KISBroker:
         scope: AccountScope,
     ) -> PaperBrokerExecution:
         client_order_id = f"kis-{uuid4().hex[:16]}"
+        strategy_id = getattr(order, "strategy_id", None)
         await self._ensure_account(scope)
         account = await get_trading_account(scope)
         cash_balance = int(account["cash_balance"]) if account else 0
@@ -332,6 +333,7 @@ class KISBroker:
             signal_source=order.signal_source,
             agent_id=order.agent_id,
             status="PENDING",
+            strategy_id=strategy_id,
         )
 
         try:

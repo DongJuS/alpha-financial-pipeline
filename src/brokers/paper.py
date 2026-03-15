@@ -34,6 +34,7 @@ class PaperBroker:
     async def execute_order(self, order: PaperOrderRequest) -> PaperBrokerExecution:
         scope = normalize_account_scope(order.account_scope)
         client_order_id = f"paper-{uuid4().hex[:16]}"
+        strategy_id = getattr(order, "strategy_id", None)
 
         await self._ensure_account(scope)
         await insert_broker_order(
@@ -47,6 +48,7 @@ class PaperBroker:
             requested_price=order.price,
             signal_source=order.signal_source,
             agent_id=order.agent_id,
+            strategy_id=strategy_id,
         )
 
         account_state = await self.sync_account_state(scope, snapshot_source="pre_trade")
@@ -86,6 +88,7 @@ class PaperBroker:
                 current_price=order.price,
                 is_paper=scope == "paper",
                 account_scope=scope,
+                strategy_id=strategy_id,
             )
         else:
             held_qty = int(position["quantity"]) if position else 0
@@ -99,6 +102,7 @@ class PaperBroker:
                 current_price=order.price,
                 is_paper=scope == "paper",
                 account_scope=scope,
+                strategy_id=strategy_id,
             )
 
         await insert_trade(order)

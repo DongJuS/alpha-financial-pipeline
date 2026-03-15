@@ -153,7 +153,7 @@ class TestPortfolioManagerStrategyId:
     def test_enabled_scopes_with_strategy_id(self):
         from src.agents.portfolio_manager import PortfolioManagerAgent
 
-        with patch("src.agents.portfolio_manager.get_settings") as mock:
+        with patch("src.utils.config.get_settings") as mock:
             settings = MagicMock()
             settings.strategy_modes = json.dumps({
                 "A": ["virtual"],
