@@ -90,6 +90,8 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
+| 2026-03-15 | **S3 Data Lake (MinIO + Parquet) 구현** — `docker-compose.yml`(MinIO 서비스+S3 env), `src/utils/s3_client.py`(boto3 싱글턴, CRUD 유틸), `src/services/datalake.py`(7 DataType enum, PyArrow 스키마, Parquet 직렬화, Hive 파티셔닝), `collector.py`(틱 100건 배치 + 일봉 S3 저장), `predictor.py`(예측 시그널 S3 저장), `paper.py`(주문 기록 S3 저장), `main.py`(S3 버킷 자동 생성), `architecture.md`(Data Lake 아키텍처 문서화), `test/test_datalake.py`(10개 테스트), `.env.example`/`config.py`/`tech_stack.md`/`requirements.txt` 업데이트 | ✅ 완료 |
+| 2026-03-15 | **Phase 9 RL Trading Lane 완료** — `src/agents/rl_dataset_builder_v2.py`(기술지표+매크로 컨텍스트 확장), `src/agents/rl_environment.py`(Gymnasium 호환 TradingEnv 4-action), `src/agents/rl_walk_forward.py`(N-fold expanding/sliding 교차검증), `src/agents/rl_shadow_inference.py`(ShadowInferenceEngine + PaperPromotionCriteria/RealPromotionCriteria 승격 게이트), `src/api/routers/rl.py`(17개 REST 엔드포인트 — 정책/실험/평가/학습/walk-forward/shadow/promotion), `test/test_phase9_rl.py`(통합 테스트 5개 클래스), 전체 AST 구문 검증 통과 | ✅ 완료 |
 | 2026-03-15 | **Phase 2 후속 — 독립 포트폴리오 인프라** — VirtualBroker(슬리피지/부분체결/체결지연), StrategyPromoter(virtual→paper→real 승격), AggregateRiskMonitor(단일종목 노출/전략 중복도), Historical OHLCV 벌크 수집(FinanceDataReader+KIS API), promote_strategy CLI, 승격 API 3개, DB 스키마 확장(strategy_promotions, aggregate_risk_snapshots, 5개 테이블 virtual CHECK/strategy_id 추가), 테스트 88/88 통과 | ✅ 완료 |
 | 2026-03-15 | **RL 실험 관리 + SearXNG 파이프라인 구현** — `src/agents/rl_experiment_manager.py`(RLExperimentManager, profiles/experiments 디렉토리 기반 파일 관리), `artifacts/rl/profiles/`(V1/V2 baseline 프로파일), `src/utils/searxng_client.py`(SearXNG JSON API 클라이언트, rate limiting, URL 정규화), `src/utils/reasoning_client.py`(Claude CLI/SDK thin adapter), `src/agents/search_agent.py`(SearchAgent hybrid pipeline), `scripts/db/init_db.py`(search_queries/search_results/page_extractions/research_outputs 4-테이블 추가), `docs/research_contract.json`(Research Contract JSON 스키마), `docker/searxng/`(SearXNG Docker 설정), `test/test_rl_experiment_manager.py` + `test/test_search_pipeline.py` 테스트 추가 | ✅ 완료 |
 | 2026-03-15 | **N-way 블렌딩 + StrategyRunner Registry 구현** — `src/agents/strategy_runner.py`(StrategyRunner Protocol + StrategyRegistry), `src/agents/blending.py`(BlendInput + blend_signals() N-way 일반화), `src/agents/orchestrator.py`(Registry 기반 병렬 실행 + --strategies CLI), `src/agents/rl_trading_v2.py`(map_v2_action_to_signal + normalize_q_confidence), `src/db/models.py`(strategy S/L 추가, is_shadow, blend_meta), `scripts/db/init_db.py`(is_shadow, blend_meta JSONB, strategy CHECK 확장), `src/utils/config.py`(strategy_blend_weights), `test/test_blend_nway.py` 통합 테스트 전체 통과 | ✅ 완료 |
@@ -143,7 +145,8 @@ Phase 5 대시보드           ██████████  100% ✅
 Phase 6 페이퍼 운용        ██████████  100% ✅
 Phase 7 실거래 준비        ██████████  100% ✅
 Phase 8 Search Foundation ██████████  100% ✅
-Phase 9 RL Trading Lane   ████████░░   80% (dataset/environment 고도화 남음)
+Phase 9 RL Trading Lane   ██████████  100% ✅ (전체 구현 완료)
+S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아키텍처 문서화)
 ```
 
 ## 🚀 다음 실행 명령어
@@ -190,4 +193,4 @@ cd ui && npm install && npm run dev
 ---
 
 *Last updated: 2026-03-15*
-*Phase 8/9 RL Experiment + Search Pipeline 구현 완료*
+*Phase 9 RL Trading Lane 전체 구현 완료 — dataset builder v2, trading environment, walk-forward, shadow inference, promotion gate, REST API 17개 엔드포인트*
