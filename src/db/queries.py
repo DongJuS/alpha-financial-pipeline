@@ -234,6 +234,21 @@ async def get_position(ticker: str, account_scope: AccountScope = "paper") -> Op
     return dict(row) if row else None
 
 
+async def get_positions_for_scope(account_scope: AccountScope = "paper") -> list[dict]:
+    """특정 계좌의 모든 보유 포지션을 반환합니다."""
+    scope = normalize_account_scope(account_scope)
+    rows = await fetch(
+        """
+        SELECT ticker, name, quantity, avg_price, current_price, is_paper, account_scope
+        FROM portfolio_positions
+        WHERE account_scope = $1 AND quantity > 0
+        ORDER BY ticker
+        """,
+        scope,
+    )
+    return [dict(r) for r in rows]
+
+
 async def save_position(
     ticker: str,
     name: str,
