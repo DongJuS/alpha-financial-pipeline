@@ -21,8 +21,11 @@ SUPPORTED_MODEL_OPTIONS = [
     {"model": "claude-opus-4-5-20251114", "provider": "claude", "label": "Claude Opus 4.5", "description": "이전 세대 Opus · 안정적 추론"},
     {"model": "claude-3-5-sonnet-latest", "provider": "claude", "label": "Claude 3.5 Sonnet", "description": "레거시 호환 · 복합 추론"},
     # ── Gemini (OAuth/ADC) ──────────────────────────────────────
-    {"model": "gemini-2.5-pro-preview-06-05", "provider": "gemini", "label": "Gemini 2.5 Pro", "description": "최신 Pro · 복합 추론 · 100만 토큰 컨텍스트"},
-    {"model": "gemini-2.5-flash-preview-05-20", "provider": "gemini", "label": "Gemini 2.5 Flash", "description": "차세대 Flash · 사고 모드 · 빠른 응답"},
+    {"model": "gemini-3.1-pro-preview", "provider": "gemini", "label": "Gemini 3.1 Pro", "description": "최신 최상위 · 복합 추론 · 에이전트 최적화"},
+    {"model": "gemini-3.1-flash-lite-preview", "provider": "gemini", "label": "Gemini 3.1 Flash Lite", "description": "3.1 경량 · 최저비용 · 대량 처리"},
+    {"model": "gemini-3-flash-preview", "provider": "gemini", "label": "Gemini 3.0 Flash", "description": "고속 사고 모델 · 에이전트 · 코딩"},
+    {"model": "gemini-2.5-pro-preview-06-05", "provider": "gemini", "label": "Gemini 2.5 Pro", "description": "2세대 Pro · 복합 추론 · 100만 토큰 컨텍스트"},
+    {"model": "gemini-2.5-flash-preview-05-20", "provider": "gemini", "label": "Gemini 2.5 Flash", "description": "2세대 Flash · 사고 모드 · 빠른 응답"},
     {"model": "gemini-2.0-flash", "provider": "gemini", "label": "Gemini 2.0 Flash", "description": "안정 Flash · 에이전트 경험 최적화"},
     {"model": "gemini-2.0-flash-lite", "provider": "gemini", "label": "Gemini 2.0 Flash Lite", "description": "초경량 · 최저비용 · 대량 처리"},
     {"model": "gemini-1.5-pro", "provider": "gemini", "label": "Gemini 1.5 Pro", "description": "레거시 호환 · 검증된 추론 성능"},
@@ -30,14 +33,14 @@ SUPPORTED_MODEL_OPTIONS = [
 ]
 
 DEFAULT_MODEL_ROLE_CONFIGS = [
-    {"config_key": "strategy_a_predictor_1", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 1", "agent_id": "predictor_1", "llm_model": "claude-sonnet-4-6", "persona": "가치 투자형", "execution_order": 1},
-    {"config_key": "strategy_a_predictor_2", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 2", "agent_id": "predictor_2", "llm_model": "claude-sonnet-4-6", "persona": "기술적 분석형", "execution_order": 2},
-    {"config_key": "strategy_a_predictor_3", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 3", "agent_id": "predictor_3", "llm_model": "gemini-2.0-flash", "persona": "모멘텀형", "execution_order": 3},
-    {"config_key": "strategy_a_predictor_4", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 4", "agent_id": "predictor_4", "llm_model": "gemini-2.5-flash-preview-05-20", "persona": "역추세형", "execution_order": 4},
+    {"config_key": "strategy_a_predictor_1", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 1", "agent_id": "predictor_1", "llm_model": "claude-opus-4-6", "persona": "가치 투자형", "execution_order": 1},
+    {"config_key": "strategy_a_predictor_2", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 2", "agent_id": "predictor_2", "llm_model": "claude-opus-4-6", "persona": "기술적 분석형", "execution_order": 2},
+    {"config_key": "strategy_a_predictor_3", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 3", "agent_id": "predictor_3", "llm_model": "gemini-3.1-pro-preview", "persona": "모멘텀형", "execution_order": 3},
+    {"config_key": "strategy_a_predictor_4", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 4", "agent_id": "predictor_4", "llm_model": "gemini-3.1-pro-preview", "persona": "역추세형", "execution_order": 4},
     {"config_key": "strategy_a_predictor_5", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 5", "agent_id": "predictor_5", "llm_model": "claude-haiku-4-5-20251001", "persona": "거시경제형", "execution_order": 5},
-    {"config_key": "strategy_b_proposer", "strategy_code": "B", "role": "proposer", "role_label": "Proposer", "agent_id": "consensus_proposer", "llm_model": "claude-sonnet-4-6", "persona": "핵심 매매 가설을 세우는 수석 분석가", "execution_order": 1},
-    {"config_key": "strategy_b_challenger_1", "strategy_code": "B", "role": "challenger", "role_label": "Challenger 1", "agent_id": "consensus_challenger_1", "llm_model": "gemini-2.5-pro-preview-06-05", "persona": "가설의 약점을 빠르게 파고드는 반론가", "execution_order": 2},
-    {"config_key": "strategy_b_challenger_2", "strategy_code": "B", "role": "challenger", "role_label": "Challenger 2", "agent_id": "consensus_challenger_2", "llm_model": "gemini-2.0-flash", "persona": "거시 변수와 대안을 점검하는 반론가", "execution_order": 3},
+    {"config_key": "strategy_b_proposer", "strategy_code": "B", "role": "proposer", "role_label": "Proposer", "agent_id": "consensus_proposer", "llm_model": "claude-opus-4-6", "persona": "핵심 매매 가설을 세우는 수석 분석가", "execution_order": 1},
+    {"config_key": "strategy_b_challenger_1", "strategy_code": "B", "role": "challenger", "role_label": "Challenger 1", "agent_id": "consensus_challenger_1", "llm_model": "gemini-3.1-pro-preview", "persona": "가설의 약점을 빠르게 파고드는 반론가", "execution_order": 2},
+    {"config_key": "strategy_b_challenger_2", "strategy_code": "B", "role": "challenger", "role_label": "Challenger 2", "agent_id": "consensus_challenger_2", "llm_model": "gemini-3-flash-preview", "persona": "거시 변수와 대안을 점검하는 반론가", "execution_order": 3},
     {"config_key": "strategy_b_synthesizer", "strategy_code": "B", "role": "synthesizer", "role_label": "Synthesizer", "agent_id": "consensus_synthesizer", "llm_model": "claude-opus-4-6", "persona": "토론을 종합해 최종 결론을 내리는 조정자", "execution_order": 4},
 ]
 
@@ -91,19 +94,35 @@ def provider_name_for_model(model: str) -> str:
 
 
 def provider_status() -> list[dict]:
-    claude = ClaudeClient(model="claude-sonnet-4-6")
-    gemini = GeminiClient(model="gemini-2.0-flash")
+    claude = ClaudeClient(model="claude-opus-4-6")
+    gemini = GeminiClient(model="gemini-3.1-pro-preview")
+
+
+    if claude._cli_command:
+        claude_mode = "CLI"
+    elif claude._client is not None:
+        claude_mode = "SDK (API Key)"
+    else:
+        claude_mode = "미연결"
+
+
+    gemini_mode = gemini.auth_mode or "미연결"
+    if gemini_mode == "oauth":
+        gemini_mode = "OAuth (ADC)"
+    elif gemini_mode == "api_key":
+        gemini_mode = "API Key"
+
     return [
         {
             "provider": "claude",
-            "mode": "CLI",
-            "default_model": "claude-sonnet-4-6",
+            "mode": claude_mode,
+            "default_model": "claude-opus-4-6",
             "configured": claude.is_configured,
         },
         {
             "provider": "gemini",
-            "mode": "OAuth (ADC)",
-            "default_model": "gemini-2.0-flash",
+            "mode": gemini_mode,
+            "default_model": "gemini-3.1-pro-preview",
             "configured": gemini.is_configured,
         },
     ]
