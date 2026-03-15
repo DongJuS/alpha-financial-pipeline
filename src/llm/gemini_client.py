@@ -14,8 +14,22 @@ from src.utils.secret_validation import is_placeholder_secret
 logger = get_logger(__name__)
 GEMINI_OAUTH_SCOPES = ("https://www.googleapis.com/auth/generative-language",)
 
+import re
 
 _cached_credentials: tuple[Any | None, str | None] | None = None
+
+
+def _extract_json(text: str) -> dict:
+    """LLM 응답에서 JSON 객체를 추출합니다 (마크다운 코드 블록 포함 처리)."""
+    # ```json ... ``` 또는 ``` ... ``` 내부 추출
+    md_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    if md_match:
+        return json.loads(md_match.group(1).strip())
+    # 순수 JSON 추출
+    brace_match = re.search(r"\{.*\}", text, re.DOTALL)
+    if brace_match:
+        return json.loads(brace_match.group(0))
+    return json.loads(text)
 
 
 def load_gemini_oauth_credentials() -> tuple[Any | None, str | None]:
@@ -133,17 +147,19 @@ class GeminiClient:
             )
         )
 
-    async def ask(self, prompt: str) -> str:
+    async def ask(self, prompt: str, temperature: float = 0.4) -> str:
         if self.__class__._global_quota_exhausted:
             raise RuntimeError("Gemini quota exhausted.")
         if not self._model:
             raise RuntimeError("Gemini client is not configured.")
 
-        # Gemini SDK는 동기 호출이므로 스레드 오프로 실행
         import asyncio
+        import google.generativeai as genai
+
+        generation_config = genai.types.GenerationConfig(temperature=temperature)
 
         def _run() -> str:
-            resp = self._model.generate_content(prompt)
+            resp = self._model.generate_content(prompt, generation_config=generation_config)
             return getattr(resp, "text", "") or ""
 
         try:
@@ -155,6 +171,6 @@ class GeminiClient:
                 logger.warning("Gemini quota exhausted: Gemini 호출을 세션 동안 비활성화합니다.")
             raise
 
-    async def ask_json(self, prompt: str) -> dict:
-        text = await self.ask(prompt + "\n\nJSON 객체 하나만 출력하세요.")
-        return json.loads(text)
+    async def ask_json(self, prompt: str, temperature: float = 0.4) -> dict:
+        text = await self.ask(prompt + "\n\nJSON 객체 하나만 출력하세요.", temperature=temperature)
+        return _extract_json(text)
