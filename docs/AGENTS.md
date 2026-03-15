@@ -302,19 +302,59 @@ Strategy A와 Strategy B의 시그널을 받아 KIS API를 통해 실제(또는 
 - RL 정책은 직접 브로커를 호출하지 않습니다.
 - RL 신호도 기존 리스크 가드와 `PortfolioManagerAgent`를 통과해야만 주문 단계로 이동합니다.
 
-### 7-3. Search/Scraping 확장 예정 에이전트
+### 7-3. ResearchPortfolioManager (리서치 포트폴리오 매니저) — Strategy S
 
-아래 에이전트들은 검색과 스크래핑 파이프라인을 기존 전략의 보조 연구 레이어로 붙이기 위한 계획안입니다.
+검색과 스크래핑 파이프라인을 기존 전략의 보조 연구 레이어로 운영하는 에이전트입니다.
 
-| 에이전트 | 상태 | 역할 |
-|----------|------|------|
-| `search_query_agent` | planned | 종목/테마별 검색 질의 생성, SearXNG 호출, 후보 URL 수집 |
-| `scrape_worker_agent` | planned | 웹 페이지 fetch/render 후 ScrapeGraphAI로 구조화 데이터 생성 |
-| `claude_extraction_agent` | planned | 구조화된 페이지 내용을 요약, 근거 추출, 전략/RL용 feature로 정리 |
+#### 역할
 
-검색 파이프라인 원칙:
-- Tavily는 사용하지 않습니다.
-- 검색 흐름은 `SearXNG -> 웹 페이지 접속 -> ScrapeGraphAI -> Claude CLI`를 따릅니다.
-- 검색 결과는 출처와 추출 결과를 함께 저장해 추후 감사가 가능해야 합니다.
+- 종목별 검색 질의 생성 및 SearchAgent 호출
+- 검색 결과를 감정(sentiment) 기반으로 매매 시그널로 변환
+- 결과를 Redis에 캐싱 (4시간 TTL)
+- 기존 PortfolioManagerAgent의 주문 권한 침범 없음 (시그널만 생성)
 
-*Last updated: 2026-03-14*
+#### 구조
+
+```python
+ResearchPortfolioManager
+├── SearchAgent (SearXNG → fetch → 추출 → Claude reasoning)
+├── Redis 캐싱 (4h TTL)
+└── PredictionSignal (strategy="S") 생성
+```
+
+#### 감정 → 신호 매핑
+
+| 감정 | 신호 | 규칙 |
+|------|------|------|
+| bullish | BUY | confidence >= 0.3 |
+| bearish | SELL | confidence >= 0.3 |
+| neutral/mixed | HOLD | 항상 |
+| any | HOLD | confidence < 0.3 또는 source 0개 |
+
+#### 설정 파라미터
+
+| 파라미터 | 기본값 | 설명 |
+|----------|--------|------|
+| `SEARCH_MAX_CONCURRENT` | 3 | 병렬 검색 최대 수 |
+| `SEARCH_CATEGORIES` | news | 검색 카테고리 |
+| `SEARCH_MAX_SOURCES` | 5 | 종목당 최대 소스 수 |
+
+#### N-way 블렌딩 참여
+
+- Strategy S는 StrategyRunner Protocol을 준수하여 N-way 블렌딩에 참여합니다.
+- CLI: `orchestrator --strategies A,B,RL,S`
+- 기본 가중치: `{"A": 0.30, "B": 0.30, "RL": 0.20, "S": 0.20}`
+- 신호 생성: `research_portfolio_manager`
+- 가중치 자동 정규화: 활성 전략의 weight 합이 1.0이 되도록 조정
+
+#### 검색 파이프라인
+
+검색 흐름은 `SearXNG -> 웹 페이지 접속 -> HTML→text 추출 -> Claude CLI 추론`을 따릅니다.
+
+저장 구조:
+- `search_queries`: 검색 질의 기록
+- `search_results`: SearXNG 결과
+- `page_extractions`: fetch/추출된 페이지 내용
+- `research_outputs`: Claude 추론 결과
+
+*Last updated: 2026-03-15*
