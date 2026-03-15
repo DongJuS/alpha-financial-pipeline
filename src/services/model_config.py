@@ -97,12 +97,14 @@ def provider_status() -> list[dict]:
     claude = ClaudeClient(model="claude-opus-4-6")
     gemini = GeminiClient(model="gemini-3.1-pro-preview")
 
+
     if claude._cli_command:
         claude_mode = "CLI"
     elif claude._client is not None:
         claude_mode = "SDK (API Key)"
     else:
         claude_mode = "미연결"
+
 
     gemini_mode = gemini.auth_mode or "미연결"
     if gemini_mode == "oauth":

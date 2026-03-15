@@ -5,12 +5,12 @@ src/agents/orchestrator.py — OrchestratorAgent
 N-way 되른 블렌딩 남 최종 신호를 돌처 차단기를 적용하여
 PortfolioManagerAgent로 전달합니다.
 """
-
 from __future__ import annotations
 
 import asyncio
 from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
+
 
 from src.db.models import AgentHeartbeatRecord, PredictionSignal
 from src.db.queries import (

@@ -100,3 +100,4 @@
 ---
 
 *Last updated: 2026-03-15*
+*Phase 8/9 RL Experiment + Search Pipeline 구현 완료*
