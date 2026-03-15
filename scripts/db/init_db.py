@@ -668,10 +668,121 @@ CREATE_TABLES: list[str] = [
     CREATE INDEX IF NOT EXISTS idx_research_outputs_query
         ON research_outputs (query_id);
     """,
+
+    # ── 마켓플레이스 확장 테이블 ────────────────────────────────────────────────
+
+    # 22. 종목 마스터 (KRX 전종목 + ETF/ETN)
+    """
+    CREATE TABLE IF NOT EXISTS stock_master (
+        ticker          VARCHAR(10) PRIMARY KEY,
+        name            TEXT NOT NULL,
+        market          VARCHAR(10) NOT NULL CHECK (market IN ('KOSPI', 'KOSDAQ', 'KONEX')),
+        sector          VARCHAR(80),
+        industry        VARCHAR(120),
+        market_cap      BIGINT,
+        listing_date    DATE,
+        is_etf          BOOLEAN NOT NULL DEFAULT FALSE,
+        is_etn          BOOLEAN NOT NULL DEFAULT FALSE,
+        is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+        tier            VARCHAR(10) DEFAULT 'universe' CHECK (tier IN ('core', 'extended', 'universe')),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_stock_master_market
+        ON stock_master (market, is_active);
+    CREATE INDEX IF NOT EXISTS idx_stock_master_sector
+        ON stock_master (sector);
+    CREATE INDEX IF NOT EXISTS idx_stock_master_tier
+        ON stock_master (tier, market_cap DESC NULLS LAST);
+    CREATE INDEX IF NOT EXISTS idx_stock_master_etf
+        ON stock_master (is_etf) WHERE is_etf = TRUE;
+    """,
+
+    # 23. 테마 → 종목 매핑
+    """
+    CREATE TABLE IF NOT EXISTS theme_stocks (
+        id          BIGSERIAL PRIMARY KEY,
+        theme_slug  VARCHAR(60) NOT NULL,
+        theme_name  TEXT NOT NULL,
+        ticker      VARCHAR(10) NOT NULL,
+        is_leader   BOOLEAN NOT NULL DEFAULT FALSE,
+        added_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (theme_slug, ticker)
+    );
+    CREATE INDEX IF NOT EXISTS idx_theme_stocks_slug
+        ON theme_stocks (theme_slug);
+    CREATE INDEX IF NOT EXISTS idx_theme_stocks_ticker
+        ON theme_stocks (ticker);
+    """,
+
+    # 24. 매크로 지표 (해외지수/환율/원자재/금리)
+    """
+    CREATE TABLE IF NOT EXISTS macro_indicators (
+        id              BIGSERIAL PRIMARY KEY,
+        category        VARCHAR(30) NOT NULL CHECK (category IN ('index', 'currency', 'commodity', 'rate')),
+        symbol          VARCHAR(30) NOT NULL,
+        name            TEXT NOT NULL,
+        value           NUMERIC(18, 4) NOT NULL,
+        change_pct      NUMERIC(8, 4),
+        previous_close  NUMERIC(18, 4),
+        snapshot_date   DATE NOT NULL,
+        source          VARCHAR(30) NOT NULL DEFAULT 'fdr',
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (symbol, snapshot_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_macro_indicators_category
+        ON macro_indicators (category, snapshot_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_macro_indicators_symbol
+        ON macro_indicators (symbol, snapshot_date DESC);
+    """,
+
+    # 25. 일별 사전 계산 랭킹
+    """
+    CREATE TABLE IF NOT EXISTS daily_rankings (
+        id              BIGSERIAL PRIMARY KEY,
+        ranking_date    DATE NOT NULL,
+        ranking_type    VARCHAR(30) NOT NULL CHECK (ranking_type IN (
+            'market_cap', 'volume', 'turnover', 'gainer', 'loser', 'new_high', 'new_low'
+        )),
+        rank            INTEGER NOT NULL CHECK (rank >= 1),
+        ticker          VARCHAR(10) NOT NULL,
+        name            TEXT NOT NULL,
+        value           NUMERIC(18, 4),
+        change_pct      NUMERIC(8, 4),
+        extra           JSONB,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (ranking_date, ranking_type, rank)
+    );
+    CREATE INDEX IF NOT EXISTS idx_daily_rankings_date_type
+        ON daily_rankings (ranking_date DESC, ranking_type);
+    """,
+
+    # 26. 관심 종목 (watchlist)
+    """
+    CREATE TABLE IF NOT EXISTS watchlist (
+        id                  BIGSERIAL PRIMARY KEY,
+        user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        group_name          VARCHAR(60) NOT NULL DEFAULT 'default',
+        ticker              VARCHAR(10) NOT NULL,
+        name                TEXT NOT NULL,
+        price_alert_above   INTEGER,
+        price_alert_below   INTEGER,
+        added_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (user_id, group_name, ticker)
+    );
+    CREATE INDEX IF NOT EXISTS idx_watchlist_user
+        ON watchlist (user_id, group_name);
+    CREATE INDEX IF NOT EXISTS idx_watchlist_ticker
+        ON watchlist (ticker);
+    """,
 ]
 
 DROP_TABLES_SQL = """
 DROP TABLE IF EXISTS
+    watchlist,
+    daily_rankings,
+    macro_indicators,
+    theme_stocks,
+    stock_master,
     research_outputs,
     page_extractions,
     search_results,
