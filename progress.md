@@ -5,9 +5,10 @@
 
 ---
 
-## 🎯 현재 스프린트 목표
+## 🏃 현재 스프린트 목표
 
 **Phase 11 — N-way 블렌딩 + StrategyRunner Registry**
+
 기존 elif 체인을 StrategyRunner Protocol + Registry 패턴으로 리팩토링하고, A/B/RL N-way 블렌딩을 구현했습니다.
 
 ---
@@ -36,7 +37,7 @@
 - [x] `src/llm/claude_client.py` — Claude CLI / SDK 래퍼
 - [x] `src/llm/gpt_client.py` — OpenAI GPT-4o 클라이언트
 - [x] `src/llm/gemini_client.py` — Google Gemini CLI 래퍼
-- [x] `src/agents/predictor.py` — PredictorAgent MVP (Claude 단일 인스턴스 + 규칙 폴백)
+- [x] `src/agents/predictor.py` — PredictorAgent MVP (Claude 단일 인스턴스 + 규칙 필백)
 - [x] `src/agents/portfolio_manager.py` — PortfolioManagerAgent (페이퍼 주문 처리)
 - [x] `src/agents/notifier.py` — NotifierAgent (Telegram 기본 알림)
 - [x] `src/agents/orchestrator.py` — OrchestratorAgent (기본 수집→예측→주문 사이클)
@@ -131,10 +132,14 @@
 | 2026-03-12 | README.md, architecture.md 프로젝트 내용으로 전면 재작성 | ✅ 완료 |
 | 2026-03-12 | 시스템 아키텍처 확정 (5 에이전트, 2 전략, 3종 LLM, Telegram 알림) | ✅ 완료 |
 | 2026-03-10 | 프로젝트 초기 구조 세팅 | ✅ 완료 |
+#### Phase 1 — 인프라 및 기본 LLM 서빙
 
----
-
-## 🗺️ 전체 진행률
+- [x] Project 초기화
+- [x] FastAPI 서버 기본 구조
+- [x] PostgreSQL 세팅
+- [x] Redis 세팅
+- [x] `.env.example` 및 `Dockerfile`
+- [x] DB 마이그레이션 (Alembic)
 
 ```
 Phase 1 인프라 구축        ██████████  100% ✅ (문서 + 코드 완료)
@@ -148,47 +153,63 @@ Phase 8 Search Foundation ██████████  100% ✅
 Phase 9 RL Trading Lane   ██████████  100% ✅ (전체 구현 완료)
 S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아키텍처 문서화)
 ```
+#### Phase 2 — 데이터 수집, LLM 호출, 기본 에이전트
 
-## 🚀 다음 실행 명령어
+- [x] CollectorAgent (KIS WebSocket + FinanceDataReader)
+- [x] LLM 클라이언트 (Claude/GPT-4o/Gemini)
+- [x] PredictorAgent (단일 인스턴스)
+- [x] PortfolioManagerAgent
+- [x] NotifierAgent
+- [x] OrchestratorAgent (기본 사이클)
 
-```bash
-# 1. 환경변수 설정
-cp .env.example .env
-# .env 파일 편집 (DB, Redis, API 키 등 입력)
+#### Phase 3 — 멀티 프레딕터 + 토너먼트
 
-# 2. Python 의존성 설치
-pip install -r requirements.txt --break-system-packages
+- [x] StrategyRunner Protocol (run(tickers) → PredictionSignal[])
+- [x] StrategyRunnerRegistry
+- [x] Strategy A (Tournament): 5개 Predictor, rolling_accuracy
+- [x] Strategy B (Consensus Debate): Proposer/Challenger/Synthesizer
 
-# 3. DB 스키마 생성
-python scripts/db/init_db.py
+#### Phase 4 — RL Trading & Search Strategy
 
-# 4. KRX 휴장일 수집
-python scripts/fetch_krx_holidays.py
+- [x] Strategy S (Search/Scraping) **← NEW in this session**
+  - [x] `SearchAgent` (Tavily + ScrapeGraphAI)
+  - [x] `ResearchPortfolioManager` (SearchAgent 래핑)
+  - [x] Sentiment → Signal 매핑
+  - [x] Redis 캐싱 (4시간 TTL)
+  - [x] `IndexCollector` (KOSPI/KOSDAQ 수집)
+  - [x] `index_scheduler.py` (APScheduler)
+- [ ] Strategy RL (Reinforcement Learning) — 다음 Phase
 
-# 5. KIS 토큰 발급 (API 키 설정 후)
-python scripts/kis_auth.py
+#### Phase 5 — N-way 블렌딩 (진행 중)
 
-# 6. FastAPI 서버 실행
-uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+- [x] N-way Signal Blending 구조 (A:0.3, B:0.3, S:0.2, RL:0.2)
+- [x] Signal blending 로직
+- [x] Circuit Breaker & Rules 적용
+- [ ] 성능 최적화 및 튜닝
 
-# 7. 헬스 체크
-python scripts/health_check.py
+---
 
-# 8. 스모크 테스트
-python scripts/smoke_test.py --skip-telegram
+## 📊 파일 현황
 
-# 9. Phase 6 자동 검증
-python scripts/run_phase6_paper_validation.py
+| 파일 | 상태 | 비고 |
+|------|------|------|
+| `src/agents/search_agent.py` | ✅ 구현 | SearchAgent MVP |
+| `src/agents/research_portfolio_manager.py` | ✅ 구현 | ResearchPortfolioManager + sentiment→signal 매핑 |
+| `src/agents/index_collector.py` | ✅ 구현 | IndexCollector (KOSPI/KOSDAQ) |
+| `src/schedulers/index_scheduler.py` | ✅ 구현 | APScheduler로 지수 수집 자동화 |
+| `test/test_search_runner.py` | ✅ 구현 | Strategy S 통합 테스트 |
+| `MEMORY.md` | ✅ 업데이트 | 기술적 결정 기록 |
+| `docs/AGENTS.md` | ✅ 업데이트 | 멀티 에이전트 정의 |
 
-# 10. Phase 1~7 완료 검증
-python scripts/validate_all_phases.py
+---
 
-# 11. Python 3.11 RL 호환성 검증
-./scripts/test_rl_py311.sh
+## 🎯 Next Immediate Tasks
 
-# 12. 프론트엔드 실행
-cd ui && npm install && npm run dev
-```
+1. [ ] Orchestrator에 Strategy S 통합 (SearchRunner 등록)
+2. [ ] Strategy S 가중치를 블렌딩에 반영 (`strategy_blend_weights["S"] = 0.20`)
+3. [ ] 통합 테스트 실행
+4. [ ] README 업데이트 ("통합 테스트 진행 중" → "운영 반영")
+5. [ ] RL Trading 파이프라인 시작
 
 ---
 

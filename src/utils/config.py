@@ -20,29 +20,23 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # ── App ──────────────────────────────────────────────────────────────────
     app_env: str = Field(default="development", alias="NODE_ENV")
     port: int = Field(default=8000)
     app_url: str = Field(default="http://localhost:8000")
 
-    # ── Database ─────────────────────────────────────────────────────────────
     database_url: str = Field(..., alias="DATABASE_URL")
 
-    # ── Redis ────────────────────────────────────────────────────────────────
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
 
-    # ── Auth (JWT) ────────────────────────────────────────────────────────────
     jwt_secret: str = Field(..., alias="JWT_SECRET")
     jwt_expires_in: str = Field(default="7d", alias="JWT_EXPIRES_IN")
 
-    # ── LLM APIs ─────────────────────────────────────────────────────────────
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     anthropic_cli_command: str = Field(default="", alias="ANTHROPIC_CLI_COMMAND")
     llm_cli_timeout_seconds: int = Field(default=90, ge=5, le=600, alias="LLM_CLI_TIMEOUT_SECONDS")
 
-    # ── KIS Developers (한국투자증권) ─────────────────────────────────────────
     kis_app_key: str = Field(default="", alias="KIS_APP_KEY")
     kis_app_secret: str = Field(default="", alias="KIS_APP_SECRET")
     kis_account_number: str = Field(default="", alias="KIS_ACCOUNT_NUMBER")
@@ -57,14 +51,12 @@ class Settings(BaseSettings):
     real_broker_backend: str = Field(default="kis", alias="REAL_BROKER_BACKEND")
     kis_request_timeout_seconds: int = Field(default=15, ge=5, le=60, alias="KIS_REQUEST_TIMEOUT_SECONDS")
 
-    # ── Telegram ─────────────────────────────────────────────────────────────
     telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str = Field(default="", alias="TELEGRAM_CHAT_ID")
 
-    # ── Strategy ─────────────────────────────────────────────────────────────
     strategy_blend_ratio: float = Field(default=0.50, alias="STRATEGY_BLEND_RATIO")
     strategy_blend_weights: str = Field(
-        default='{"A": 0.35, "B": 0.35, "RL": 0.30}',
+        default='{"A": 0.30, "B": 0.30, "RL": 0.20, "S": 0.20}',
         alias="STRATEGY_BLEND_WEIGHTS",
     )
     strategy_a_rolling_days: int = Field(default=5, ge=1, le=30, alias="STRATEGY_A_ROLLING_DAYS")
@@ -76,6 +68,9 @@ class Settings(BaseSettings):
         le=1.0,
         alias="STRATEGY_B_CONSENSUS_THRESHOLD",
     )
+    search_max_concurrent: str = Field(default="3", alias="SEARCH_MAX_CONCURRENT")
+    search_categories: str = Field(default="news", alias="SEARCH_CATEGORIES")
+    search_max_sources: str = Field(default="5", alias="SEARCH_MAX_SOURCES")
     real_trading_confirmation_code: str = Field(
         default="CONFIRM_REAL_TRADING_2026",
         alias="REAL_TRADING_CONFIRMATION_CODE",
@@ -125,7 +120,6 @@ class Settings(BaseSettings):
 
     @property
     def kis_base_url(self) -> str:
-        """페이퍼 트레이딩과 실거래 엔드포인트 자동 분기."""
         if self.kis_is_paper_trading:
             return "https://openapivts.koreainvestment.com:29443"
         return "https://openapi.koreainvestment.com:9443"
@@ -164,13 +158,12 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """앱 전체에서 싱글턴으로 사용하는 설정 인스턴스를 반환합니다."""
     return Settings()
 
 
 def kis_app_key_for_scope(settings: Settings | object, account_scope: str) -> str:
     if hasattr(settings, "kis_app_key_for_scope"):
-        return settings.kis_app_key_for_scope(account_scope)  # type: ignore[attr-defined]
+        return settings.kis_app_key_for_scope(account_scope)
     if account_scope == "real":
         return getattr(settings, "kis_real_app_key", "") or getattr(settings, "kis_app_key", "")
     return getattr(settings, "kis_paper_app_key", "") or getattr(settings, "kis_app_key", "")
@@ -178,7 +171,7 @@ def kis_app_key_for_scope(settings: Settings | object, account_scope: str) -> st
 
 def kis_app_secret_for_scope(settings: Settings | object, account_scope: str) -> str:
     if hasattr(settings, "kis_app_secret_for_scope"):
-        return settings.kis_app_secret_for_scope(account_scope)  # type: ignore[attr-defined]
+        return settings.kis_app_secret_for_scope(account_scope)
     if account_scope == "real":
         return getattr(settings, "kis_real_app_secret", "") or getattr(settings, "kis_app_secret", "")
     return getattr(settings, "kis_paper_app_secret", "") or getattr(settings, "kis_app_secret", "")
@@ -186,7 +179,7 @@ def kis_app_secret_for_scope(settings: Settings | object, account_scope: str) ->
 
 def kis_account_number_for_scope(settings: Settings | object, account_scope: str) -> str:
     if hasattr(settings, "kis_account_number_for_scope"):
-        return settings.kis_account_number_for_scope(account_scope)  # type: ignore[attr-defined]
+        return settings.kis_account_number_for_scope(account_scope)
     if account_scope == "real":
         return getattr(settings, "kis_real_account_number", "") or getattr(settings, "kis_account_number", "")
     return getattr(settings, "kis_paper_account_number", "") or getattr(settings, "kis_account_number", "")
