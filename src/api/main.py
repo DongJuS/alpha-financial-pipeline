@@ -11,6 +11,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+<<<<<<< HEAD
 from src.api.routers import (
     agents,
     audit,
@@ -24,6 +25,10 @@ from src.api.routers import (
     strategy,
     system_health,
 )
+=======
+from src.api.routers import agents, auth, market, marketplace, models, notifications, portfolio, rl, strategy
+from src.api.routers import agents, auth, market, marketplace, models, notifications, portfolio, strategy
+>>>>>>> origin/main
 from src.schedulers.index_scheduler import start_index_scheduler, stop_index_scheduler
 from src.utils.config import get_settings
 from src.utils.db_client import close_pool, get_pool
@@ -43,6 +48,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await get_redis()
     logger.info("✅ DB·Redis 연결 완료")
 
+    # S3/MinIO 버킷 자동 확인
+    try:
+        from src.utils.s3_client import ensure_bucket
+        await ensure_bucket()
+        logger.info("✅ S3 Data Lake 버킷 준비 완료")
+    except Exception as e:
+        logger.warning("⚠️ S3 버킷 초기화 실패 (비필수): %s", e)
     # Index scheduler 시작
     await start_index_scheduler()
 
@@ -86,9 +98,13 @@ app.include_router(portfolio.router, prefix=f"{API_PREFIX}/portfolio", tags=["po
 app.include_router(notifications.router, prefix=f"{API_PREFIX}/notifications", tags=["notifications"])
 app.include_router(models.router, prefix=f"{API_PREFIX}/models", tags=["models"])
 app.include_router(marketplace.router, prefix=f"{API_PREFIX}/marketplace", tags=["marketplace"])
+<<<<<<< HEAD
 app.include_router(system_health.router, prefix=f"{API_PREFIX}/system", tags=["system-health"])
 app.include_router(datalake.router, prefix=f"{API_PREFIX}/datalake", tags=["datalake"])
 app.include_router(audit.router, prefix=f"{API_PREFIX}/audit", tags=["audit"])
+=======
+app.include_router(rl.router, prefix=f"{API_PREFIX}/rl", tags=["rl"])
+>>>>>>> origin/main
 
 
 # ─── 헬스 체크 ────────────────────────────────────────────────────────────────────────────────────────
