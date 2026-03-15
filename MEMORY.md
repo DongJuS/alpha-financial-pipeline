@@ -8,6 +8,15 @@
 
 ## 📌 Recent Decisions
 
+### 2026-03-16 — Strategy S Orchestrator 통합 + 마켓플레이스 Closure
+- **결정:** SearchRunner를 StrategyRunner Protocol로 구현하여 Orchestrator에 등록. 4-way 블렌딩(A:0.3/B:0.3/S:0.2/RL:0.2) 완성.
+- **구현:**
+  - `src/agents/search_runner.py` — StrategyRunner Protocol 구현, ResearchPortfolioManager 래핑
+  - `test/test_search_runner_integration.py` — Protocol 준수/에러 핸들링/Orchestrator 등록 테스트
+  - `orchestrator.py` TYPE_CHECKING import 수정
+- **마켓플레이스 Closure:** Week 1~5 전체 구현 완료 확인. `roadmap.md`에 Phase 13 추가. 논의 문서 closed.
+- **README 전면 업데이트:** 4전략 N-way 블렌딩 아키텍처, 확장 상태 표 반영.
+
 ### 1. Search Strategy (S) 파이프라인 통합 ✅
 
 **결정**: 기존 Strategy A/B 구조를 유지하면서 Search Strategy (S)를 4번째 전략으로 추가.

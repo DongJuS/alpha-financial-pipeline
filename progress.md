@@ -97,12 +97,14 @@
 ## 🎯 Next Immediate Tasks
 
 1. [x] Orchestrator에 Strategy S 통합 (SearchRunner 등록) **← COMPLETED**
-2. [x] Strategy S 가중치를 블렌딩에 반영 (`strategy_blend_weights["S"] = 0.20`) **← CONFIRMED in config.py**
-3. [ ] 통합 테스트 실행 (CI/CD 파이프라인)
-4. [ ] README 업데이트 ("통합 테스트 진행 중" → "운영 반영")
-5. [ ] RL Trading 파이프라인 시작
+2. [x] Strategy S 가중치를 블렌딩에 반영 (`strategy_blend_weights["S"] = 0.20`) **← CONFIRMED**
+3. [x] AST 검증 + 코드 품질 검증 통과
+4. [x] README 업데이트 (4전략 N-way 블렌딩 반영, 확장 상태 표 추가)
+5. [x] Copilot 리뷰 코드 품질 이슈 수정 (risk_summary, StrategyPromoter, PromotionCheckResult)
+6. [x] 마켓플레이스 논의 문서 Closure
+7. [ ] 성능 최적화 및 튜닝 (다음 스프린트)
 
 ---
 
 *Last updated: 2026-03-16*
-*Phase 11 — Strategy S Orchestrator 통합 완료 (SearchRunner + 통합 테스트)*
+*Strategy S Orchestrator 통합 + Copilot 리뷰 수정 + README/문서 업데이트 완료*
