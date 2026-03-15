@@ -116,6 +116,7 @@ class OrchestratorAgent:
         rl_tick_collection_seconds: int = 30,
         rl_yahoo_seed_range: str = "10y",
         rl_policy_store: RLPolicyStore | RLPolicyStoreV2 | None = None,
+        independent_portfolio: bool = False,
     ) -> None:
         self.agent_id = agent_id
         self.settings = get_settings()
@@ -163,6 +164,10 @@ class OrchestratorAgent:
         # 가중치 로드
         self._blend_weights = self._load_blend_weights()
 
+        # 전략별 독립 포트폴리오
+        self.independent_portfolio = independent_portfolio
+        self._strategy_portfolios: dict[str, PortfolioManagerAgent] = {}
+
     def _resolve_strategies(self, strategies: list[str] | None) -> list[str]:
         """CLI 플래그를 기반으로 활성 전략 목록을 결정한다.
 
@@ -208,6 +213,15 @@ class OrchestratorAgent:
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
             logger.warning("strategy_blend_weights 파싱 실패, 기본값 사용: %s", exc)
         return {"A": 0.35, "B": 0.35, "RL": 0.30}
+
+    def _get_portfolio_for_strategy(self, strategy_id: str) -> PortfolioManagerAgent:
+        """각 전략별 독립 포트폴리오 매니저를 얻거나 생성한다."""
+        if strategy_id not in self._strategy_portfolios:
+            self._strategy_portfolios[strategy_id] = PortfolioManagerAgent(
+                agent_id=f"portfolio_manager_agent_{strategy_id.lower()}",
+                strategy_id=strategy_id,
+            )
+        return self._strategy_portfolios[strategy_id]
 
     async def _load_winner_predictions(self, winner_agent_id: str, tickers: list[str]) -> list:
         rows = await fetch(
@@ -460,7 +474,28 @@ class OrchestratorAgent:
             winner = None
             rl_summaries = None
 
-            if self.registry.runner_count >= 2:
+            # Independent portfolio per strategy (각 전략별 독립 포트폴리오)
+            if self.independent_portfolio and self.registry.runner_count >= 1:
+                orders = []
+                for strategy_name in self.registry.active_names:
+                    runner = self.registry.get(strategy_name)
+                    if runner is None:
+                        continue
+                    strategy_predictions = await runner.run(cycle_tickers)
+                    portfolio = self._get_portfolio_for_strategy(strategy_name)
+                    strategy_orders = await portfolio.process_predictions(
+                        strategy_predictions,
+                        strategy_id=strategy_name,
+                    )
+                    orders.extend(strategy_orders)
+
+                    if self._rl_runner and self._rl_runner.last_summaries and strategy_name == "RL":
+                        rl_summaries = self._rl_runner.last_summaries
+
+                mode_name = f"independent_portfolio({','.join(self.registry.active_names)})"
+                blend_meta = None
+
+            elif self.registry.runner_count >= 2:
                 # N-way Registry 병렬 실행 → blend
                 all_predictions = await self.registry.run_all(cycle_tickers)
 
@@ -584,6 +619,7 @@ async def _main_async(args: argparse.Namespace) -> None:
         consensus_threshold=args.consensus_threshold,
         rl_tick_collection_seconds=args.rl_tick_collection_seconds,
         rl_yahoo_seed_range=args.rl_yahoo_seed_range,
+        independent_portfolio=args.independent_portfolio,
     )
     tickers = args.tickers.split(",") if args.tickers else None
     if args.loop:
@@ -600,6 +636,7 @@ def main() -> None:
     parser.add_argument("--consensus", action="store_true", help="Strategy B 합의/토론 단독 모드")
     parser.add_argument("--blend", action="store_true", help="Strategy A/B 2-way 블렌딩 (하위 호환)")
     parser.add_argument("--rl", action="store_true", help="RL Trading lane 단독 모드")
+    parser.add_argument("--independent-portfolio", action="store_true", help="각 전략별 독립 포트폴리오 모드")
     parser.add_argument(
         "--strategies",
         default="",

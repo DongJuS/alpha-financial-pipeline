@@ -279,7 +279,9 @@ CREATE_TABLES: list[str] = [
         DROP CONSTRAINT IF EXISTS trading_accounts_account_scope_check;
     ALTER TABLE trading_accounts
         ADD CONSTRAINT trading_accounts_account_scope_check
-        CHECK (account_scope IN ('paper', 'real'));
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    ALTER TABLE trading_accounts
+        ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
     INSERT INTO trading_accounts (
         account_scope, broker_name, account_label, base_currency,
         seed_capital, cash_balance, buying_power, total_equity, is_active
@@ -315,13 +317,16 @@ CREATE_TABLES: list[str] = [
         DROP CONSTRAINT IF EXISTS portfolio_positions_account_scope_check;
     ALTER TABLE portfolio_positions
         ADD CONSTRAINT portfolio_positions_account_scope_check
-        CHECK (account_scope IN ('paper', 'real'));
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
     ALTER TABLE portfolio_positions
         ALTER COLUMN account_scope SET NOT NULL;
     ALTER TABLE portfolio_positions
+        ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
+    ALTER TABLE portfolio_positions
         DROP CONSTRAINT IF EXISTS portfolio_positions_ticker_key;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_ticker_scope
-        ON portfolio_positions (ticker, account_scope);
+    DROP INDEX IF EXISTS idx_positions_ticker_scope;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_ticker_scope_strategy
+        ON portfolio_positions (ticker, account_scope, COALESCE(strategy_id, ''));
     CREATE INDEX IF NOT EXISTS idx_positions_scope
         ON portfolio_positions (account_scope, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_positions_ticker
@@ -357,12 +362,14 @@ CREATE_TABLES: list[str] = [
         DROP CONSTRAINT IF EXISTS trade_history_account_scope_check;
     ALTER TABLE trade_history
         ADD CONSTRAINT trade_history_account_scope_check
-        CHECK (account_scope IN ('paper', 'real'));
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    ALTER TABLE trade_history
+        ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
     ALTER TABLE trade_history
         DROP CONSTRAINT IF EXISTS trade_history_signal_source_check;
     ALTER TABLE trade_history
         ADD CONSTRAINT trade_history_signal_source_check
-        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL', 'S', 'L'));
+        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL', 'S', 'L', 'EXIT', 'VIRTUAL'));
     -- N-way 블렌딩 메타데이터 (참여 전략/가중치 기록)
     ALTER TABLE trade_history
         ADD COLUMN IF NOT EXISTS blend_meta JSONB;
@@ -408,12 +415,14 @@ CREATE_TABLES: list[str] = [
         DROP CONSTRAINT IF EXISTS broker_orders_account_scope_check;
     ALTER TABLE broker_orders
         ADD CONSTRAINT broker_orders_account_scope_check
-        CHECK (account_scope IN ('paper', 'real'));
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    ALTER TABLE broker_orders
+        ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
     ALTER TABLE broker_orders
         DROP CONSTRAINT IF EXISTS broker_orders_signal_source_check;
     ALTER TABLE broker_orders
         ADD CONSTRAINT broker_orders_signal_source_check
-        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL', 'S', 'L'));
+        CHECK (signal_source IN ('A', 'B', 'BLEND', 'RL', 'S', 'L', 'EXIT', 'VIRTUAL'));
     -- N-way 블렌딩 메타데이터
     ALTER TABLE broker_orders
         ADD COLUMN IF NOT EXISTS blend_meta JSONB;
@@ -442,7 +451,9 @@ CREATE_TABLES: list[str] = [
         DROP CONSTRAINT IF EXISTS account_snapshots_account_scope_check;
     ALTER TABLE account_snapshots
         ADD CONSTRAINT account_snapshots_account_scope_check
-        CHECK (account_scope IN ('paper', 'real'));
+        CHECK (account_scope IN ('paper', 'real', 'virtual'));
+    ALTER TABLE account_snapshots
+        ADD COLUMN IF NOT EXISTS strategy_id VARCHAR(10);
     CREATE INDEX IF NOT EXISTS idx_account_snapshots_scope_ts
         ON account_snapshots (account_scope, snapshot_at DESC);
     """,
