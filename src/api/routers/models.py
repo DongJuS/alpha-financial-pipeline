@@ -29,6 +29,7 @@ class SupportedModelItem(BaseModel):
 
 class ProviderStatusItem(BaseModel):
     provider: str
+    mode: str
     default_model: str
     configured: bool
 
@@ -115,6 +116,8 @@ async def debug_providers() -> dict:
             os.path.expanduser("~/.claude/bin/claude"),
             "/root/.claude/bin/claude",
             "/usr/local/bin/claude",
+            "/usr/lib/node_modules/.bin/claude",
+            "/usr/local/lib/node_modules/.bin/claude",
         ]
     }
 
