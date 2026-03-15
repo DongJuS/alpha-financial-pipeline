@@ -93,6 +93,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
+| 2026-03-16 | **Copilot 리뷰 코드 품질 수정** — `orchestrator.py`의 `risk_summary.get("violations")`→`risk_summary.warnings` (dict→dataclass 접근 수정), `evaluate_promotion_readiness()` 누락 파라미터(`from_mode`, `to_mode`) 추가, `readiness.is_ready`→`readiness.ready` 필드명 수정, `WalkForwardResult.overall_approved` 일관성 확인(이상 없음). AST 전체 통과 | ✅ 완료 |
 | 2026-03-16 | **피드백 루프 파이프라인 구현** — `src/services/datalake_reader.py`(S3 Parquet 읽기, predictions+outcomes 매칭, 전략별 정확도 통계), `src/services/llm_feedback.py`(오류 패턴 분석 5가지, 프롬프트 컨텍스트 자동 생성, Redis 캐시), `src/services/rl_retrain_pipeline.py`(S3 daily_bars→RL 재학습→walk-forward 검증→기존 정책 비교→자동 배포), `src/services/backtest_engine.py`(시그널 기반 가상 포트폴리오 시뮬레이션, 전략 간 비교), `src/services/feedback_orchestrator.py`(일일 배치 통합 실행), `src/api/routers/feedback.py`(REST API 7개 엔드포인트), `predictor.py`(피드백 컨텍스트 프롬프트 자동 주입), `test/test_feedback_pipeline.py`(7개 클래스 20+ 테스트), architecture.md 피드백 루프 섹션 추가, 전체 AST 9/9 통과 | ✅ 완료 |
 | 2026-03-15 | **S3 Data Lake (MinIO + Parquet) 구현** — `docker-compose.yml`(MinIO 서비스+S3 env), `src/utils/s3_client.py`(boto3 싱글턴, CRUD 유틸), `src/services/datalake.py`(7 DataType enum, PyArrow 스키마, Parquet 직렬화, Hive 파티셔닝), `collector.py`(틱 100건 배치 + 일봉 S3 저장), `predictor.py`(예측 시그널 S3 저장), `paper.py`(주문 기록 S3 저장), `main.py`(S3 버킷 자동 생성), `architecture.md`(Data Lake 아키텍처 문서화), `test/test_datalake.py`(10개 테스트), `.env.example`/`config.py`/`tech_stack.md`/`requirements.txt` 업데이트 | ✅ 완료 |
 | 2026-03-15 | **Phase 9 RL Trading Lane 완료** — `src/agents/rl_dataset_builder_v2.py`(기술지표+매크로 컨텍스트 확장), `src/agents/rl_environment.py`(Gymnasium 호환 TradingEnv 4-action), `src/agents/rl_walk_forward.py`(N-fold expanding/sliding 교차검증), `src/agents/rl_shadow_inference.py`(ShadowInferenceEngine + PaperPromotionCriteria/RealPromotionCriteria 승격 게이트), `src/api/routers/rl.py`(17개 REST 엔드포인트 — 정책/실험/평가/학습/walk-forward/shadow/promotion), `test/test_phase9_rl.py`(통합 테스트 5개 클래스), 전체 AST 구문 검증 통과 | ✅ 완료 |
@@ -168,8 +169,10 @@ Feedback Loop Pipeline    ██████████  100% ✅ (LLM피드백
 2. [ ] Strategy S 가중치를 블렌딩에 반영 (`strategy_blend_weights["S"] = 0.20`)
 3. [ ] 통합 테스트 실행
 4. [ ] README 업데이트 ("통합 테스트 진행 중" → "운영 반영")
+5. [x] Copilot 리뷰 코드 품질 이슈 수정 (PR #11 머지 후속)
 
 ---
 
-*Last updated: 2026-03-15*
+*Last updated: 2026-03-16*
+*Copilot 리뷰 코드 품질 수정 — orchestrator.py risk_summary/StrategyPromoter 파라미터/필드명 불일치 해결*
 *Phase 9 RL Trading Lane 전체 구현 완료 — dataset builder v2, trading environment, walk-forward, shadow inference, promotion gate, REST API 17개 엔드포인트*
