@@ -135,3 +135,60 @@ export function useDebateList(limit = 30) {
     refetchInterval: 60_000,
   });
 }
+
+// ── 전략 대시보드 종합 ──────────────────────────────────────
+
+export interface StrategyPerformance {
+  strategy_id: string;
+  mode: string;
+  trading_days: number;
+  total_trades: number;
+  return_pct: number;
+  max_drawdown_pct: number;
+  sharpe_ratio: number | null;
+  win_rate: number;
+}
+
+export interface VirtualBalance {
+  strategy_id: string;
+  initial_capital: number;
+  cash_balance: number;
+  position_market_value: number;
+  total_equity: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
+  position_count: number;
+}
+
+export interface StrategyDashboardItem {
+  strategy_id: string;
+  active_modes: string[];
+  allocated_capital: number;
+  promotion_readiness: Record<string, {
+    ready: boolean;
+    failures: string[];
+    actual: Record<string, number | null>;
+    criteria: Record<string, number>;
+  }>;
+  performance: StrategyPerformance[];
+  virtual_balance: VirtualBalance | null;
+}
+
+export interface StrategyDashboardResponse {
+  strategies: StrategyDashboardItem[];
+  last_updated: string;
+}
+
+async function fetchStrategyDashboard(): Promise<StrategyDashboardResponse> {
+  const { data } = await api.get<StrategyDashboardResponse>("/strategy/dashboard-status");
+  return data;
+}
+
+export function useStrategyDashboard() {
+  return useQuery({
+    queryKey: ["strategy", "dashboard-status"],
+    queryFn: fetchStrategyDashboard,
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+}

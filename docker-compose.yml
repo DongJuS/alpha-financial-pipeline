@@ -44,10 +44,17 @@ services:
       APP_URL: http://localhost:8000
       DATABASE_URL: postgresql://alpha_user:alpha_pass@postgres:5432/alpha_db
       REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: alpha_minio
+      S3_SECRET_KEY: alpha_minio_secret
+      S3_BUCKET_NAME: alpha-lake
+      S3_REGION: ap-northeast-2
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -70,6 +77,11 @@ services:
       NODE_ENV: development
       DATABASE_URL: postgresql://alpha_user:alpha_pass@postgres:5432/alpha_db
       REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: alpha_minio
+      S3_SECRET_KEY: alpha_minio_secret
+      S3_BUCKET_NAME: alpha-lake
+      S3_REGION: ap-northeast-2
       ORCH_MODE: blend
       ORCH_INTERVAL_SECONDS: 120
       ORCH_RUN_ONCE: "false"
@@ -86,11 +98,31 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     volumes:
       - ./:/app
       - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
       - ${HOME}/.claude:/root/.claude:ro
     command: python scripts/run_orchestrator_worker.py
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: alpha_minio
+      MINIO_ROOT_PASSWORD: alpha_minio_secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   ui:
     build:
@@ -113,3 +145,4 @@ volumes:
   postgres_data:
   redis_data:
   ui_node_modules:
+  minio_data:
