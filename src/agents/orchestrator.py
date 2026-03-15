@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from src.agents.portfolio_manager import PortfolioManagerAgent
     from src.agents.notifier import NotifierAgent
 
+setup_logging()
 logger = get_logger(__name__)
 
 # N-way 블렌딩 가중치
@@ -149,10 +150,6 @@ class OrchestratorAgent:
                 initial_capital,
             )
         return self._strategy_virtual_brokers[strategy_id]
-
-    def register_strategy(self, runner: StrategyRunner) -> None:
-        """전략 러너를 등록합니다."""
-        self.registry.register(runner)
 
     async def run_strategies(
         self,
