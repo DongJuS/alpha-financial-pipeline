@@ -333,7 +333,6 @@ async def get_combined_signals(
             )
         )
 
-<<<<<<< HEAD
     result = CombinedResponse(blend_ratio=ratio, signals=signals)
 
     # Redis 캐싱 (5분 TTL)
@@ -341,8 +340,6 @@ async def get_combined_signals(
     await redis.set(cache_key, _json.dumps(result.model_dump(), default=str), ex=300)
 
     return result
-=======
-    return CombinedResponse(blend_ratio=ratio, signals=signals)
 
 
 # ── 전략 승격 API ──────────────────────────────────────────────────────────
@@ -450,7 +447,6 @@ async def promote_strategy(
         to_mode=result.to_mode,
         message=result.message,
     )
-<<<<<<< HEAD
 
 
 # ── 전략 대시보드 종합 API ────────────────────────────────────────────────
@@ -653,6 +649,3 @@ async def get_strategy_dashboard_status(
         strategies=result,
         last_updated=kst_now.strftime("%Y-%m-%dT%H:%M:%S+09:00"),
     )
-=======
->>>>>>> origin/main
->>>>>>> origin/main
