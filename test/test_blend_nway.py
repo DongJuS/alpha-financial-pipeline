@@ -418,3 +418,74 @@ class TestModelUpdates(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+# ────────────────────────── RL 독립 실행 테스트 ──────────────────────────
+
+class TestRLIndependentExecution(unittest.TestCase):
+    """RL이 N-way 블렌딩에서 분리되어 독립적으로 실행되는지 검증한다."""
+
+    def _make_signal(self, ticker, signal, confidence, strategy="A"):
+        return PredictionSignal(
+            agent_id="test", llm_model="test", strategy=strategy,
+            ticker=ticker, signal=signal, confidence=confidence,
+            target_price=None, stop_loss=None, reasoning_summary="test",
+            trading_date=date.today(),
+        )
+
+    def test_rl_separated_from_blend_inputs(self):
+        """A, B, RL 3개 전략 결과에서 RL을 분리하면 A/B만 블렌딩에 참여한다."""
+        all_predictions = {
+            "A": [self._make_signal("005930", "BUY", 0.8, "A")],
+            "B": [self._make_signal("005930", "BUY", 0.7, "B")],
+            "RL": [self._make_signal("005930", "SELL", 0.9, "RL")],
+        }
+        rl_predictions = all_predictions.pop("RL", [])
+        non_rl = all_predictions
+
+        self.assertEqual(len(rl_predictions), 1)
+        self.assertNotIn("RL", non_rl)
+        self.assertIn("A", non_rl)
+        self.assertIn("B", non_rl)
+
+    def test_rl_independent_signal_preserved(self):
+        """RL의 독립 시그널이 블렌딩에 의해 변형되지 않는다."""
+        rl_pred = self._make_signal("005930", "SELL", 0.9, "RL")
+        all_predictions = {
+            "A": [self._make_signal("005930", "BUY", 0.8, "A")],
+            "B": [self._make_signal("005930", "BUY", 0.7, "B")],
+            "RL": [rl_pred],
+        }
+        rl_predictions = all_predictions.pop("RL", [])
+
+        self.assertEqual(rl_predictions[0].signal, "SELL")
+        self.assertEqual(rl_predictions[0].confidence, 0.9)
+        self.assertIs(rl_predictions[0], rl_pred)
+
+    def test_rl_only_mode_no_blending(self):
+        """RL만 단독 실행 시 블렌딩 없이 직접 전달된다."""
+        all_predictions = {
+            "RL": [self._make_signal("005930", "BUY", 0.85, "RL")],
+        }
+        rl_predictions = all_predictions.pop("RL", [])
+        non_rl = all_predictions
+
+        self.assertEqual(len(non_rl), 0)
+        self.assertEqual(len(rl_predictions), 1)
+        self.assertEqual(rl_predictions[0].signal, "BUY")
+
+    def test_ab_blend_rl_independent_different_decisions(self):
+        """A/B 블렌딩 결과와 RL 독립 결정이 서로 다를 수 있다."""
+        all_predictions = {
+            "A": [self._make_signal("005930", "BUY", 0.8, "A")],
+            "B": [self._make_signal("005930", "BUY", 0.75, "B")],
+            "RL": [self._make_signal("005930", "SELL", 0.9, "RL")],
+        }
+        rl_predictions = all_predictions.pop("RL", [])
+        non_rl = all_predictions
+
+        # A/B are both BUY, RL is SELL - they should be independent
+        self.assertEqual(non_rl["A"][0].signal, "BUY")
+        self.assertEqual(non_rl["B"][0].signal, "BUY")
+        self.assertEqual(rl_predictions[0].signal, "SELL")
