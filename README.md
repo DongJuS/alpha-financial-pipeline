@@ -33,20 +33,29 @@
 
 ---
 
-## ✨ 두 가지 트레이딩 전략
+## ✨ 네 가지 트레이딩 전략 (N-way 블렌딩)
 
-### Strategy A — 토너먼트 (경쟁)
+### Strategy A — 토너먼트 (경쟁) `가중치 30%`
 - 매일 아침 **5개의 PredictorAgent 인스턴스**가 병렬 실행
 - 각 인스턴스는 서로 다른 LLM과 투자 성향을 가짐 (가치, 기술, 모멘텀, 역추세, 거시)
 - 장 마감 후 가장 정확도가 높은 인스턴스의 시그널이 다음 날 거래에 사용됨
 
-### Strategy B — 합의 (토론)
+### Strategy B — 합의 (토론) `가중치 30%`
 - **4개의 LLM 역할**이 구조화된 토론을 진행
 - Proposer(Claude) → Challenger 1(GPT-4o) + Challenger 2(Gemini) → Synthesizer(Claude)
 - 다라운드 토론(기본 2라운드)과 confidence 임계치(기본 0.67) 기준으로 합의 판정
-- 합의 도달 시 해당 시그널로 거래; 미도달 시 HOLD
 
-두 전략은 **동시에** 운용되며, 사용자가 블렌드 비율을 조정할 수 있습니다.
+### Strategy S — 검색/리서치 `가중치 20%`
+- SearXNG + ScrapeGraphAI 기반 뉴스/리서치 자동 수집
+- 감성 분석 → 시그널 매핑 (긍정→BUY, 부정→SELL)
+- Redis 캐싱 (4시간 TTL), 마켓플레이스 테마 자동 감지와 연동
+
+### Strategy RL — 강화학습 `가중치 20%`
+- Tabular Q-Learning V2: 5-bucket 상태공간 + 기회비용 리워드
+- Walk-forward 교차검증 + Shadow 추론 → 승격 게이트
+- 정책 레지스트리 (tabular/dqn/ppo 네임스페이스)
+
+네 전략은 **동시에** 운용되며, `strategy_blend_weights` 설정으로 가중치를 조정할 수 있습니다.
 
 ---
 
