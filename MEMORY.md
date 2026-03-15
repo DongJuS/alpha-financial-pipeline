@@ -135,6 +135,19 @@
 - **DB 확장:** `strategy_id VARCHAR(10)` 컬럼을 5개 테이블에 추가, `COALESCE(strategy_id, '')` 패턴으로 하위 호환 유지. account_scope CHECK에 'virtual' 추가.
 - **핵심 파일:** `src/brokers/virtual_broker.py`, `src/utils/strategy_promotion.py`, `src/utils/aggregate_risk.py`, `scripts/seed_historical_data.py`, `scripts/promote_strategy.py`
 
+### 2026-03-15 — 백테스트 시뮬레이션 엔진 구현
+- **결정:** `src/services/backtest_engine.py`에 독립 백테스트 엔진을 구현. 기존 VirtualBroker와 별도로 과거 데이터 전용.
+- **시그널 소스 4가지:** rule(골든/데드크로스), momentum(5일 수익률), mean_reversion(볼린저밴드), random
+- **시뮬레이션:** 슬리피지 bps, 수수료 bps, 단일 종목 최대 비중(%), 일별 스냅샷(equity/drawdown/PnL), MDD/Sharpe/Profit Factor/승률/연환산수익률
+- **API:** `POST /api/v1/backtest/run`(전체 결과), `POST /api/v1/backtest/run/summary`(핵심 지표만)
+- **DB 연동:** `run_backtest_from_db()`로 `market_data` 테이블에서 OHLCV 조회 후 시뮬레이션
+- **이유:** Phase 2 독립 포트폴리오 인프라의 마지막 퍼즐. 전략의 과거 성과를 사전 검증한 후 virtual→paper 승격 판단에 활용.
+
+### 2026-03-15 — 전략별 대시보드 UI 구현
+- **결정:** `GET /strategy/dashboard-status` 단일 엔드포인트로 5개 전략의 모드/성과/승격 상태/가상 자금을 통합 조회.
+- **프론트엔드:** `StrategyDashboard.tsx` — StrategyCard(모드 배지+성과 행+승격 뱃지+가상잔고), Toss 스타일 디자인
+- **이유:** 5×3=15 포트폴리오 매트릭스를 한눈에 모니터링하기 위함. 개별 API 15번 호출 대신 단일 집계.
+
 ---
 
 ## 🐛 문제 해결 기록
