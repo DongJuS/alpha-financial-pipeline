@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routers import agents, auth, market, models, notifications, portfolio, strategy
+from src.schedulers.index_scheduler import start_index_scheduler, stop_index_scheduler
 from src.utils.config import get_settings
 from src.utils.db_client import close_pool, get_pool
 from src.utils.logging import get_logger, setup_logging
@@ -29,7 +30,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await get_pool()
     await get_redis()
     logger.info("✅ DB·Redis 연결 완료")
+
+    # Index scheduler 시작
+    await start_index_scheduler()
+
     yield
+
+    # Index scheduler 종료
+    await stop_index_scheduler()
+
     logger.info("🔴 Alpha Trading System 종료 중...")
     await close_pool()
     await close_redis()
