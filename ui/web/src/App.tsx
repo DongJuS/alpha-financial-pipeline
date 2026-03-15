@@ -6,6 +6,8 @@ import RequireAuth from "@/components/RequireAuth";
 
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Strategy = lazy(() => import("@/pages/Strategy"));
+const RLTrading = lazy(() => import("@/pages/RLTrading"));
+const Feedback = lazy(() => import("@/pages/Feedback"));
 const Models = lazy(() => import("@/pages/Models"));
 const Portfolio = lazy(() => import("@/pages/Portfolio"));
 const Market = lazy(() => import("@/pages/Market"));
@@ -43,6 +45,8 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={withSuspense(<Dashboard />)} />
           <Route path="/strategy" element={withSuspense(<Strategy />)} />
+          <Route path="/rl-trading" element={withSuspense(<RLTrading />)} />
+          <Route path="/feedback" element={withSuspense(<Feedback />)} />
           <Route path="/models" element={withSuspense(<Models />)} />
           <Route path="/portfolio" element={withSuspense(<Portfolio />)} />
           <Route path="/market" element={withSuspense(<Market />)} />
