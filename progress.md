@@ -14,7 +14,21 @@
 
 ## ✅ 할 일 목록
 
-### 🔄 진행 중 (Phase 2)
+### 🔄 진행 중 (Phase 2 후속 — 독립 포트폴리오 인프라)
+
+- [x] `src/utils/account_scope.py` — virtual 계좌 범위 추가
+- [x] `src/utils/config.py` — 전략 모드, Virtual 시뮬레이션, 리스크 설정 11개 추가
+- [x] `src/brokers/virtual_broker.py` — VirtualBroker (슬리피지/부분체결/체결지연)
+- [x] `src/utils/strategy_promotion.py` — 전략 승격 파이프라인 (virtual→paper→real)
+- [x] `src/utils/aggregate_risk.py` — 합산 리스크 모니터링
+- [x] `src/agents/collector.py` — 과거 데이터 벌크 수집 메서드 추가
+- [x] `scripts/seed_historical_data.py` — Historical OHLCV 시드 CLI
+- [x] `scripts/promote_strategy.py` — 전략 승격 CLI
+- [x] `src/api/routers/strategy.py` — 승격 API 3개 엔드포인트
+- [x] `scripts/db/init_db.py` — strategy_promotions, aggregate_risk_snapshots 테이블
+- [x] 테스트 4개 파일 (14개 클래스) + AST 검증 스크립트 88/88 통과
+
+### 🔄 완료된 Phase 2 기존 항목
 
 - [x] `src/agents/collector.py` — CollectorAgent MVP (FinanceDataReader 일봉 수집)
 - [x] `src/agents/collector.py` — KIS WebSocket 실시간 틱 수집 본연동
@@ -76,6 +90,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
+| 2026-03-15 | **Phase 2 후속 — 독립 포트폴리오 인프라** — VirtualBroker(슬리피지/부분체결/체결지연), StrategyPromoter(virtual→paper→real 승격), AggregateRiskMonitor(단일종목 노출/전략 중복도), Historical OHLCV 벌크 수집(FinanceDataReader+KIS API), promote_strategy CLI, 승격 API 3개, DB 스키마 확장(strategy_promotions, aggregate_risk_snapshots, 5개 테이블 virtual CHECK/strategy_id 추가), 테스트 88/88 통과 | ✅ 완료 |
 | 2026-03-15 | **RL 실험 관리 + SearXNG 파이프라인 구현** — `src/agents/rl_experiment_manager.py`(RLExperimentManager, profiles/experiments 디렉토리 기반 파일 관리), `artifacts/rl/profiles/`(V1/V2 baseline 프로파일), `src/utils/searxng_client.py`(SearXNG JSON API 클라이언트, rate limiting, URL 정규화), `src/utils/reasoning_client.py`(Claude CLI/SDK thin adapter), `src/agents/search_agent.py`(SearchAgent hybrid pipeline), `scripts/db/init_db.py`(search_queries/search_results/page_extractions/research_outputs 4-테이블 추가), `docs/research_contract.json`(Research Contract JSON 스키마), `docker/searxng/`(SearXNG Docker 설정), `test/test_rl_experiment_manager.py` + `test/test_search_pipeline.py` 테스트 추가 | ✅ 완료 |
 | 2026-03-15 | **N-way 블렌딩 + StrategyRunner Registry 구현** — `src/agents/strategy_runner.py`(StrategyRunner Protocol + StrategyRegistry), `src/agents/blending.py`(BlendInput + blend_signals() N-way 일반화), `src/agents/orchestrator.py`(Registry 기반 병렬 실행 + --strategies CLI), `src/agents/rl_trading_v2.py`(map_v2_action_to_signal + normalize_q_confidence), `src/db/models.py`(strategy S/L 추가, is_shadow, blend_meta), `scripts/db/init_db.py`(is_shadow, blend_meta JSONB, strategy CHECK 확장), `src/utils/config.py`(strategy_blend_weights), `test/test_blend_nway.py` 통합 테스트 전체 통과 | ✅ 완료 |
 | 2026-03-15 | 실험 메타데이터 관리 영구 문서화 및 후속 작업 완료 — `domain`별 필수 파라미터 규격화, `expected_impact` 연결 방식, UI 노출 파트 정의를 `docs/EXPERIMENT_TRACKING.md`로 정리하여 영구 문서로 편입 후 종결된 `.agent/discussions/20260314-cross-strategy-performance-management.md` 논의 문서 삭제 처리 | ✅ 완료 |
