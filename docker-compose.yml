@@ -53,6 +53,10 @@ services:
       - "8000:8000"
     volumes:
       - ./:/app
+      # Gemini OAuth: 호스트의 gcloud ADC 인증 파일을 컨테이너에 마운트
+      - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
+      # Claude CLI: 호스트의 claude 바이너리를 컨테이너에 마운트
+      - ${HOME}/.claude:/root/.claude:ro
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 
   worker:
@@ -84,6 +88,8 @@ services:
         condition: service_healthy
     volumes:
       - ./:/app
+      - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
+      - ${HOME}/.claude:/root/.claude:ro
     command: python scripts/run_orchestrator_worker.py
 
   ui:
