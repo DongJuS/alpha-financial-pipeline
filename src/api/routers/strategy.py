@@ -263,7 +263,17 @@ async def list_debate_transcripts(
 async def get_combined_signals(
     _: Annotated[dict, Depends(get_current_user)],
 ) -> CombinedResponse:
-    """두 전략이 블렌딩된 최종 시그널을 반환합니다."""
+    """두 전략이 블렌딩된 최종 시그널을 반환합니다. (Redis 5분 캐싱)"""
+    from src.utils.redis_client import get_redis as _get_redis
+
+    redis = await _get_redis()
+    cache_key = "api:combined_signals:today"
+    cached = await redis.get(cache_key)
+    if cached:
+        import json as _json
+        data = _json.loads(cached)
+        return CombinedResponse(**data)
+
     settings = get_settings()
 
     rows = await fetch(
@@ -323,6 +333,15 @@ async def get_combined_signals(
             )
         )
 
+<<<<<<< HEAD
+    result = CombinedResponse(blend_ratio=ratio, signals=signals)
+
+    # Redis 캐싱 (5분 TTL)
+    import json as _json
+    await redis.set(cache_key, _json.dumps(result.model_dump(), default=str), ex=300)
+
+    return result
+=======
     return CombinedResponse(blend_ratio=ratio, signals=signals)
 
 
@@ -431,6 +450,7 @@ async def promote_strategy(
         to_mode=result.to_mode,
         message=result.message,
     )
+<<<<<<< HEAD
 
 
 # ── 전략 대시보드 종합 API ────────────────────────────────────────────────
@@ -633,3 +653,6 @@ async def get_strategy_dashboard_status(
         strategies=result,
         last_updated=kst_now.strftime("%Y-%m-%dT%H:%M:%S+09:00"),
     )
+=======
+>>>>>>> origin/main
+>>>>>>> origin/main

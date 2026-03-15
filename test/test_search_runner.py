@@ -364,7 +364,7 @@ class TestSearchRunnerProtocol(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         """각 테스트 전 초기화."""
-        from src.agents.orchestrator import SearchRunner
+        from src.agents.search_runner import SearchRunner
 
         self.mock_search_agent = MockSearchAgent()
         self.rpm = ResearchPortfolioManager(
