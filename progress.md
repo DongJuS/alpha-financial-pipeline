@@ -102,9 +102,14 @@
 4. [x] README 업데이트 (4전략 N-way 블렌딩 반영, 확장 상태 표 추가)
 5. [x] Copilot 리뷰 코드 품질 이슈 수정 (risk_summary, StrategyPromoter, PromotionCheckResult)
 6. [x] 마켓플레이스 논의 문서 Closure
-7. [ ] 성능 최적화 및 튜닝 (다음 스프린트)
+7. [x] 성능 최적화 및 튜닝 **← COMPLETED**
+   - [x] Predictor: 종목별 데이터 조회·LLM 호출 asyncio.gather 병렬화
+   - [x] Collector: Redis 4 round trip → 1 pipeline
+   - [x] Blending: 5개 루프 → 단일 패스 리팩토링
+   - [x] Combined signals: Redis 5분 캐싱 추가
+   - [x] Portfolio performance: trade+benchmark 쿼리 병렬 실행
 
 ---
 
 *Last updated: 2026-03-16*
-*Strategy S Orchestrator 통합 + Copilot 리뷰 수정 + README/문서 업데이트 완료*
+*성능 최적화 완료 — Predictor 병렬화, Redis 파이프라이닝, Blending 단일패스, 캐싱*
