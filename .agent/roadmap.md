@@ -71,12 +71,12 @@
 - 출처 저장, 추출 결과 저장, 재실행 가능성을 확보
 
 작업 항목:
-- [ ] SearXNG 서비스와 검색 요청 계약 정의
-- [ ] fetch/render worker 계층 설계
-- [ ] ScrapeGraphAI 구조화 출력 포맷 확정
-- [ ] Claude CLI 추출 포맷과 citation 규칙 정의
-- [ ] 검색 질의/결과/source/extraction 저장 스키마 확정
-- [ ] Strategy B와 RL feature용 공통 research contract 정의
+- [x] SearXNG 서비스와 검색 요청 계약 정의
+- [x] fetch/render worker 계층 설계
+- [x] ScrapeGraphAI 구조화 출력 포맷 확정
+- [x] Claude CLI 추출 포맷과 citation 규칙 정의
+- [x] 검색 질의/결과/source/extraction 저장 스키마 확정
+- [x] Strategy B와 RL feature용 공통 research contract 정의
 
 완료 기준:
 - 동일 질의의 검색 결과, 원문 출처, 추출 결과를 각각 조회 가능
@@ -100,6 +100,8 @@
 - [x] 정책 레지스트리(PolicyRegistry) 및 RLPolicyStoreV2 구현
 - [x] 알고리즘 네임스페이스(tabular/dqn/ppo) 도입 및 기존 아티팩트 마이그레이션
 - [x] 승격 게이트 및 자동 정리 규칙 구현
+- [x] RL 실험 관리 시스템 구현 (profiles/ + experiments/ 디렉터리, RLExperimentManager)
+- [x] RL 하이퍼파라미터 프로파일 기반 재사용 구조 확보
 - [ ] RL dataset builder를 market/research feature 기준으로 확장
 - [ ] trading simulator/environment 정의 고도화
 - [ ] 정책 레지스트리 조회 API 추가 (REST 엔드포인트)
@@ -193,7 +195,7 @@ Strategy L  → [real] [paper] [virtual]
 ## 현재 상태 요약
 
 - 코어 트레이딩 트랙: 구현 완료 및 유지보수 단계
-- RL 트레이딩: 최소 runnable lane 구현 완료, 통합 테스트 진행 중
-- 검색/스크래핑 스택: 구조 편입 및 설계 단계, 구현은 다음 우선순위
-- N-way 블렌딩: 설계 확정, 구현 착수 단계 (Phase 11)
+- RL 트레이딩: 최소 runnable lane + 실험 관리 구현 완료, 데이터셋/환경 고도화 진행 중
+- 검색/스크래핑 스택: 파이프라인 설계 완료, MVP 구현 완료
+- N-way 블렌딩: 설계 확정, 구현 완료 (Phase 11)
 - 독립 포트폴리오: 향후 계획 (Phase 12)

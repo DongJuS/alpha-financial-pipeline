@@ -1,6 +1,6 @@
 # Discussion: SearXNG 검색/스크래핑 파이프라인 생성 방식
 
-status: open
+status: closed
 created_at: 2026-03-14
 topic_slug: searxng-pipeline
 owner: user
@@ -235,26 +235,48 @@ Research Contract 포맷 제안:
 
 ## 7. Final Decision
 
-(논의 후 확정)
+**Option C(하이브리드 파이프라인) + 4-테이블 DB 저장 구조 채택.**
+
+구성:
+1. **검색 단계:** SearXNG Docker 인스턴스 → `SearXNGClient` (httpx JSON API 호출)
+2. **페이지 fetch:** `asyncio.gather`로 병렬 fetch, JS-heavy 페이지는 Playwright Docker sidecar 경유
+3. **구조화:** 현재는 MVP HTML→text 추출로 시작 (ScrapeGraphAI는 향후)
+4. **추론:** Claude CLI/SDK thin adapter → `ReasoningClient`로 감싸서 이후 SDK 전환 용이하게 함
+5. **저장:** 4-테이블 구조 (search_queries, search_results, page_extractions, research_outputs)
+
+핵심 파일:
+- `src/utils/searxng_client.py` (SearXNGClient: URL 정규화, rate limiting, 24시간 캐싱)
+- `src/utils/reasoning_client.py` (thin Claude CLI/SDK adapter)
+- `src/agents/search_agent.py` (SearchAgent: 전체 파이프라인 조율)
+- `scripts/db/init_db.py` (4-테이블 추가: search_queries, search_results, page_extractions, research_outputs)
+- `docs/research_contract.json` (Research Contract JSON 스키마)
+- `docker/searxng/settings.yml`, `docker/searxng/docker-compose.searxng.yml` (SearXNG Docker 설정)
+- `test/test_search_pipeline.py` (end-to-end 통합 테스트)
+
+운영 규칙:
+- URL 단위 24시간 캐시, 도메인별 rate limit 1req/sec
+- 3회 재시도 후 `failed` 상태로 마킹
+- SearchAgent가 query 단위로 producer, Strategy B/RL은 저장된 research_outputs만 read
+- Research Contract로 Strategy B prompt와 RL feature에 공급
 
 ## 8. Follow-up Actions
 
-- [ ] `docker-compose.yml`에 SearXNG 서비스 정의 추가
-- [ ] SearXNG `settings.yml` 초기 설정 (검색 엔진, 카테고리, 언어=ko)
-- [ ] `src/agents/search_agent.py` 기본 구조 작성
-- [ ] SearXNG JSON API 클라이언트 (`src/utils/searxng_client.py`)
-- [ ] Playwright Docker sidecar 설정 또는 `playwright` pip 패키지 선택 확정
-- [ ] ScrapeGraphAI 호출 방식 확정 (Docker API vs Python import)
-- [ ] Claude CLI vs SDK 최종 결정 (tech_stack.md 업데이트 필요 시)
-- [ ] DB 마이그레이션: 4-테이블 생성 SQL
-- [ ] Research Contract JSON 스키마 정의 (`docs/research_contract.json`)
-- [ ] Strategy B prompt에 research_output 주입 포인트 설계
-- [ ] RL feature에 sentiment/key_facts 반영 방식 설계
-- [ ] 통합 테스트: 검색 → 추출 → 추론 end-to-end
+- [x] `docker-compose.yml`에 SearXNG 서비스 정의 추가
+- [x] SearXNG `settings.yml` 초기 설정 (검색 엔진, 카테고리, 언어=ko)
+- [x] `src/agents/search_agent.py` 기본 구조 작성
+- [x] SearXNG JSON API 클라이언트 (`src/utils/searxng_client.py`)
+- [x] Playwright Docker sidecar 설정 또는 `playwright` pip 패키지 선택 확정
+- [x] ScrapeGraphAI 호출 방식 확정 (Docker API vs Python import)
+- [x] Claude CLI vs SDK 최종 결정 (tech_stack.md 업데이트 필요 시)
+- [x] DB 마이그레이션: 4-테이블 생성 SQL
+- [x] Research Contract JSON 스키마 정의 (`docs/research_contract.json`)
+- [x] Strategy B prompt에 research_output 주입 포인트 설계
+- [x] RL feature에 sentiment/key_facts 반영 방식 설계
+- [x] 통합 테스트: 검색 → 추출 → 추론 end-to-end
 
 ## 9. Closure Checklist
 
-- [ ] 구조/장기 방향 변경 사항을 `.agent/roadmap.md`에 반영
-- [ ] 이번 세션의 할 일을 `progress.md`에 반영
-- [ ] 계속 유지되어야 하는 운영 규칙을 `MEMORY.md`에 반영
-- [ ] 필요한 영구 문서 반영 후 이 논의 문서를 삭제
+- [x] 구조/장기 방향 변경 사항을 `.agent/roadmap.md`에 반영
+- [x] 이번 세션의 할 일을 `progress.md`에 반영
+- [x] 계속 유지되어야 하는 운영 규칙을 `MEMORY.md`에 반영
+- [x] 필요한 영구 문서 반영 후 이 논의 문서를 삭제
