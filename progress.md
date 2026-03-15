@@ -76,6 +76,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
+| 2026-03-15 | **RL 실험 관리 + SearXNG 파이프라인 구현** — `src/agents/rl_experiment_manager.py`(RLExperimentManager, profiles/experiments 디렉토리 기반 파일 관리), `artifacts/rl/profiles/`(V1/V2 baseline 프로파일), `src/utils/searxng_client.py`(SearXNG JSON API 클라이언트, rate limiting, URL 정규화), `src/utils/reasoning_client.py`(Claude CLI/SDK thin adapter), `src/agents/search_agent.py`(SearchAgent hybrid pipeline), `scripts/db/init_db.py`(search_queries/search_results/page_extractions/research_outputs 4-테이블 추가), `docs/research_contract.json`(Research Contract JSON 스키마), `docker/searxng/`(SearXNG Docker 설정), `test/test_rl_experiment_manager.py` + `test/test_search_pipeline.py` 테스트 추가 | ✅ 완료 |
 | 2026-03-15 | **N-way 블렌딩 + StrategyRunner Registry 구현** — `src/agents/strategy_runner.py`(StrategyRunner Protocol + StrategyRegistry), `src/agents/blending.py`(BlendInput + blend_signals() N-way 일반화), `src/agents/orchestrator.py`(Registry 기반 병렬 실행 + --strategies CLI), `src/agents/rl_trading_v2.py`(map_v2_action_to_signal + normalize_q_confidence), `src/db/models.py`(strategy S/L 추가, is_shadow, blend_meta), `scripts/db/init_db.py`(is_shadow, blend_meta JSONB, strategy CHECK 확장), `src/utils/config.py`(strategy_blend_weights), `test/test_blend_nway.py` 통합 테스트 전체 통과 | ✅ 완료 |
 | 2026-03-15 | 실험 메타데이터 관리 영구 문서화 및 후속 작업 완료 — `domain`별 필수 파라미터 규격화, `expected_impact` 연결 방식, UI 노출 파트 정의를 `docs/EXPERIMENT_TRACKING.md`로 정리하여 영구 문서로 편입 후 종결된 `.agent/discussions/20260314-cross-strategy-performance-management.md` 논의 문서 삭제 처리 | ✅ 완료 |
 | 2026-03-15 | 실험 메타데이터 공통 추적 구조 도입 — `.agent/discussions/20260314-cross-strategy-performance-management.md` 최종 결정에 따라 `config/experiments/`, `config/active/` 디렉터리 기반 GitOps 추적 구조 신설 및 `src/utils/experiment_tracker.py` 구현 | ✅ 완료 |
@@ -119,13 +120,15 @@
 ## 🗺️ 전체 진행률
 
 ```
-Phase 1 인프라 구축    ██████████  100% ✅ (문서 + 코드 완료)
-Phase 2 코어 에이전트  ██████████  100% ✅
-Phase 3 Strategy A    ██████████  100% ✅
-Phase 4 Strategy B    ██████████  100% ✅
-Phase 5 대시보드       ██████████  100% ✅
-Phase 6 페이퍼 운용    ██████████  100% ✅
-Phase 7 실거래 준비    ██████████  100% ✅
+Phase 1 인프라 구축        ██████████  100% ✅ (문서 + 코드 완료)
+Phase 2 코어 에이전트      ██████████  100% ✅
+Phase 3 Strategy A        ██████████  100% ✅
+Phase 4 Strategy B        ██████████  100% ✅
+Phase 5 대시보드           ██████████  100% ✅
+Phase 6 페이퍼 운용        ██████████  100% ✅
+Phase 7 실거래 준비        ██████████  100% ✅
+Phase 8 Search Foundation ██████████  100% ✅
+Phase 9 RL Trading Lane   ████████░░   80% (dataset/environment 고도화 남음)
 ```
 
 ## 🚀 다음 실행 명령어
@@ -172,3 +175,4 @@ cd ui && npm install && npm run dev
 ---
 
 *Last updated: 2026-03-15*
+*Phase 8/9 RL Experiment + Search Pipeline 구현 완료*
