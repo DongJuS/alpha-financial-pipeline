@@ -92,18 +92,18 @@ const AGENT_LABELS: Record<string, string> = {
   collector_agent: "데이터 수집기",
   predictor_1: "예측 1 · Claude",
   predictor_2: "예측 2 · Claude",
-  predictor_3: "예측 3 · GPT",
-  predictor_4: "예측 4 · GPT",
-  predictor_5: "예측 5 · Gemini",
+  predictor_3: "예측 3 · Gemini",
+  predictor_4: "예측 4 · Gemini",
+  predictor_5: "예측 5 · Claude",
   portfolio_manager_agent: "포트폴리오 매니저",
   notifier_agent: "알림 에이전트",
   orchestrator_agent: "오케스트레이터",
 };
 
+/** 홈 대시보드에는 인프라 에이전트 4개만 표시.
+ *  예측 에이전트(predictor_1-5)는 모델 관리 페이지에서 관리합니다. */
 const PRIORITY_AGENT_IDS = [
   "collector_agent",
-  "predictor_1",
-  "predictor_3",
   "portfolio_manager_agent",
   "notifier_agent",
   "orchestrator_agent",
@@ -416,7 +416,7 @@ export default function TossTradingDashboard({ portfolio, accountOverview, isLoa
                   color: isPositivePnl ? "#ffd9de" : "#dbeafe",
                 }}
               >
-                {pnlValue == null ? "손익 집계 중" : `총 손익 ${formatWon(pnlValue)}`}
+                {pnlValue == null ? "손익 집계 중" : `미실현 손익 ${formatWon(pnlValue)}`}
               </span>
               <span className="inline-flex rounded-full bg-white/12 px-3 py-1.5 text-xs font-semibold text-white/88">
                 {pnlPct == null ? "--" : formatPct(pnlPct)}
@@ -686,7 +686,7 @@ export default function TossTradingDashboard({ portfolio, accountOverview, isLoa
             <span className="chip">실시간 상태</span>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {selectedAgents.map((agent) => {
               const tone = activityTone(agent.activity_state);
               return (
