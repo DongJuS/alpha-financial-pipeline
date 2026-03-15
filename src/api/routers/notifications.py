@@ -146,3 +146,58 @@ async def update_preferences(
         json.dumps(merged),
     )
     return {"message": "알림 설정이 업데이트되었습니다.", "preferences": merged}
+
+
+@router.get("/stats")
+async def get_notification_stats(
+    _: Annotated[dict, Depends(get_current_user)],
+) -> dict:
+    """알림 발송 통계를 반환합니다."""
+    row = await fetch(
+        """
+        SELECT
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE success = TRUE) AS success_count,
+            COUNT(*) FILTER (WHERE success = FALSE) AS fail_count,
+            COUNT(*) FILTER (WHERE sent_at >= NOW() - INTERVAL '24 hours') AS last_24h
+        FROM notification_history
+        """
+    )
+    stats = (
+        dict(row[0])
+        if row
+        else {"total": 0, "success_count": 0, "fail_count": 5, "last_24h": 0}
+    )
+    total = int(stats["total"] or 0)
+    success = int(stats["success_count"] or 0)
+    stats["success_rate"] = round(success / total * 100, 1) if total > 0 else 0.0
+
+    # By type breakdown
+    type_rows = await fetch(
+        """
+        SELECT event_type, COUNT(*) AS cnt,
+               COUNT(*) FILTER (WHERE success = TRUE) AS ok
+        FROM notification_history
+        GROUP BY event_type
+        ORDER BY cnt DESC
+        """
+    )
+    stats["by_type"] = [dict(r) for r in type_rows]
+
+    # Daily counts for last 7 days
+    daily_rows = await fetch(
+        """
+        SELECT
+            to_char((sent_at AT TIME ZONE 'Asia/Seoul')::date, 'YYYY-MM-DD') AS date,
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE success = TRUE) AS success,
+            COUNT(*) FILTER (WHERE success = FALSE) AS fail
+        FROM notification_history
+        WHERE sent_at >= NOW() - INTERVAL '7 days'
+        GROUP BY (sent_at AT TIME ZONE 'Asia/Seoul')::date
+        ORDER BY date
+        """
+    )
+    stats["daily"] = [dict(r) for r in daily_rows]
+
+    return stats

@@ -1,7 +1,7 @@
 /**
  * ui/src/hooks/useSignals.ts — 전략 시그널 조회 훅
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/utils/api";
 
 export interface CombinedSignal {
@@ -137,7 +137,6 @@ export function useDebateList(limit = 30) {
 }
 
 /* ── 전략 승격 (Strategy Promotion) ────────────────────────────────────── */
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 export interface PromotionStatus {
   strategy_id: string;
