@@ -267,7 +267,6 @@ Phase 12 후속 과제        ██████████  100% ✅ (Docker p
 
 ## 🎯 Next Immediate Tasks
 
-<<<<<<< HEAD
 1. [x] Orchestrator에 Strategy S 통합 (SearchRunner 등록) **← COMPLETED**
 2. [x] Strategy S 가중치를 블렌딩에 반영 (`strategy_blend_weights["S"] = 0.20`) **← CONFIRMED**
 3. [x] AST 검증 + 코드 품질 검증 통과
@@ -280,24 +279,8 @@ Phase 12 후속 과제        ██████████  100% ✅ (Docker p
    - [x] Blending: 5개 루프 → 단일 패스 리팩토링
    - [x] Combined signals: Redis 5분 캐싱 추가
    - [x] Portfolio performance: trade+benchmark 쿼리 병렬 실행
-=======
-1. [ ] Orchestrator에 Strategy S 통합 (SearchRunner 등록)
-2. [ ] Strategy S 가중치를 블렌딩에 반영 (`strategy_blend_weights["S"] = 0.20`)
-3. [ ] 통합 테스트 실행
-4. [ ] README 업데이트 ("통합 테스트 진행 중" → "운영 반영")
-5. [x] Copilot 리뷰 코드 품질 이슈 수정 (PR #11 머지 후속)
->>>>>>> origin/main
 
 ---
 
-<<<<<<< HEAD
-*Last updated: 2026-03-15*
-*Phase 12 후속 과제 전체 완료 — Docker pytest 통합, 전략별 대시보드 UI (모드/성과/승격/가상자금), 백테스트 시뮬레이션 엔진 (4가지 시그널, API 2개 엔드포인트)*
-=======
 *Last updated: 2026-03-16*
-<<<<<<< HEAD
 *성능 최적화 완료 — Predictor 병렬화, Redis 파이프라이닝, Blending 단일패스, 캐싱*
-=======
-*Copilot 리뷰 코드 품질 수정 — orchestrator.py risk_summary/StrategyPromoter 파라미터/필드명 불일치 해결*
->>>>>>> origin/main
->>>>>>> origin/main
