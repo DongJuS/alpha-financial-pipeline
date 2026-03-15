@@ -94,6 +94,22 @@
   - CLOSE→HOLD: blend 레벨에서는 단순 매핑, 포지션 청산은 PortfolioManager 책임
   - signal_source는 `BLEND` 통일 + `blend_meta` JSONB로 참여 전략/가중치 기록
 
+### 2026-03-15 — RL 실험 관리 구조 결정 (Option B+C 하이브리드)
+- **결정:** `artifacts/rl/profiles/`에 재사용 가능한 하이퍼파라미터 프로파일을 두고, 모든 학습은 `artifacts/rl/experiments/<run_id>/`에 run 단위로 기록한다.
+- **구조:** config.json + dataset_meta.json + split.json + metrics.json + artifact_link.json + notes.md
+- **핵심 파일:** `src/agents/rl_experiment_manager.py` (RLExperimentManager)
+- **이유:** 정책 파일과 실험 기록을 분리해야 승격 이유를 설명 가능하고, 프로파일 재사용으로 관리 부담을 줄인다. DB 없이 파일 기반으로 동작하도록 설계.
+- **dataset_hash:** SHA256 기반, closes 데이터의 해시로 데이터 재현성 보장
+
+### 2026-03-15 — SearXNG 검색 파이프라인 구조 결정 (Option C 하이브리드)
+- **결정:** SearchAgent가 전체 파이프라인을 조율하되, fetch만 asyncio.gather로 병렬화하는 하이브리드 구조.
+- **구성:** SearXNG(Docker) → httpx async fetch → HTML→text MVP 추출 → Claude CLI reasoning
+- **저장:** 4-테이블 DB 구조 (search_queries, search_results, page_extractions, research_outputs)
+- **핵심 파일:** `src/utils/searxng_client.py`, `src/agents/search_agent.py`, `src/utils/reasoning_client.py`
+- **이유:** 현재 규모에서 Redis 큐 기반 3-stage는 과도하지만, 저장은 단계별로 분리해야 재사용과 디버깅이 가능하다.
+- **캐싱:** URL 단위 24시간 캐시, 도메인별 rate limit 1req/sec
+- **Research Contract:** JSON 포맷으로 Strategy B prompt와 RL feature에 공급
+
 ### 2026-03-15 — 공통 실험 메타데이터 추적 구조(GitOps) 도입
 - **결정:** A/B/RL/Search 도메인 전반의 실험 메타데이터를 추적/비교하기 위해 `config/experiments/`와 `config/active/` 디렉터리 기반의 GitOps 구조를 채택함.
 - **내용:** MLflow 등의 무거운 MLOps 플랫폼 대신, JSON 파일에 `commit_hash`를 기록하고 버전 관리(Git)를 연동해 **[설정값] - [소스코드] - [실행결과]** 범위를 보장.
@@ -144,4 +160,4 @@
 
 ---
 
-*Last updated: 2026-03-14*
+*Last updated: 2026-03-15*

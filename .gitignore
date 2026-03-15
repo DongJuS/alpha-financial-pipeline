@@ -24,6 +24,7 @@ ui/dist/
 artifacts/*
 !artifacts/rl/
 artifacts/rl/*
+!artifacts/rl/profiles/
 !artifacts/rl/models/
 artifacts/rl/models/*
 !artifacts/rl/models/README.md
