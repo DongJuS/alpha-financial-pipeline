@@ -4,7 +4,6 @@ src/llm/gemini_client.py — Gemini 호출 래퍼
 
 from __future__ import annotations
 
-from functools import lru_cache
 import json
 from typing import Any, Optional
 
@@ -16,15 +15,44 @@ logger = get_logger(__name__)
 GEMINI_OAUTH_SCOPES = ("https://www.googleapis.com/auth/generative-language",)
 
 
-@lru_cache(maxsize=1)
+_cached_credentials: tuple[Any | None, str | None] | None = None
+
+
 def load_gemini_oauth_credentials() -> tuple[Any | None, str | None]:
+    global _cached_credentials
+
+    # 성공했던 캐시가 있으면 재사용
+    if _cached_credentials is not None and _cached_credentials[0] is not None:
+        return _cached_credentials
+
+    import os
+
+    # 1) GOOGLE_APPLICATION_CREDENTIALS 환경변수 확인
+    cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if cred_path and os.path.isfile(cred_path):
+        logger.info("GOOGLE_APPLICATION_CREDENTIALS 파일 발견: %s", cred_path)
+
+    # 2) gcloud ADC 기본 경로 확인 (Docker 마운트 대응)
+    adc_paths = [
+        os.path.expanduser("~/.config/gcloud/application_default_credentials.json"),
+        "/root/.config/gcloud/application_default_credentials.json",
+    ]
+    for adc_path in adc_paths:
+        if not cred_path and os.path.isfile(adc_path):
+            logger.info("gcloud ADC 파일 발견 → GOOGLE_APPLICATION_CREDENTIALS 자동 설정: %s", adc_path)
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
+            break
+
     try:
         import google.auth
 
-        return google.auth.default(scopes=list(GEMINI_OAUTH_SCOPES))
+        credentials, project_id = google.auth.default(scopes=list(GEMINI_OAUTH_SCOPES))
+        _cached_credentials = (credentials, project_id)
+        return _cached_credentials
     except Exception as exc:
         logger.info("Gemini OAuth credentials unavailable: %s", exc)
-        return None, None
+        _cached_credentials = (None, None)
+        return _cached_credentials
 
 
 def gemini_oauth_available() -> bool:
