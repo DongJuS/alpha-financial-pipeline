@@ -65,6 +65,18 @@ class PredictorAgent:
         rest = [p for p in ["claude", "gpt", "gemini"] if p != primary]
         return [primary, *rest]
 
+    async def _get_feedback_context(self) -> str:
+        """Redis에 캐시된 피드백 컨텍스트를 로드합니다 (없으면 빈 문자열)."""
+        try:
+            from src.utils.redis_client import get_redis
+            redis = await get_redis()
+            ctx = await redis.get(f"feedback:llm_context:{self.strategy}")
+            if ctx:
+                return ctx if isinstance(ctx, str) else ctx.decode("utf-8")
+        except Exception:
+            pass
+        return ""
+
     async def _llm_signal(self, ticker: str, candles: list[dict]) -> dict[str, Any]:
         compact = [
             {
@@ -77,7 +89,11 @@ class PredictorAgent:
             }
             for c in candles[:20]
         ]
-        prompt = f"""
+
+        # ── 피드백 루프: 과거 성과 컨텍스트를 프롬프트에 주입 ──
+        feedback_ctx = await self._get_feedback_context()
+
+        prompt = f"""{feedback_ctx}
 너는 한국주식 단기 예측 분석가다.
 현재 페르소나: {self.persona}
 티커: {ticker}
