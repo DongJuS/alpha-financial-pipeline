@@ -9,6 +9,7 @@ const Strategy = lazy(() => import("@/pages/Strategy"));
 const Models = lazy(() => import("@/pages/Models"));
 const Portfolio = lazy(() => import("@/pages/Portfolio"));
 const Market = lazy(() => import("@/pages/Market"));
+const Marketplace = lazy(() => import("@/pages/Marketplace"));
 const LongTerm = lazy(() => import("@/pages/LongTerm"));
 const PaperTrading = lazy(() => import("@/pages/PaperTrading"));
 const Settings = lazy(() => import("@/pages/Settings"));
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/models" element={withSuspense(<Models />)} />
           <Route path="/portfolio" element={withSuspense(<Portfolio />)} />
           <Route path="/market" element={withSuspense(<Market />)} />
+          <Route path="/marketplace" element={withSuspense(<Marketplace />)} />
           <Route path="/long-term" element={withSuspense(<LongTerm />)} />
           <Route path="/paper-trading" element={withSuspense(<PaperTrading />)} />
           <Route path="/settings" element={withSuspense(<Settings />)} />

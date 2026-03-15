@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routers import agents, auth, backtest, market, marketplace, models, notifications, portfolio, rl, strategy
+from src.schedulers.index_scheduler import start_index_scheduler, stop_index_scheduler
 from src.utils.config import get_settings
 from src.utils.db_client import close_pool, get_pool
 from src.utils.logging import get_logger, setup_logging
@@ -24,7 +25,7 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """앱 시작/종료 시 DB·Redis 연결 풀을 초기화/해제합니다."""
+    """앱 시작/종료 시 DB·Redis 연결 끝을 초기화/해제합니다."""
     logger.info("🚀 Alpha Trading System 시작 중...")
     await get_pool()
     await get_redis()
@@ -37,8 +38,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("✅ S3 Data Lake 버킷 준비 완료")
     except Exception as e:
         logger.warning("⚠️ S3 버킷 초기화 실패 (비필수): %s", e)
+    # Index scheduler 시작
+    await start_index_scheduler()
 
     yield
+
+    # Index scheduler 종료
+    await stop_index_scheduler()
+
     logger.info("🔴 Alpha Trading System 종료 중...")
     await close_pool()
     await close_redis()
@@ -54,7 +61,7 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# ── CORS ─────────────────────────────────────────────────────────────────────
+# ─── CORS ────────────────────────────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5173"],
@@ -63,7 +70,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── 라우터 등록 ────────────────────────────────────────────────────────────
+# ─── 라우터 등록 ────────────────────────────────────────────────────────────────────────────────────────
 API_PREFIX = "/api/v1"
 
 app.include_router(auth.router, prefix=API_PREFIX, tags=["auth"])
@@ -78,7 +85,7 @@ app.include_router(rl.router, prefix=f"{API_PREFIX}/rl", tags=["rl"])
 app.include_router(backtest.router, prefix=f"{API_PREFIX}/backtest", tags=["backtest"])
 
 
-# ── 헬스 체크 ─────────────────────────────────────────────────────────────────
+# ─── 헬스 체크 ────────────────────────────────────────────────────────────────────────────────────────
 @app.get("/health", tags=["system"])
 async def health_check() -> dict:
     """서버 및 DB·Redis 연결 상태를 반환합니다."""
