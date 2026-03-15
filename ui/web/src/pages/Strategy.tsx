@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import TournamentTable from "@/components/TournamentTable/TournamentTable";
 import {
@@ -360,7 +361,7 @@ export default function Strategy() {
 
       {/* ── 확장 전략 레이어 ── */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-        {/* RL Trading */}
+        {/* RL Trading — now links to dedicated page */}
         <section className="card space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -373,60 +374,37 @@ export default function Strategy() {
                 레이어로 동작합니다.
               </p>
             </div>
-            <span className="chip">통합 테스트 중</span>
+            <span className="chip">대시보드 운영 중</span>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            {[
-              {
-                id: "rl_data_builder",
-                title: "Data Builder",
-                desc: "시장 데이터·포트폴리오 상태를 RL 학습용 feature dataset으로 변환",
-                status: "planned",
-              },
-              {
-                id: "rl_trainer",
-                title: "Trainer",
-                desc: "환경 정의 + 정책 학습 실행, 모델 artifact/version 생성",
-                status: "planned",
-              },
-              {
-                id: "rl_evaluator",
-                title: "Evaluator",
-                desc: "백테스트, out-of-sample 검증, 리스크 지표 평가",
-                status: "planned",
-              },
-              {
-                id: "rl_policy",
-                title: "Policy Agent",
-                desc: "승인된 정책을 inference 전용으로 로드해 시그널 후보 생성",
-                status: "planned",
-              },
-            ].map((agent) => (
-              <div key={agent.id} className="inner-card">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-bold tracking-[-0.02em]" style={{ color: "var(--text-primary)" }}>
-                    {agent.title}
-                  </p>
-                  <span
-                    className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                    style={{ background: "var(--warning-bg)", color: "var(--warning)" }}
-                  >
-                    {agent.status}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>{agent.desc}</p>
+          <div className="inner-card space-y-3">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-muted)" }}>
+                  주요 기능
+                </p>
+                <ul className="mt-1.5 space-y-1 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>
+                  <li>· 정책 학습 & Walk-Forward 검증</li>
+                  <li>· 섀도우 추론 성과 모니터링</li>
+                  <li>· Shadow → Paper → Real 승격 게이트</li>
+                </ul>
               </div>
-            ))}
-          </div>
-
-          <div className="inner-card space-y-2">
-            <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>운영 원칙</p>
-            <ul className="space-y-1 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>
-              <li>· RL 정책은 직접 브로커를 호출하지 않음</li>
-              <li>· 모든 시그널은 기존 리스크 가드 + PortfolioManager를 통과해야 주문 가능</li>
-              <li>· 학습 데이터와 정책 버전은 추적 가능하게 저장</li>
-            </ul>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-muted)" }}>
+                  운영 원칙
+                </p>
+                <ul className="mt-1.5 space-y-1 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>
+                  <li>· RL 정책은 직접 브로커를 호출하지 않음</li>
+                  <li>· 리스크 가드 + PortfolioManager 통과 필수</li>
+                </ul>
+              </div>
+            </div>
+            <Link
+              to="/rl-trading"
+              className="btn-primary mt-2 inline-flex items-center gap-1.5 text-sm"
+            >
+              RL Trading 대시보드 열기 →
+            </Link>
           </div>
         </section>
 
@@ -443,7 +421,7 @@ export default function Strategy() {
                 보강합니다.
               </p>
             </div>
-            <span className="chip">통합 테스트 중</span>
+            <span className="chip">파이프라인 구축 중</span>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-1">
