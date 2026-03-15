@@ -1,6 +1,6 @@
 # Discussion: Strategy A/B + RL 확장 통합 설계
 
-status: open
+status: closed
 created_at: 2026-03-14
 topic_slug: strategy-ab-rl-extension
 owner: user
@@ -193,23 +193,196 @@ if self.use_blend:
 
 ## 7. Final Decision
 
-(논의 후 확정)
+### 종합 판단
+
+네 AI 의견의 공통점과 차이를 정리하면 다음과 같다.
+
+| | Claude | Gemini | GPT | Codex |
+|---|---|---|---|---|
+| **선택 옵션** | Option A | Option C (shadow) | Option A | Option A + shadow |
+| **핵심 주장** | 동작하는 3-way 먼저 확보 | RL 실전 검증 부족, shadow 먼저 | 가중치 외부화 중요 | blend 함수 자체를 일반화 |
+| **CLOSE 매핑** | CLOSE→HOLD | (언급 없음) | CLOSE→HOLD (단, 정규화 주의) | 포지션 상태 기반 분기 매핑 |
+| **소스 타입** | BLEND3 추가 | (언급 없음) | (언급 없음) | BLEND 유지 + 메타데이터 |
+| **공통 합의** | ✅ Option A 기반 최소 변경 우선 | ✅ approved 정책만 active 참여 | ✅ 가중치는 코드 밖으로 | ✅ 신호 점수화 방식 도입 |
+
+**AI 의견에서 채택할 요소:**
+1. Gemini의 shadow gate — 검증되지 않은 전략은 shadow 로깅으로 먼저 성과 검증
+2. GPT의 외부화 — 전략별 설정은 환경변수/설정 파일로 관리
+3. Codex의 일반화 — `StrategyRunner` 인터페이스로 전략 추상화, `BlendInput` 기반 N-way 블렌딩
+
+### 전략 목록
+
+| 코드 | 전략 | 유형 | 상태 |
+|------|------|------|------|
+| A | 토너먼트 (LLM 5인 경쟁) | LLM 기반 | ✅ 구현 완료 |
+| B | 합의/토론 (다라운드 디베이트) | LLM 기반 | ✅ 구현 완료 |
+| RL | 강화학습 (Tabular Q-learning V2) | 모델 기반 | ✅ 구현 완료 |
+| S | 검색/스크래핑 (SearXNG → Scrape → 추론) | 데이터 기반 | 🔜 계획 |
+| L | 장기 투자 (펀더멘털/밸류에이션 중심) | 분석 기반 | 🔜 계획 |
+
+---
+
+## 1단계: N-way 블렌딩 + 단일 포트폴리오
+
+### 최종 결정 요약
+
+**Option B(Strategy Registry) + N-way blend + shadow gate + 가중치 외부화**
+
+### 아키텍처 결정 상세
+
+#### (1) StrategyRunner Protocol + Registry
+
+5개 전략을 동일한 인터페이스로 추상화한다:
+
+```python
+class StrategyRunner(Protocol):
+    """모든 전략이 구현해야 하는 인터페이스"""
+    name: str                                    # "A", "B", "RL", "S", "L"
+    async def run(self, tickers: list[str]) -> list[PredictionSignal]: ...
+```
+
+- Orchestrator는 활성화된 Runner들을 `asyncio.gather`로 **병렬 실행**
+- 결과를 N-way `blend_signals()`에 전달
+- 기존 A/B 단독 모드(`--tournament`, `--consensus`)는 **Runner 1개만 활성화**하는 것으로 자연스럽게 호환
+- elif 체인을 완전히 제거하고 Registry 기반으로 전환
+
+#### (2) N-way 블렌딩 함수
+
+Codex 제안대로 `BlendInput` 리스트 기반 일반 함수를 사용한다:
+
+```python
+@dataclass
+class BlendInput:
+    strategy: str           # "A", "B", "RL", "S", "L"
+    signal: str             # "BUY", "SELL", "HOLD"
+    confidence: float       # 0.0 ~ 1.0 (정규화 완료 상태)
+    weight: float           # 설정에서 로드된 가중치
+
+def blend_signals(inputs: list[BlendInput]) -> BlendResult:
+    """N개 전략의 시그널을 점수 기반(BUY=+1, HOLD=0, SELL=-1) 가중합으로 병합"""
+```
+
+- 전략이 몇 개든 동일한 함수 하나로 처리
+- 기존 `blend_strategy_signals()`는 `blend_signals()`를 내부 호출하는 래퍼로 유지 (하위 호환)
+
+#### (3) signal_source: `BLEND` 통합 + 메타데이터
+
+Codex 제안 채택. 5개 전략의 조합마다 리터럴을 추가하면 스키마가 비대해지므로:
+
+- `PaperOrderRequest.signal_source`에는 기존 `"BLEND"` 하나만 사용
+- 어떤 전략이 참여했는지는 `blend_meta: {"strategies": ["A","B","RL"], "weights": {...}}` 형태로 저장
+- DB `paper_orders` 테이블에 `blend_meta JSONB` 컬럼 추가
+
+#### (4) CLOSE 액션 매핑
+
+**결정: blend 레벨에서는 `CLOSE→HOLD`로 단순 매핑한다.**
+- 포지션 청산 의도는 PortfolioManager 책임
+- RL 단독 모드일 때만 CLOSE를 직접 해석
+- 2단계(독립 포트폴리오) 전환 시 `CLOSE→SELL(보유시)/HOLD(미보유시)` 포지션 인식 매핑으로 업그레이드
+
+#### (5) shadow gate
+
+**결정: predictions 테이블에 `is_shadow BOOLEAN DEFAULT FALSE` 컬럼을 추가한다.**
+- 승인되지 않은 전략(RL 미승인, Search/Long-term 초기 상태)은 shadow로 기록
+- shadow 전략의 시그널은 blend에 참여하지 않고, DB에 기록만
+- 기존 쿼리에 `WHERE is_shadow = FALSE` 조건만 추가
+
+#### (6) 전략별 가중치 외부화
+
+```
+STRATEGY_BLEND_WEIGHTS={"A": 0.35, "B": 0.35, "RL": 0.30}
+```
+
+- 기존 `strategy_blend_ratio`(B 가중치)는 하위 호환으로 유지
+- 활성 전략의 가중치는 합이 1.0이 되도록 자동 정규화
+- 향후 S/L 전략이 추가되면 가중치를 갱신하면 됨
+
+#### (7) 기존 코드 호환
+
+- 기존 `--blend` 모드(A/B 2-way): `--strategies A,B`의 숏컷으로 유지
+- 기존 단독 모드(`--tournament`, `--consensus`, `--rl`): 그대로 동작
+- 기존 `blend_strategy_signals()`: 내부적으로 `blend_signals()` 호출하는 래퍼
+
+### 구현 항목
+
+1. **`src/agents/strategy_runner.py`** — StrategyRunner Protocol + StrategyRegistry 신설
+   - `StrategyRunner` Protocol: `name`, `run(tickers) -> list[PredictionSignal]`
+   - `StrategyRegistry`: Runner 등록/조회, 활성 전략 목록 관리
+   - 기존 에이전트를 Runner로 래핑: `TournamentRunner(A)`, `ConsensusRunner(B)`, `RLRunner(RL)`
+
+2. **`src/agents/blending.py`** — N-way `blend_signals()` 신설
+   - `BlendInput(strategy, signal, confidence, weight)` 데이터 클래스
+   - 점수 기반(BUY=+1, HOLD=0, SELL=-1) 가중합 → 최종 signal 결정
+   - confidence: 가중 평균으로 합산
+   - 기존 `blend_strategy_signals()`는 내부적으로 `blend_signals()`를 호출하는 래퍼로 유지
+
+3. **`src/agents/orchestrator.py`** — Registry 기반 실행으로 리팩토링
+   - `--strategies A,B,RL` CLI 플래그 (쉼표 구분, 활성 전략 지정)
+   - 기존 `--blend`, `--tournament`, `--consensus`, `--rl` 플래그는 숏컷으로 유지
+   - 활성 Runner들을 `asyncio.gather`로 병렬 실행 → `blend_signals()` → PortfolioManager
+   - shadow gate: 미승인 전략은 shadow 로깅만
+
+4. **`src/agents/rl_trading_v2.py`** — V2 시그널 매핑
+   - `map_v2_action_to_signal()`: BUY→BUY, SELL→SELL, HOLD→HOLD, CLOSE→HOLD
+   - `normalize_q_confidence()`: Q-value spread → 0~1 min-max 정규화
+
+5. **`src/db/models.py`** — 모델 업데이트
+   - `PaperOrderRequest.blend_meta`: Optional[dict] 필드 추가
+   - `PredictionSignal.strategy`: `"S"`, `"L"` 추가
+
+6. **`src/utils/config.py`** — 설정 추가
+   - `strategy_blend_weights`: JSON 문자열 (기본값 `{"A": 0.35, "B": 0.35, "RL": 0.30}`)
+   - 기존 `strategy_blend_ratio`는 하위 호환으로 유지
+
+7. **DB 스키마** — 최소 변경
+   - `predictions` 테이블: `is_shadow BOOLEAN DEFAULT FALSE` 컬럼 추가, `strategy` CHECK에 `'S'`/`'L'` 추가
+   - `paper_orders` 테이블: `blend_meta JSONB` 컬럼 추가
+
+8. **통합 테스트**
+   - N-way blend 정상 동작 (2개, 3개 전략)
+   - 미승인 전략 shadow fallback
+   - 기존 단독 모드 하위 호환 (`--tournament`, `--consensus`, `--rl`)
+   - CLOSE 액션 매핑 검증
+   - 가중치 자동 정규화 검증
+
+### 구현 순서
+
+```
+Phase 1: 기반 인프라
+  ├─ strategy_runner.py — StrategyRunner Protocol + StrategyRegistry
+  ├─ config.py — strategy_blend_weights 추가
+  ├─ models.py — blend_meta 필드 추가, PredictionSignal.strategy에 "S"/"L" 추가
+  └─ init_db.py — is_shadow 컬럼, blend_meta 컬럼, strategy CHECK 확장
+
+Phase 2: N-way 블렌딩 + RL 시그널 변환
+  ├─ blending.py — BlendInput + blend_signals() + 기존 함수 래퍼화
+  ├─ rl_trading_v2.py — map_v2_action_to_signal()
+  └─ rl_trading_v2.py — normalize_q_confidence()
+
+Phase 3: 오케스트레이터 리팩토링
+  ├─ orchestrator.py — Registry 기반 실행 + --strategies CLI
+  └─ orchestrator.py — shadow gate (approved 전략 체크)
+
+Phase 4: 테스트 & 검증
+  └─ test/test_blend_nway.py — N-way 통합 테스트
+```
 
 ## 8. Follow-up Actions
 
-- [ ] `blending.py`에 `blend_3way_signals()` 함수 구현
-- [ ] `orchestrator.py`에 `use_blend_rl` 분기 및 CLI 플래그 추가
-- [ ] `rl_trading_v2.py`에 `map_v2_action_to_signal()` 매핑 함수 추가
-- [ ] `rl_trading_v2.py`에 Q-value → confidence 정규화 로직 추가
-- [ ] `src/db/models.py` PaperOrderRequest.signal_source에 `"BLEND3"` 추가
-- [ ] `src/utils/config.py` settings에 `strategy_rl_blend_ratio` 추가
-- [ ] shadow 로깅 테이블/경로 설계 (predictions 테이블에 `is_shadow` 컬럼 또는 별도 테이블)
-- [ ] 통합 테스트: 3-way blend가 기존 2-way와 호환되는지 검증
-- [ ] 통합 테스트: RL 정책 미승인 시 blend에서 제외되는지 검증
+- [x] `src/agents/strategy_runner.py` — StrategyRunner Protocol + StrategyRegistry 신설
+- [x] `src/agents/blending.py` — `BlendInput` + `blend_signals()` N-way 블렌딩 신설
+- [x] `src/agents/orchestrator.py` — Registry 기반 병렬 실행 리팩토링 + `--strategies` CLI
+- [x] `src/agents/rl_trading_v2.py` — `map_v2_action_to_signal()` + `normalize_q_confidence()`
+- [x] `src/db/models.py` — `blend_meta` 필드 추가, `strategy`에 `"S"`/`"L"` 추가
+- [x] `scripts/db/init_db.py` — `is_shadow` 컬럼, `blend_meta` 컬럼, `strategy` CHECK 확장
+- [x] `src/utils/config.py` — `strategy_blend_weights` 추가
+- [x] 통합 테스트: N-way blend 정상 동작 검증
+- [x] 통합 테스트: shadow gate 인프라 검증
+- [x] 통합 테스트: 기존 단독 모드 하위 호환 검증
 
 ## 9. Closure Checklist
 
-- [ ] 구조/장기 방향 변경 사항을 `.agent/roadmap.md`에 반영
-- [ ] 이번 세션의 할 일을 `progress.md`에 반영
-- [ ] 계속 유지되어야 하는 운영 규칙을 `MEMORY.md`에 반영
+- [x] 구조/장기 방향 변경 사항을 `.agent/roadmap.md`에 반영
+- [x] 이번 세션의 할 일을 `progress.md`에 반영
+- [x] 계속 유지되어야 하는 운영 규칙을 `MEMORY.md`에 반영
 - [ ] 필요한 영구 문서 반영 후 이 논의 문서를 삭제
