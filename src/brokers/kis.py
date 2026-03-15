@@ -93,7 +93,7 @@ class KISApiClient:
         if not token:
             raise KISAPIError(
                 "KIS 토큰이 없습니다. `python scripts/kis_auth.py --scope "
-                f"{self.account_scope}`를 실행하거나 자동 발급이 가능한지 확인하세요."
+                f"{self.account_scope}`을 실행하거나 자동 발급이 가능한지 확인하세요."
             )
         return str(token)
 
@@ -237,6 +237,29 @@ class KISApiClient:
             "orders": data.get("output1") or [],
             "summary": data.get("output2") or {},
         }
+
+    async def fetch_index_quote(self, fid_input_iscd: str) -> dict:
+        """KIS API에서 지수(KOSPI/KOSDAQ) 현재가를 조회합니다.
+
+        Args:
+            fid_input_iscd: 지수 코드 (0001=KOSPI, 1001=KOSDAQ)
+
+        Returns:
+            {'value': float, 'change_pct': float} 형태의 딕셔너리
+        """
+        data = await self._request_json(
+            "GET",
+            "/uapi/domestic-stock/v1/quotations/inquire-index-price",
+            "FHPUP02100000",
+            params={
+                "FID_COND_MRKT_DIV_CODE": "U",
+                "FID_INPUT_ISCD": fid_input_iscd,
+            },
+        )
+        output = data.get("output") or {}
+        value = float(output.get("bstp_nmix_prpr") or 0)
+        change_pct = float(output.get("bstp_nmix_prdy_ctrt") or 0)
+        return {"value": value, "change_pct": change_pct}
 
 
 class KISPaperApiClient(KISApiClient):
