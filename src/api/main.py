@@ -11,7 +11,6 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-<<<<<<< HEAD
 from src.api.routers import (
     agents,
     audit,
@@ -22,13 +21,10 @@ from src.api.routers import (
     models,
     notifications,
     portfolio,
+    rl,
     strategy,
     system_health,
 )
-=======
-from src.api.routers import agents, auth, market, marketplace, models, notifications, portfolio, rl, strategy
-from src.api.routers import agents, auth, market, marketplace, models, notifications, portfolio, strategy
->>>>>>> origin/main
 from src.schedulers.index_scheduler import start_index_scheduler, stop_index_scheduler
 from src.utils.config import get_settings
 from src.utils.db_client import close_pool, get_pool
@@ -98,13 +94,10 @@ app.include_router(portfolio.router, prefix=f"{API_PREFIX}/portfolio", tags=["po
 app.include_router(notifications.router, prefix=f"{API_PREFIX}/notifications", tags=["notifications"])
 app.include_router(models.router, prefix=f"{API_PREFIX}/models", tags=["models"])
 app.include_router(marketplace.router, prefix=f"{API_PREFIX}/marketplace", tags=["marketplace"])
-<<<<<<< HEAD
+app.include_router(rl.router, prefix=f"{API_PREFIX}/rl", tags=["rl"])
 app.include_router(system_health.router, prefix=f"{API_PREFIX}/system", tags=["system-health"])
 app.include_router(datalake.router, prefix=f"{API_PREFIX}/datalake", tags=["datalake"])
 app.include_router(audit.router, prefix=f"{API_PREFIX}/audit", tags=["audit"])
-=======
-app.include_router(rl.router, prefix=f"{API_PREFIX}/rl", tags=["rl"])
->>>>>>> origin/main
 
 
 # ─── 헬스 체크 ────────────────────────────────────────────────────────────────────────────────────────
