@@ -98,7 +98,7 @@ class StrategyARunner:
               AND agent_id = $1
               AND trading_date = $2
               AND ticker = ANY($3::text[])
-            ORDER BY created_at DESC
+            ORDER BY id DESC
             """,
             winner_agent_id,
             trading_date,
