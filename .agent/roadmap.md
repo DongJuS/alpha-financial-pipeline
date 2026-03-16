@@ -231,17 +231,10 @@ Strategy L  → [real] [paper] [virtual]
 ## 현재 상태 요약
 
 - 코어 트레이딩 트랙: 구현 완료 및 유지보수 단계
-<<<<<<< HEAD
-- RL 트레이딩: 최소 runnable lane + 실험 관리 구현 완료, 데이터셋/환경 고도화 진행 중
+- RL 트레이딩: Phase 9 전체 구현 완료 (dataset builder v2, trading env, walk-forward, shadow inference, promotion gate, REST API 17개)
 - 검색/스크래핑 스택: 파이프라인 설계 완료, MVP 구현 완료, SearchRunner Orchestrator 통합 완료
 - N-way 블렌딩: 설계 확정, 구현 완료 (Phase 11), Strategy S 포함 4-way 블렌딩 운영 중
-- 독립 포트폴리오: 향후 계획 (Phase 12)
+- 독립 포트폴리오: 핵심 인프라 + Orchestrator 통합 완료 (Phase 12)
 - 마켓플레이스: Week 1~5 전체 구현 완료 (Phase 13)
 - 피드백 루프: LLM 피드백 + RL 재학습 + 백테스트 파이프라인 운영 중
 - S3 Data Lake: MinIO + Parquet 기반 데이터 레이크 운영 중
-=======
-- RL 트레이딩: Phase 9 전체 구현 완료 (dataset builder v2, trading env, walk-forward, shadow inference, promotion gate, REST API 17개)
-- 검색/스크래핑 스택: 파이프라인 설계 완료, MVP 구현 완료
-- N-way 블렌딩: 설계 확정, 구현 완료 (Phase 11)
-- 독립 포트폴리오: 핵심 인프라 + Orchestrator 통합 완료 (Phase 12)
->>>>>>> origin/main
