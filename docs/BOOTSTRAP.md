@@ -13,12 +13,11 @@
 [ ] Redis 7+
 [ ] Docker (권장, 컨테이너 실행용)
 [ ] KIS Developers 계좌 및 앱 등록 완료
-[ ] Anthropic API 키 발급
-[ ] OpenAI API 키 발급
-[ ] Google Gemini API 키 발급
+[ ] Claude CLI 설치: npm install -g @anthropic-ai/claude-code
+[ ] Claude CLI 인증: claude login
+[ ] OpenAI SDK 키 발급 (openai SDK용)
+[ ] Gemini OAuth(ADC) 설정: gcloud auth application-default login
 [ ] Telegram Bot 생성 및 Chat ID 확인
-[ ] claude CLI 설치: npm install -g @anthropic-ai/claude-code
-[ ] gemini CLI 설치: (공식 Google Gemini CLI 문서 참조)
 ```
 
 ---
@@ -45,10 +44,13 @@ DATABASE_URL=postgresql://alpha_user:password@localhost:5432/alpha_db
 # ─── Redis ─────────────────────────────────────────────
 REDIS_URL=redis://localhost:6379
 
-# ─── LLM API Keys ──────────────────────────────────────
-ANTHROPIC_API_KEY=sk-ant-...
+# ─── LLM 연동 ─────────────────────────────────────────
+# Claude: CLI 자동 감지 (별도 API 키 불필요, claude login 으로 인증)
+ANTHROPIC_CLI_COMMAND=
+# OpenAI: openai SDK
 OPENAI_API_KEY=sk-...
-GEMINI_API_KEY=AIza...
+# Gemini: OAuth(ADC) 우선, 필요 시 API key fallback
+GOOGLE_APPLICATION_CREDENTIALS=
 
 # ─── KIS Developers (한국투자증권) ───────────────────────
 KIS_APP_KEY=PSxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -165,11 +167,11 @@ python scripts/fetch_krx_holidays.py --year 2026
 
 ---
 
-## 6. LLM CLI 설치 확인
+## 6. LLM 연동 확인
 
 ```bash
 claude --version                              # Claude CLI 확인
-gemini --version                              # Gemini CLI 확인
+gcloud auth application-default print-access-token  # Gemini OAuth(ADC) 확인
 python scripts/test_llm_connections.py        # 3종 LLM 연결 테스트
 # 출력: "Claude: OK | GPT-4o: OK | Gemini: OK"
 ```
@@ -255,7 +257,7 @@ python scripts/smoke_test.py
 | `scripts/validate_risk_rules.py` | 리스크 규칙(서킷브레이커/포지션 한도) 자동 검증 |
 | `scripts/run_phase6_paper_validation.py` | 30일 페이퍼/고변동성/부하 자동 검증 및 기록 |
 | `scripts/validate_all_phases.py` | Phase 1~7 완료율 자동 검증 |
-| `scripts/test_llm_connections.py` | LLM API 연결 테스트 |
+| `scripts/test_llm_connections.py` | LLM 연동 테스트 (CLI/SDK/OAuth) |
 | `scripts/smoke_test.py` | 전체 플로우 스모크 테스트 |
 
 ---

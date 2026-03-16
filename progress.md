@@ -194,6 +194,8 @@ S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
+| 2026-03-16 | **QA v2 코드 수정** — `ui/web/src/components/ErrorBoundary.tsx` 신규 생성(React class component, getDerivedStateFromError+componentDidCatch, 한국어 오류 UI), `main.tsx`에 ErrorBoundary 래핑 적용, `Marketplace.tsx`에 섹터 히트맵/상승률/하락률 빈 데이터 empty state 3건 추가, `Strategy.tsx`에 Debate Transcript 선택 시 자동 스크롤(useRef+scrollIntoView) 추가, GPT Provider 미노출은 설계 의도(Claude CLI+Gemini OAuth만 사용)로 확인하여 스킵, Notifications 빈 상태는 이미 구현되어 스킵, `npx tsc --noEmit` 0 에러 통과 | ✅ 완료 |
+| 2026-03-16 | **QA 검증 + MinIO/LLM 연동 수정** — `docker-compose.yml`에 MinIO 서비스+minio-init(버킷 자동생성) 추가, api/worker에 minio 의존성+S3_ENDPOINT_URL 환경변수 추가, `cli_bridge.py`에 Claude CLI 자동감지 폴백(ANTHROPIC_CLI_COMMAND 비어있을 때 claude 바이너리 탐색), 프로젝트 전체 'Anthropic API/OpenAI API/Google Gemini API' 문구를 'Claude CLI/openai SDK/Gemini OAuth(ADC)'로 교체(BOOTSTRAP.md, TOOLS.md, architecture.md, model_config.py, health_check.py, qa-checklist.md, .env.example), qa-checklist.md에 인프라 연결/에이전트 파이프라인/데이터 정합성 검증 항목 150줄 추가 | ✅ 완료 |
 | 2026-03-16 | **Copilot 리뷰 코드 품질 수정** — `orchestrator.py`의 `risk_summary.get("violations")`→`risk_summary.warnings` (dict→dataclass 접근 수정), `evaluate_promotion_readiness()` 누락 파라미터(`from_mode`, `to_mode`) 추가, `readiness.is_ready`→`readiness.ready` 필드명 수정, `WalkForwardResult.overall_approved` 일관성 확인(이상 없음). AST 전체 통과 | ✅ 완료 |
 | 2026-03-16 | **피드백 루프 파이프라인 구현** — `src/services/datalake_reader.py`(S3 Parquet 읽기, predictions+outcomes 매칭, 전략별 정확도 통계), `src/services/llm_feedback.py`(오류 패턴 분석 5가지, 프롬프트 컨텍스트 자동 생성, Redis 캐시), `src/services/rl_retrain_pipeline.py`(S3 daily_bars→RL 재학습→walk-forward 검증→기존 정책 비교→자동 배포), `src/services/backtest_engine.py`(시그널 기반 가상 포트폴리오 시뮬레이션, 전략 간 비교), `src/services/feedback_orchestrator.py`(일일 배치 통합 실행), `src/api/routers/feedback.py`(REST API 7개 엔드포인트), `predictor.py`(피드백 컨텍스트 프롬프트 자동 주입), `test/test_feedback_pipeline.py`(7개 클래스 20+ 테스트), architecture.md 피드백 루프 섹션 추가, 전체 AST 9/9 통과 | ✅ 완료 |
 | 2026-03-15 | **S3 Data Lake (MinIO + Parquet) 구현** — `docker-compose.yml`(MinIO 서비스+S3 env), `src/utils/s3_client.py`(boto3 싱글턴, CRUD 유틸), `src/services/datalake.py`(7 DataType enum, PyArrow 스키마, Parquet 직렬화, Hive 파티셔닝), `collector.py`(틱 100건 배치 + 일봉 S3 저장), `predictor.py`(예측 시그널 S3 저장), `paper.py`(주문 기록 S3 저장), `main.py`(S3 버킷 자동 생성), `architecture.md`(Data Lake 아키텍처 문서화), `test/test_datalake.py`(10개 테스트), `.env.example`/`config.py`/`tech_stack.md`/`requirements.txt` 업데이트 | ✅ 완료 |
@@ -241,6 +243,7 @@ S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아
 ### 📂 최근 신규 파일
 | 파일 | 상태 | 비고 |
 |------|------|------|
+| `ui/web/src/components/ErrorBoundary.tsx` | ✅ 신규 | React ErrorBoundary (QA v2 수정) |
 | `src/agents/search_agent.py` | ✅ 구현 | SearchAgent MVP |
 | `src/agents/research_portfolio_manager.py` | ✅ 구현 | ResearchPortfolioManager + sentiment→signal 매핑 |
 | `src/agents/search_runner.py` | ✅ 구현 | SearchRunner (Strategy S StrategyRunner 구현) |

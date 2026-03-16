@@ -154,7 +154,7 @@ response = json.loads(result.stdout)
 ---
 
 ### `llm_openai_api`
-- **설명:** OpenAI API (OAuth)를 통해 GPT-4o 호출
+- **설명:** openai SDK를 통해 GPT-4o 호출
 - **접근 권한:** PredictorAgent (인스턴스 3, 4)
 - **모델:** `gpt-4o`
 - **사용 예시:**

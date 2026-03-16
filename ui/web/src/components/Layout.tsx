@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: "/market", label: "마켓", description: "실시간 데이터" },
   { to: "/marketplace", label: "마켓플레이스", description: "섹터·랭킹·매크로" },
   { to: "/paper-trading", label: "모의 투자", description: "KIS 페이퍼 계좌" },
+  { to: "/real-account", label: "실계좌", description: "KIS 실거래 계좌" },
   { to: "/portfolio", label: "내 계좌", description: "성과와 리스크" },
   { to: "/agent-control", label: "에이전트", description: "상태·제어" },
   { to: "/system-health", label: "헬스", description: "시스템 모니터링" },

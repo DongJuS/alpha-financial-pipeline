@@ -29,7 +29,7 @@ from src.db.queries import (
 )
 from src.llm.claude_client import ClaudeClient
 from src.llm.gemini_client import GeminiClient
-from src.llm.gpt_client import GPTClient
+from src.services.datalake import store_predictions
 from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import TOPIC_SIGNALS, publish_message, set_heartbeat
 
@@ -50,10 +50,26 @@ class PredictorAgent:
         self.llm_model = llm_model
         self.persona = persona
         self.claude = ClaudeClient(model=llm_model if "claude" in llm_model.lower() else "claude-3-5-sonnet-latest")
-        self.gpt = GPTClient(model=llm_model if "gpt" in llm_model.lower() else "gpt-4o-mini")
         self.gemini = GeminiClient(model=llm_model if "gemini" in llm_model.lower() else "gemini-1.5-pro")
         # 에이전트별 temperature 다양성 (동일 데이터에서 다른 응답 유도)
         self._temperature = self._compute_temperature(agent_id)
+
+        # ── Startup Validation: 최소 1개 LLM provider 필수 ──
+        configured_providers: list[str] = []
+        if self.claude.is_configured:
+            configured_providers.append(f"claude({'CLI' if self.claude._cli_command else 'SDK'})")
+        if self.gemini.is_configured:
+            configured_providers.append(f"gemini({self.gemini.auth_mode or '?'})")
+
+        if not configured_providers:
+            msg = (
+                f"[{agent_id}] 사용 가능한 LLM provider가 없습니다. "
+                f"Claude CLI 또는 Gemini OAuth(ADC) 중 하나는 반드시 설정되어야 합니다. "
+                f"Claude CLI: `claude` 바이너리 PATH 확인 / Gemini: `gcloud auth application-default login` 실행"
+            )
+            logger.error(msg)
+            raise RuntimeError(msg)
+        logger.info("[%s] LLM providers 준비 완료: %s", agent_id, ", ".join(configured_providers))
 
     @staticmethod
     def _compute_temperature(agent_id: str) -> float:
@@ -69,15 +85,14 @@ class PredictorAgent:
 
     def _provider_name(self) -> str:
         model = self.llm_model.lower()
-        if "gpt" in model:
-            return "gpt"
         if "gemini" in model:
             return "gemini"
         return "claude"
 
     def _provider_order(self) -> list[str]:
+        """Claude CLI → Gemini OAuth 순으로 폴백 (API Key 미사용)."""
         primary = self._provider_name()
-        rest = [p for p in ["claude", "gpt", "gemini"] if p != primary]
+        rest = [p for p in ["claude", "gemini"] if p != primary]
         return [primary, *rest]
 
     async def _llm_signal(self, ticker: str, candles: list[dict], position: dict | None = None) -> dict[str, Any]:
@@ -132,13 +147,12 @@ class PredictorAgent:
         for provider in self._provider_order():
             attempted_providers.append(provider)
             try:
-                if provider == "gpt" and self.gpt.is_configured:
-                    raw = await self.gpt.ask_json(prompt, temperature=temp)
-                elif provider == "gemini" and self.gemini.is_configured:
+                if provider == "gemini" and self.gemini.is_configured:
                     raw = await self.gemini.ask_json(prompt, temperature=temp)
                 elif provider == "claude" and self.claude.is_configured:
                     raw = await self.claude.ask_json(prompt, temperature=temp)
                 else:
+                    logger.debug("%s provider 미설정 — 스킵: %s", self.agent_id, provider)
                     continue
 
                 signal = str(raw.get("signal", "HOLD")).upper()
@@ -155,8 +169,14 @@ class PredictorAgent:
             except Exception as e:
                 logger.warning("%s 신호 생성 실패 [%s]: %s", provider, ticker, e)
 
+        provider_detail = {
+            "claude": self.claude.is_configured,
+            "gemini": self.gemini.is_configured,
+        }
         raise RuntimeError(
-            f"사용 가능한 LLM provider가 없어 예측을 생성하지 못했습니다. providers={attempted_providers}, ticker={ticker}"
+            f"모든 LLM provider 호출 실패 — ticker={ticker}, "
+            f"시도한 providers={attempted_providers}, "
+            f"설정 상태={provider_detail}"
         )
 
     async def run_once(self, tickers: list[str] | None = None, limit: int = 10) -> list[PredictionSignal]:
@@ -182,7 +202,11 @@ class PredictorAgent:
                         ticker=ticker, candles=candles, position=position,
                     )
                 except Exception as e:
-                    logger.warning("%s 예측 생략 [%s]: %s", self.agent_id, ticker, e)
+                    logger.error(
+                        "%s 예측 실패 [%s]: %s",
+                        self.agent_id, ticker, e,
+                        exc_info=True,
+                    )
                     return None
                 return PredictionSignal(
                     agent_id=self.agent_id,
@@ -214,6 +238,13 @@ class PredictorAgent:
                 continue
             await insert_prediction(pred)
             results.append(pred)
+
+        # S3 Data Lake에 예측 시그널 저장
+        try:
+            s3_records = [r.model_dump() for r in results]
+            await store_predictions(s3_records)
+        except Exception as e:
+            logger.error("S3 예측 저장 실패 (DB 저장은 완료됨): %s", e, exc_info=True)
 
         if self.strategy == "A":
             await upsert_tournament_score(
@@ -257,11 +288,22 @@ class PredictorAgent:
                 metrics={
                     "predictions": len(results),
                     "failed_tickers": len(failed_tickers),
+                    "failed_ticker_list": failed_tickers[:10],
                     "strategy": self.strategy,
+                    "providers": {
+                        "claude": self.claude.is_configured,
+                        "gemini": self.gemini.is_configured,
+                    },
                 },
             )
         )
-        logger.info("PredictorAgent 실행 완료: %d종목", len(results))
+        if failed_tickers:
+            logger.error(
+                "PredictorAgent [%s] 실행 결과: 성공 %d / 실패 %d — 실패 종목: %s",
+                self.agent_id, len(results), len(failed_tickers), failed_tickers,
+            )
+        else:
+            logger.info("PredictorAgent [%s] 실행 완료: %d종목 전부 성공", self.agent_id, len(results))
         return results
 
 

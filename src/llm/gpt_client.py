@@ -15,22 +15,19 @@ logger = get_logger(__name__)
 
 
 class GPTClient:
+    """OpenAI GPT 클라이언트 — 현재 비활성 (OAuth 전환 예정).
+
+    OPENAI_API_KEY 방식은 제거되었습니다. 향후 OAuth 기반으로 재활성화할 수 있습니다.
+    """
+
     _global_quota_exhausted = False
 
     def __init__(self, model: str = "gpt-4o-mini") -> None:
         self.model = model
-        settings = get_settings()
-        self.api_key = settings.openai_api_key
         self._client: Optional[Any] = None
         self._quota_exhausted = self.__class__._global_quota_exhausted
-        if is_placeholder_secret(self.api_key):
-            return
-        try:
-            from openai import AsyncOpenAI
-            self._client = AsyncOpenAI(api_key=self.api_key)
-        except Exception as e:
-            logger.warning("OpenAI SDK 초기화 실패: %s", e)
-            self._client = None
+        # GPT는 현재 비활성 — OAuth 전환 전까지 사용하지 않음
+        logger.debug("GPTClient 초기화 스킵: OAuth 전환 전까지 비활성")
 
     @property
     def is_configured(self) -> bool:

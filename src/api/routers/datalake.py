@@ -85,7 +85,17 @@ async def get_datalake_overview(
                 prefix_stats[top_prefix]["size"] += obj.get("Size", 0)
         return total_objects, total_size, prefix_stats
 
-    total_objects, total_size, prefix_stats = await asyncio.to_thread(_scan)
+    try:
+        total_objects, total_size, prefix_stats = await asyncio.to_thread(_scan)
+    except Exception as e:
+        logger.warning("S3 데이터 레이크 조회 실패 (서비스 미연결): %s", e)
+        return DataLakeOverview(
+            bucket_name=bucket,
+            total_objects=0,
+            total_size_bytes=0,
+            total_size_display="0 B",
+            prefixes=[],
+        )
 
     prefixes = [
         {
@@ -141,7 +151,16 @@ async def list_datalake_objects(
         common_prefixes = [cp["Prefix"] for cp in resp.get("CommonPrefixes", [])]
         return objects, common_prefixes
 
-    objects, common_prefixes = await asyncio.to_thread(_list)
+    try:
+        objects, common_prefixes = await asyncio.to_thread(_list)
+    except Exception as e:
+        logger.warning("S3 오브젝트 목록 조회 실패 (서비스 미연결): %s", e)
+        return S3ObjectListResponse(
+            prefix=prefix,
+            objects=[],
+            common_prefixes=[],
+            total=0,
+        )
 
     return S3ObjectListResponse(
         prefix=prefix,

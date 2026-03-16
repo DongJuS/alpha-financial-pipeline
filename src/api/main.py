@@ -16,6 +16,7 @@ from src.api.routers import (
     audit,
     auth,
     datalake,
+    feedback,
     market,
     marketplace,
     models,
@@ -98,6 +99,7 @@ app.include_router(rl.router, prefix=f"{API_PREFIX}/rl", tags=["rl"])
 app.include_router(system_health.router, prefix=f"{API_PREFIX}/system", tags=["system-health"])
 app.include_router(datalake.router, prefix=f"{API_PREFIX}/datalake", tags=["datalake"])
 app.include_router(audit.router, prefix=f"{API_PREFIX}/audit", tags=["audit"])
+app.include_router(feedback.router, prefix=f"{API_PREFIX}/feedback", tags=["feedback"])
 
 
 # ─── 헬스 체크 ────────────────────────────────────────────────────────────────────────────────────────

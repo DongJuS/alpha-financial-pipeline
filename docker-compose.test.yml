@@ -42,11 +42,6 @@ services:
       S3_SECRET_KEY: test_minio_secret
       S3_BUCKET_NAME: alpha-test-lake
       S3_REGION: ap-northeast-2
-      # LLM API 키 (테스트에서 skip되거나 모킹됨)
-      ANTHROPIC_API_KEY: sk-test-000000000000000000000000
-      OPENAI_API_KEY: sk-test-000000000000000000000000
-      GOOGLE_API_KEY: test-key-000000000000000000
-      GEMINI_API_KEY: test-key-000000000000000000
       # KIS 브로커 (테스트 모드)
       KIS_API_KEY: test-kis-key
       KIS_SECRET_KEY: test-kis-secret

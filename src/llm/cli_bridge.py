@@ -34,9 +34,14 @@ def build_cli_command(template: str, model: str) -> list[str]:
     """
     CLI 커맨드 템플릿을 토큰화합니다.
     - {model} 플레이스홀더를 현재 모델명으로 치환합니다.
+    - 템플릿이 비어있으면 claude 바이너리를 자동 감지하여 기본 커맨드를 생성합니다.
     """
     rendered = (template or "").strip().replace("{model}", model)
     if not rendered:
+        # 자동 감지: claude 바이너리가 있으면 기본 커맨드 생성
+        resolved = _resolve_cli_path("claude")
+        if resolved != "claude" or shutil.which("claude"):
+            return [resolved, "-p", "--model", model]
         return []
     tokens = shlex.split(rendered)
     if tokens:

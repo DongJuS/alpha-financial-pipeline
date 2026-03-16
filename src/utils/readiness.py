@@ -253,10 +253,12 @@ async def evaluate_real_trading_readiness() -> dict[str, Any]:
                 }
             )
 
-    # 8) LLM 키 최소 1개
-    llm_values = [settings.anthropic_api_key, settings.openai_api_key, settings.gemini_api_key]
+    # 8) LLM 자격증명 최소 1개 (Claude CLI 또는 Gemini OAuth)
+    from src.llm.cli_bridge import build_cli_command, is_cli_available
+    claude_cli_ok = bool(build_cli_command(settings.anthropic_cli_command, model="claude-opus-4-6")) or is_cli_available([])
     gemini_oauth_ok = gemini_oauth_available()
-    llm_ok = any(v and not _is_placeholder(v) for v in llm_values) or gemini_oauth_ok
+    llm_api_key_values = [settings.anthropic_api_key, settings.gemini_api_key]
+    llm_ok = claude_cli_ok or gemini_oauth_ok or any(v and not _is_placeholder(v) for v in llm_api_key_values)
     checks.append(
         {
             "key": "llm:any",

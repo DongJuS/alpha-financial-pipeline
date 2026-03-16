@@ -27,6 +27,7 @@ load_dotenv(ROOT / ".env")
 
 from src.db.models import AgentHeartbeatRecord, MarketDataPoint
 from src.db.queries import insert_heartbeat, upsert_market_data
+from src.services.datalake import store_daily_bars
 from src.services.yahoo_finance import fetch_daily_bars
 from src.utils.config import get_settings, kis_app_key_for_scope, kis_app_secret_for_scope
 from src.utils.logging import get_logger, setup_logging
@@ -554,6 +555,13 @@ class CollectorAgent:
 
         saved = await upsert_market_data(points)
 
+        # S3 Data Lake에 Parquet으로 저장 (비필수 — 실패해도 수집 흐름 유지)
+        try:
+            s3_records = [p.model_dump() for p in points]
+            await store_daily_bars(s3_records)
+        except Exception as e:
+            logger.warning("S3 일봉 저장 스킵: %s", e)
+
         for point in latest_points:
             await self._cache_latest_tick(point, source="fdr_daily")
 
@@ -656,6 +664,14 @@ class CollectorAgent:
                 )
 
         saved = await upsert_market_data(points)
+
+        # S3 Data Lake 저장
+        try:
+            s3_records = [p.model_dump() for p in points]
+            await store_daily_bars(s3_records)
+        except Exception as e:
+            logger.warning("S3 Yahoo 일봉 저장 스킵: %s", e)
+
         await self._beat(
             status="healthy",
             last_action=f"Yahoo 일봉 수집 완료 ({saved}건)",

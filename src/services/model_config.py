@@ -90,7 +90,7 @@ def provider_name_for_model(model: str) -> str:
         return "claude"
     if "gemini" in text:
         return "gemini"
-    raise ValueError(f"지원하지 않는 provider 모델명입니다: {model}")
+    raise ValueError(f"지원하지 않는 provider 모델명입니다: {model}. 허용: claude, gemini")
 
 
 def provider_status() -> list[dict]:
@@ -101,7 +101,7 @@ def provider_status() -> list[dict]:
     if claude._cli_command:
         claude_mode = "CLI"
     elif claude._client is not None:
-        claude_mode = "SDK (API Key)"
+        claude_mode = "SDK (Fallback)"
     else:
         claude_mode = "미연결"
 

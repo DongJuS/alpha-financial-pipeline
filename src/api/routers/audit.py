@@ -77,13 +77,13 @@ async def get_audit_trail(
                 signal_source AS agent_id,
                 CONCAT(side, ' ', name, ' x', quantity, ' @ ', price) AS description,
                 'executed' AS result
-            FROM real_trading_audit
+            FROM trade_history
             UNION ALL
             SELECT
                 'operational_audit' AS event_type,
-                to_char(checked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_time,
-                agent_id,
-                check_name AS description,
+                to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_time,
+                executed_by AS agent_id,
+                audit_type || ': ' || summary AS description,
                 CASE WHEN passed THEN 'pass' ELSE 'fail' END AS result
             FROM operational_audits
             UNION ALL
@@ -101,7 +101,11 @@ async def get_audit_trail(
     """
     params.extend([limit, offset])
 
-    rows = await fetch(base_query, *params)
+    try:
+        rows = await fetch(base_query, *params)
+    except Exception as e:
+        logger.warning("감사 추적 조회 실패 (DB 미연결 또는 테이블 없음): %s", e)
+        return AuditTrailResponse(data=[], total=0, page=page, limit=limit)
 
     # Count total
     count_query = f"""
@@ -110,11 +114,11 @@ async def get_audit_trail(
                    to_char(executed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_time,
                    signal_source AS agent_id,
                    '' AS description, '' AS result
-            FROM real_trading_audit
+            FROM trade_history
             UNION ALL
             SELECT 'operational_audit' AS event_type,
-                   to_char(checked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_time,
-                   agent_id, '' AS description, '' AS result
+                   to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_time,
+                   executed_by AS agent_id, '' AS description, '' AS result
             FROM operational_audits
             UNION ALL
             SELECT 'notification' AS event_type,
@@ -125,8 +129,11 @@ async def get_audit_trail(
         SELECT COUNT(*) AS cnt FROM unified{where_clause}
     """
     count_params = params[:-2]  # exclude limit/offset
-    count_row = await fetchrow(count_query, *count_params)
-    total = int(count_row["cnt"]) if count_row else 0
+    try:
+        count_row = await fetchrow(count_query, *count_params)
+        total = int(count_row["cnt"]) if count_row else 0
+    except Exception:
+        total = len(rows)
 
     return AuditTrailResponse(
         data=[AuditTrailItem(**dict(r)) for r in rows],
@@ -141,10 +148,18 @@ async def get_audit_summary(
     _: Annotated[dict, Depends(get_current_user)],
 ) -> AuditSummary:
     """감사 이벤트 요약 (총 이벤트, 통과율, 유형별 분류)을 반환합니다."""
+    try:
+        return await _fetch_audit_summary()
+    except Exception as e:
+        logger.warning("감사 요약 조회 실패 (DB 미연결 또는 테이블 없음): %s", e)
+        return AuditSummary(total_events=0, pass_rate=None, by_type={})
+
+
+async def _fetch_audit_summary() -> AuditSummary:
     summary_row = await fetchrow(
         """
         WITH unified AS (
-            SELECT 'trade' AS event_type, TRUE AS passed FROM real_trading_audit
+            SELECT 'trade' AS event_type, TRUE AS passed FROM trade_history
             UNION ALL
             SELECT 'operational_audit', passed FROM operational_audits
             UNION ALL
@@ -160,7 +175,7 @@ async def get_audit_summary(
     type_rows = await fetch(
         """
         WITH unified AS (
-            SELECT 'trade' AS event_type FROM real_trading_audit
+            SELECT 'trade' AS event_type FROM trade_history
             UNION ALL
             SELECT 'operational_audit' FROM operational_audits
             UNION ALL
