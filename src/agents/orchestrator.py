@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import argparse
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 import json
 import sys
 from pathlib import Path
@@ -30,10 +30,10 @@ from src.brokers import build_virtual_broker
 from src.brokers.virtual_broker import VirtualBroker
 from src.db.models import AgentHeartbeatRecord, PredictionSignal
 from src.db.queries import (
-    get_predictor_performance,
     insert_heartbeat,
-    insert_prediction,
 )
+from src.agents.strategy_runner import StrategyRegistry, StrategyRunner
+from src.services.datalake import store_blend_results, store_orders
 from src.utils.aggregate_risk import AggregateRiskMonitor
 from src.utils.config import get_settings
 from src.utils.logging import get_logger, setup_logging
@@ -41,7 +41,6 @@ from src.utils.redis_client import set_heartbeat
 from src.utils.strategy_promotion import StrategyPromoter
 
 if TYPE_CHECKING:
-    from src.agents.orchestrator import StrategyRunner
     from src.agents.portfolio_manager import PortfolioManagerAgent
     from src.agents.notifier import NotifierAgent
 
@@ -50,32 +49,12 @@ logger = get_logger(__name__)
 
 # N-way 블렌딩 가중치
 # A: 토너먼트 (30%), B: 토론 (30%), S: 검색 (20%), RL: 강화학습 (20%)
-STRATEGY_BLEND_WEIGHTS = {
+DEFAULT_BLEND_WEIGHTS: dict[str, float] = {
     "A": 0.30,
     "B": 0.30,
     "S": 0.20,
     "RL": 0.20,
 }
-
-
-class StrategyRunnerRegistry:
-    """전략 러너 (StrategyRunner) 등록 및 관리"""
-
-    def __init__(self) -> None:
-        self._runners: dict[str, StrategyRunner] = {}
-
-    def register(self, runner: StrategyRunner) -> None:
-        """전략 러너를 등록합니다."""
-        self._runners[runner.name] = runner
-        logger.info(f"Registered strategy runner: {runner.name}")
-
-    def get(self, name: str) -> StrategyRunner | None:
-        """전략 러너를 조회합니다."""
-        return self._runners.get(name)
-
-    def list_runners(self) -> list[str]:
-        """등록된 모든 러너를 목록으로 반환합니다."""
-        return list(self._runners.keys())
 
 
 class OrchestratorAgent:
@@ -100,17 +79,26 @@ class OrchestratorAgent:
         independent_portfolio: bool = False,
     ) -> None:
         self.agent_id = agent_id
-        self.strategy_blend_weights = strategy_blend_weights or STRATEGY_BLEND_WEIGHTS
-        self.registry = StrategyRunnerRegistry()
+        self.strategy_blend_weights = strategy_blend_weights or DEFAULT_BLEND_WEIGHTS
+        self.registry = StrategyRegistry()
         self.independent_portfolio = independent_portfolio
 
         # 독립 포트폴리오 모드용 per-strategy PM 인스턴스
         self._strategy_portfolios: dict[str, PortfolioManagerAgent] = {}
         self._strategy_virtual_brokers: dict[str, VirtualBroker] = {}
 
+    # ── Strategy Registration ──────────────────────────────────────────────
+
     def register_strategy(self, runner: StrategyRunner) -> None:
         """전략 러너를 등록합니다."""
         self.registry.register(runner)
+
+    def register_strategies(self, *runners: StrategyRunner) -> None:
+        """여러 전략 러너를 한 번에 등록합니다."""
+        for runner in runners:
+            self.registry.register(runner)
+
+    # ── Per-strategy Portfolio Management ──────────────────────────────────
 
     def _get_portfolio_for_strategy(
         self,
@@ -118,7 +106,6 @@ class OrchestratorAgent:
     ) -> PortfolioManagerAgent:
         """전략별 PM 인스턴스를 지연 생성합니다."""
         if strategy_id not in self._strategy_portfolios:
-            # 동적으로 임포트하여 순환 임포트 방지
             from src.agents.portfolio_manager import PortfolioManagerAgent
 
             pm = PortfolioManagerAgent(
@@ -151,39 +138,17 @@ class OrchestratorAgent:
             )
         return self._strategy_virtual_brokers[strategy_id]
 
+    # ── Core Cycle ─────────────────────────────────────────────────────────
+
     async def run_strategies(
         self,
         tickers: list[str],
     ) -> dict[str, list[PredictionSignal]]:
-        """모든 등록된 러너를 병렬 실행합니다.
-
-        Returns:
-            {
-                "A": [signal1, signal2, ...],
-                "B": [signal1, signal2, ...],
-                "S": [signal1, signal2, ...],
-                ...
-            }
-        """
-        tasks = []
-        runner_names = []
-        for runner_name in self.registry.list_runners():
-            runner = self.registry.get(runner_name)
-            if runner:
-                tasks.append(runner.run(tickers))
-                runner_names.append(runner_name)
-
-        signals_by_runner = await asyncio.gather(*tasks, return_exceptions=True)
-
-        result = {}
-        for runner_name, signals in zip(runner_names, signals_by_runner):
-            if isinstance(signals, Exception):
-                logger.error(f"Strategy {runner_name} failed: {signals}")
-                result[runner_name] = []
-            else:
-                result[runner_name] = signals
-
-        return result
+        """등록된 모든 러너를 병렬 실행합니다 (StrategyRegistry.run_all 위임)."""
+        if self.registry.runner_count == 0:
+            logger.warning("전략 러너가 등록되지 않았습니다. registry가 비어 있습니다.")
+            return {}
+        return await self.registry.run_all(tickers)
 
     async def run_cycle(self, tickers: list[str]) -> dict:
         """한 사이클 실행: 수집 -> 전략 실행 -> 블렌딩/독립 처리 -> 주문 실행.
@@ -192,20 +157,9 @@ class OrchestratorAgent:
             tickers: 분석할 티커 목록
 
         Returns:
-            {
-                "collected": int,
-                "predicted": int,
-                "orders": int,
-                "mode": str,
-                "started_at": str,
-                "finished_at": str,
-                "active_strategies": list[str],
-                "blend_meta": dict | None,
-                "risk_violations": list | None,
-                "promotion_alerts": list | None,
-            }
+            사이클 실행 결과 dict
         """
-        started = datetime.utcnow()
+        started = datetime.now(timezone.utc)
         try:
             # ── 전략 병렬 실행 ──
             all_predictions = await self.run_strategies(tickers)
@@ -217,20 +171,19 @@ class OrchestratorAgent:
                     "predicted": 0,
                     "orders": 0,
                     "mode": "no_predictions",
-                    "started_at": started.isoformat() + "Z",
-                    "finished_at": datetime.utcnow().isoformat() + "Z",
+                    "started_at": started.isoformat(),
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
                     "active_strategies": [],
                 }
 
-            # 기본 정보
             collected_count = sum(
                 len(preds) for preds in all_predictions.values()
             )
             predicted_count = collected_count
 
-            all_orders = []
-            promotion_alerts = []
-            risk_violations = []
+            all_orders: list = []
+            promotion_alerts: list[str] = []
+            risk_violations: list = []
 
             if self.independent_portfolio:
                 # ── 독립 포트폴리오 모드 ──
@@ -239,7 +192,6 @@ class OrchestratorAgent:
                     len(all_predictions),
                 )
 
-                # 집계 위험 모니터 확인
                 risk_monitor = AggregateRiskMonitor()
                 risk_summary = await risk_monitor.get_risk_summary()
 
@@ -250,7 +202,6 @@ class OrchestratorAgent:
                         risk_violations,
                     )
 
-                # 전략별 처리
                 for strategy_name, predictions in all_predictions.items():
                     logger.info(
                         "Processing %d predictions for strategy %s",
@@ -261,7 +212,6 @@ class OrchestratorAgent:
                     if not predictions:
                         continue
 
-                    # 전략별 PM으로 라우팅
                     portfolio_mgr = self._get_portfolio_for_strategy(
                         strategy_name
                     )
@@ -319,7 +269,6 @@ class OrchestratorAgent:
                             e,
                         )
 
-                # 위험 스냅샷 기록
                 try:
                     await risk_monitor.record_risk_snapshot()
                 except Exception as e:
@@ -331,12 +280,13 @@ class OrchestratorAgent:
                 blend_meta = None
 
             else:
-                # ── 기본 블렌딩 모드 (향후 확장) ──
+                # ── 기본 블렌딩 모드 ──
                 logger.info(
                     "Running in blend mode with %d strategies",
                     len(all_predictions),
                 )
-                # 이 부분은 향후 _blend_nway_predictions 로직 추가 예정
+                blended = self._blend_nway_predictions(all_predictions)
+                all_orders = await self._execute_blended_signals(blended)
                 mode_name = "blend_mode"
                 blend_meta = {
                     "strategies": list(all_predictions.keys()),
@@ -344,8 +294,45 @@ class OrchestratorAgent:
                         k: round(self.strategy_blend_weights.get(k, 0.0), 4)
                         for k in all_predictions.keys()
                     },
+                    "blended_signals": len(blended),
                 }
-                all_orders = []
+
+            # S3 Data Lake에 블렌딩 결과 + 주문 기록 저장
+            try:
+                if blended:
+                    blend_records = [
+                        {
+                            "ticker": s.ticker,
+                            "blended_signal": s.signal,
+                            "blended_confidence": s.confidence,
+                            "strategy_weights": json.dumps(
+                                self.strategy_blend_weights, ensure_ascii=False
+                            ),
+                            "created_at": datetime.now(timezone.utc),
+                        }
+                        for s in blended
+                    ]
+                    await store_blend_results(blend_records)
+                if all_orders:
+                    order_records = [
+                        {
+                            "ticker": o.get("ticker", ""),
+                            "name": o.get("name", ""),
+                            "signal": o.get("signal", ""),
+                            "quantity": o.get("quantity", 0),
+                            "price": o.get("price", 0),
+                            "signal_source": o.get("signal_source", "BLEND"),
+                            "agent_id": o.get("agent_id", self.agent_id),
+                            "account_scope": o.get("account_scope", "paper"),
+                            "strategy_id": o.get("strategy_id", ""),
+                            "created_at": datetime.now(timezone.utc),
+                        }
+                        for o in all_orders
+                        if isinstance(o, dict)
+                    ]
+                    await store_orders(order_records)
+            except Exception as e:
+                logger.warning("S3 블렌딩/주문 저장 스킵: %s", e)
 
             # 기록
             await set_heartbeat(self.agent_id)
@@ -354,14 +341,12 @@ class OrchestratorAgent:
                 "predicted": predicted_count,
                 "orders": len(all_orders),
                 "mode": mode_name,
-                "started_at": started.isoformat() + "Z",
-                "finished_at": datetime.utcnow().isoformat() + "Z",
+                "started_at": started.isoformat(),
+                "finished_at": datetime.now(timezone.utc).isoformat(),
                 "active_strategies": list(all_predictions.keys()),
-                "blend_meta": blend_meta,
-                "risk_violations": risk_violations if risk_violations else None,
-                "promotion_alerts": (
-                    promotion_alerts if promotion_alerts else None
-                ),
+                "blend_meta": blend_meta if not self.independent_portfolio else None,
+                "risk_violations": risk_violations or None,
+                "promotion_alerts": promotion_alerts or None,
             }
 
             await insert_heartbeat(
@@ -390,6 +375,94 @@ class OrchestratorAgent:
             )
             logger.exception(err_msg)
             raise
+
+    # ── N-way Blending ─────────────────────────────────────────────────────
+
+    def _blend_nway_predictions(
+        self,
+        all_predictions: dict[str, list[PredictionSignal]],
+    ) -> list[PredictionSignal]:
+        """N-way 가중 블렌딩으로 티커별 최종 신호를 생성합니다.
+
+        각 전략의 confidence에 가중치를 곱한 뒤, 티커별로 BUY/SELL/HOLD 스코어를
+        합산하여 가장 높은 스코어의 signal을 최종 신호로 채택합니다.
+        """
+        # 티커별로 (signal, weighted_confidence) 누적
+        ticker_scores: dict[str, dict[str, float]] = {}
+        ticker_best_signal: dict[str, PredictionSignal] = {}
+
+        for strategy_name, predictions in all_predictions.items():
+            weight = self.strategy_blend_weights.get(strategy_name, 0.0)
+            if weight <= 0.0:
+                continue
+
+            for pred in predictions:
+                if pred.ticker not in ticker_scores:
+                    ticker_scores[pred.ticker] = {"BUY": 0.0, "SELL": 0.0, "HOLD": 0.0}
+                    ticker_best_signal[pred.ticker] = pred
+
+                signal_key = pred.signal.upper()
+                if signal_key in ticker_scores[pred.ticker]:
+                    ticker_scores[pred.ticker][signal_key] += pred.confidence * weight
+
+        blended: list[PredictionSignal] = []
+        for ticker, scores in ticker_scores.items():
+            # 가장 높은 스코어의 시그널 선택
+            best_signal = max(scores, key=scores.get)  # type: ignore[arg-type]
+            total_weight = sum(scores.values())
+            blended_confidence = scores[best_signal] / total_weight if total_weight > 0 else 0.5
+
+            # 기존 PredictionSignal을 기반으로 블렌딩된 신호 생성
+            base = ticker_best_signal[ticker]
+            blended.append(
+                PredictionSignal(
+                    agent_id="orchestrator_blend",
+                    llm_model="blend",
+                    strategy="BLEND",
+                    ticker=ticker,
+                    signal=best_signal,
+                    confidence=round(min(1.0, blended_confidence), 4),
+                    target_price=base.target_price,
+                    stop_loss=base.stop_loss,
+                    reasoning_summary=(
+                        f"N-way blend: {', '.join(f'{k}={v:.3f}' for k, v in scores.items())}"
+                    ),
+                    trading_date=base.trading_date,
+                )
+            )
+            logger.debug(
+                "Blended %s: %s (conf=%.4f) scores=%s",
+                ticker,
+                best_signal,
+                blended_confidence,
+                scores,
+            )
+
+        return blended
+
+    async def _execute_blended_signals(
+        self,
+        blended_signals: list[PredictionSignal],
+    ) -> list:
+        """블렌딩된 신호를 포트폴리오 매니저로 전달하여 주문을 실행합니다."""
+        if not blended_signals:
+            return []
+
+        from src.agents.portfolio_manager import PortfolioManagerAgent
+
+        pm = PortfolioManagerAgent(agent_id="portfolio_manager_blend")
+        try:
+            orders = await pm.process_predictions(
+                blended_signals,
+                signal_source_override="BLEND",
+            )
+            logger.info("Blend mode: %d orders executed", len(orders))
+            return orders
+        except Exception as e:
+            logger.error("Blend mode order execution failed: %s", e)
+            return []
+
+    # ── Notifier ───────────────────────────────────────────────────────────
 
     def _create_notifier(self) -> NotifierAgent:
         """NotifierAgent 인스턴스를 생성합니다."""
