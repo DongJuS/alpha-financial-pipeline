@@ -184,16 +184,16 @@ class CollectorAgent:
             "updated_at": point.timestamp_kst.isoformat(),
             "source": source,
         }
-        await redis.set(
-            KEY_LATEST_TICKS.format(ticker=point.ticker),
-            json.dumps(payload, ensure_ascii=False),
-            ex=60,
-        )
-        series_key = KEY_REALTIME_SERIES.format(ticker=point.ticker)
         encoded = json.dumps(payload, ensure_ascii=False)
-        await redis.lpush(series_key, encoded)
-        await redis.ltrim(series_key, 0, 299)
-        await redis.expire(series_key, TTL_REALTIME_SERIES)
+        series_key = KEY_REALTIME_SERIES.format(ticker=point.ticker)
+
+        # Redis pipeline: 4 round trips → 1 round trip
+        pipe = redis.pipeline(transaction=False)
+        pipe.set(KEY_LATEST_TICKS.format(ticker=point.ticker), encoded, ex=60)
+        pipe.lpush(series_key, encoded)
+        pipe.ltrim(series_key, 0, 299)
+        pipe.expire(series_key, TTL_REALTIME_SERIES)
+        await pipe.execute()
 
     async def _get_access_token(self) -> Optional[str]:
         redis = await get_redis()
@@ -343,6 +343,190 @@ class CollectorAgent:
             "volume": volume,
             "raw": raw,
         }
+
+    # ── Historical Data Bulk Collection ─────────────────────────────────────
+
+    async def fetch_historical_ohlcv(
+        self,
+        ticker: str,
+        start_date: str,
+        end_date: str,
+        interval: str = "daily",
+        name: str = "",
+        market: str = "KOSPI",
+    ) -> list[MarketDataPoint]:
+        """과거 OHLCV 데이터를 수집합니다.
+
+        Args:
+            ticker: 종목코드
+            start_date: 시작일 (YYYY-MM-DD)
+            end_date: 종료일 (YYYY-MM-DD)
+            interval: 'daily' 또는 'minute'
+            name: 종목명 (없으면 ticker 사용)
+            market: 시장 구분 (KOSPI / KOSDAQ)
+
+        Returns:
+            수집된 MarketDataPoint 리스트
+        """
+        if interval == "minute":
+            return await self._fetch_historical_intraday(
+                ticker, start_date, end_date, name or ticker, market,
+            )
+        return await self._fetch_historical_daily(
+            ticker, start_date, end_date, name or ticker, market,
+        )
+
+    async def _fetch_historical_daily(
+        self,
+        ticker: str,
+        start_date: str,
+        end_date: str,
+        name: str,
+        market: str,
+    ) -> list[MarketDataPoint]:
+        """FinanceDataReader를 이용한 일봉 과거 데이터 수집."""
+        fdr = self._load_fdr()
+
+        def _fetch():
+            df = fdr.DataReader(ticker, start_date, end_date)
+            if df is None or df.empty:
+                return []
+            points: list[MarketDataPoint] = []
+            for index, row in df.iterrows():
+                trade_date = index.date() if hasattr(index, "date") else datetime.now(KST).date()
+                ts = datetime(
+                    trade_date.year, trade_date.month, trade_date.day,
+                    15, 30, tzinfo=KST,
+                )
+                change_raw = row.get("Change")
+                change_pct = float(change_raw * 100.0) if change_raw is not None else None
+                points.append(
+                    MarketDataPoint(
+                        ticker=ticker,
+                        name=name,
+                        market=market if market in {"KOSPI", "KOSDAQ"} else "KOSPI",
+                        timestamp_kst=ts,
+                        interval="daily",
+                        open=int(row.get("Open", 0)),
+                        high=int(row.get("High", 0)),
+                        low=int(row.get("Low", 0)),
+                        close=int(row.get("Close", 0)),
+                        volume=int(row.get("Volume", 0)),
+                        change_pct=change_pct,
+                    )
+                )
+            return points
+
+        points = await asyncio.to_thread(_fetch)
+        if points:
+            from src.db.queries import upsert_market_data
+            saved = await upsert_market_data(points)
+            logger.info("Historical daily [%s] %s~%s: %d건 저장", ticker, start_date, end_date, saved)
+        return points
+
+    async def _fetch_historical_intraday(
+        self,
+        ticker: str,
+        start_date: str,
+        end_date: str,
+        name: str,
+        market: str,
+    ) -> list[MarketDataPoint]:
+        """KIS API를 이용한 분봉 과거 데이터 수집 (초당 1회 제한)."""
+        scope = self._account_scope()
+        app_key = kis_app_key_for_scope(self.settings, scope)
+        app_secret = kis_app_secret_for_scope(self.settings, scope)
+        token = await self._get_access_token()
+
+        if not token or not app_key:
+            logger.warning("KIS 인증 정보 미설정 — 분봉 수집 건너뜀 [%s]", ticker)
+            return []
+
+        headers = {
+            "authorization": f"Bearer {token}",
+            "appkey": app_key,
+            "appsecret": app_secret,
+            "tr_id": "FHKST03010200",
+            "custtype": "P",
+        }
+
+        points: list[MarketDataPoint] = []
+        base_url = self.settings.kis_base_url_for_scope(scope)
+        url = f"{base_url}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice"
+
+        # 시작~종료 범위를 하루씩 순회
+        from datetime import date as date_cls
+        current = date_cls.fromisoformat(start_date)
+        end = date_cls.fromisoformat(end_date)
+
+        while current <= end:
+            date_str = current.strftime("%Y%m%d")
+            params = {
+                "FID_ETC_CLS_CODE": "",
+                "FID_COND_MRKT_DIV_CODE": "J",
+                "FID_INPUT_ISCD": ticker,
+                "FID_INPUT_HOUR_1": "153000",
+                "FID_PW_DATA_INCU_YN": "Y",
+            }
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.get(url, headers=headers, params=params)
+                    resp.raise_for_status()
+                    data = resp.json()
+
+                output2 = data.get("output2") or []
+                for item in output2:
+                    ts_str = item.get("stck_cntg_hour", "")
+                    if len(ts_str) >= 6:
+                        ts = datetime(
+                            current.year, current.month, current.day,
+                            int(ts_str[:2]), int(ts_str[2:4]), int(ts_str[4:6]),
+                            tzinfo=KST,
+                        )
+                    else:
+                        ts = datetime(current.year, current.month, current.day, 15, 30, tzinfo=KST)
+
+                    points.append(
+                        MarketDataPoint(
+                            ticker=ticker,
+                            name=name,
+                            market=market if market in {"KOSPI", "KOSDAQ"} else "KOSPI",
+                            timestamp_kst=ts,
+                            interval="tick",
+                            open=int(item.get("stck_oprc", 0)),
+                            high=int(item.get("stck_hgpr", 0)),
+                            low=int(item.get("stck_lwpr", 0)),
+                            close=int(item.get("stck_prpr", 0)),
+                            volume=int(item.get("cntg_vol", 0)),
+                            change_pct=None,
+                        )
+                    )
+            except Exception as e:
+                logger.warning("분봉 수집 실패 [%s/%s]: %s", ticker, date_str, e)
+
+            # KIS API rate limit: 초당 1회
+            await asyncio.sleep(1.0)
+            current = current + timedelta(days=1)
+
+        if points:
+            from src.db.queries import upsert_market_data
+            saved = await upsert_market_data(points)
+            logger.info("Historical intraday [%s] %s~%s: %d건 저장", ticker, start_date, end_date, saved)
+
+        return points
+
+    async def check_data_exists(self, ticker: str, interval: str = "daily") -> int:
+        """특정 종목의 기존 데이터 수를 확인합니다 (resume 지원용)."""
+        from src.utils.db_client import fetchval
+        count = await fetchval(
+            """
+            SELECT COUNT(*) FROM market_data
+            WHERE ticker = $1 AND interval = $2
+            """,
+            ticker,
+            interval,
+        )
+        return int(count or 0)
 
     async def collect_daily_bars(
         self,

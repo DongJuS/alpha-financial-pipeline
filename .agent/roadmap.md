@@ -102,11 +102,11 @@
 - [x] 승격 게이트 및 자동 정리 규칙 구현
 - [x] RL 실험 관리 시스템 구현 (profiles/ + experiments/ 디렉터리, RLExperimentManager)
 - [x] RL 하이퍼파라미터 프로파일 기반 재사용 구조 확보
-- [ ] RL dataset builder를 market/research feature 기준으로 확장
-- [ ] trading simulator/environment 정의 고도화
-- [ ] 정책 레지스트리 조회 API 추가 (REST 엔드포인트)
-- [ ] walk-forward / out-of-sample 평가 기준을 DB/API로 노출
-- [ ] shadow inference와 paper promotion gate 정교화
+- [x] RL dataset builder를 market/research feature 기준으로 확장 (RLDatasetBuilderV2)
+- [x] trading simulator/environment 정의 고도화 (TradingEnv Gymnasium 호환)
+- [x] 정책 레지스트리 조회 API 추가 (REST 17개 엔드포인트)
+- [x] walk-forward / out-of-sample 평가 기준을 DB/API로 노출 (WalkForwardEvaluator)
+- [x] shadow inference와 paper promotion gate 정교화 (ShadowInferenceEngine)
 
 완료 기준:
 - 학습 결과가 dataset version, config, artifact hash와 함께 저장
@@ -168,7 +168,7 @@
 
 논의 문서: `.agent/discussions/20260314-strategy-ab-rl-extension.md`
 
-### Phase 12 — 전략별 독립 포트폴리오 + 가상 트레이딩 (향후)
+### Phase 12 — 전략별 독립 포트폴리오 + 가상 트레이딩
 
 목표:
 - 각 전략이 독립적인 포트폴리오를 운용 (블렌딩 → 독립 전환)
@@ -189,7 +189,23 @@ Strategy S  → [real] [paper] [virtual]
 Strategy L  → [real] [paper] [virtual]
 ```
 
-착수 시점: Phase 11 운용 데이터가 쌓이고 전략별 성과 비교가 의미 있는 시점
+현재 상태:
+- [x] DB 격리: `strategy_id` 컬럼 + `COALESCE(strategy_id, '')` 유니크 인덱스
+- [x] VirtualBroker: 슬리피지(0~N bps), 부분 체결(50~100%), 체결 지연(0~N초) 시뮬레이션
+- [x] 전략 승격 파이프라인: `StrategyPromoter` (virtual→paper→real 평가/실행/DB 기록)
+- [x] 합산 리스크 모니터링: `AggregateRiskMonitor` (단일 종목 노출/전략 간 중복도)
+- [x] 데이터 파이프라인: Historical OHLCV 벌크 수집 (FinanceDataReader + KIS API)
+- [x] Orchestrator `--independent-portfolio` 모드: 전략별 독립 PM 인스턴스 + 합산 리스크 체크 + 승격 알림
+- [x] 승격 알림: NotifierAgent `send_promotion_alert()` Telegram 연동
+- [x] 승격 CLI: `scripts/promote_strategy.py` (--check, --list, --force)
+- [x] 승격 API: 3개 엔드포인트 (promotion-status, promotion-readiness, promote)
+
+다음 작업:
+- [ ] Docker 환경 통합 테스트 (pytest)
+- [ ] 대시보드에 전략별 모드/성과/승격 상태 UI 추가
+- [ ] 전략별 가상 자금 잔고 대시보드 표시
+- [ ] 백테스트 시뮬레이션 모드 (과거 데이터 기반 가상 트레이딩)
+
 논의 문서: `.agent/discussions/20260315-independent-portfolio-per-strategy.md`
 
 ### Phase 13 — 마켓플레이스 섹터 확장
@@ -215,10 +231,10 @@ Strategy L  → [real] [paper] [virtual]
 ## 현재 상태 요약
 
 - 코어 트레이딩 트랙: 구현 완료 및 유지보수 단계
-- RL 트레이딩: 최소 runnable lane + 실험 관리 구현 완료, 데이터셋/환경 고도화 진행 중
+- RL 트레이딩: Phase 9 전체 구현 완료 (dataset builder v2, trading env, walk-forward, shadow inference, promotion gate, REST API 17개)
 - 검색/스크래핑 스택: 파이프라인 설계 완료, MVP 구현 완료, SearchRunner Orchestrator 통합 완료
 - N-way 블렌딩: 설계 확정, 구현 완료 (Phase 11), Strategy S 포함 4-way 블렌딩 운영 중
-- 독립 포트폴리오: 향후 계획 (Phase 12)
+- 독립 포트폴리오: 핵심 인프라 + Orchestrator 통합 완료 (Phase 12)
 - 마켓플레이스: Week 1~5 전체 구현 완료 (Phase 13)
 - 피드백 루프: LLM 피드백 + RL 재학습 + 백테스트 파이프라인 운영 중
 - S3 Data Lake: MinIO + Parquet 기반 데이터 레이크 운영 중
