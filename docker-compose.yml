@@ -31,6 +31,38 @@ services:
       timeout: 3s
       retries: 10
 
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || wget -qO- http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb --ignore-existing local/alpha-lake;
+      echo 'Bucket alpha-lake ready';
+      "
+    restart: "no"
+
   api:
     build:
       context: .
@@ -44,10 +76,13 @@ services:
       APP_URL: http://localhost:8000
       DATABASE_URL: postgresql://alpha_user:alpha_pass@postgres:5432/alpha_db
       REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -70,6 +105,7 @@ services:
       NODE_ENV: development
       DATABASE_URL: postgresql://alpha_user:alpha_pass@postgres:5432/alpha_db
       REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
       ORCH_MODE: blend
       ORCH_INTERVAL_SECONDS: 120
       ORCH_RUN_ONCE: "false"
@@ -86,11 +122,55 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     volumes:
       - ./:/app
       - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
       - ${HOME}/.claude:/root/.claude:ro
     command: python scripts/run_orchestrator_worker.py
+
+  gen:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "9999:9999"
+    volumes:
+      - ./:/app
+    command: uvicorn src.gen.server:app --host 0.0.0.0 --port 9999
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9999/gen/status || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  gen-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://alpha_user:alpha_pass@postgres:5432/alpha_db
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+      GEN_API_URL: http://gen:9999
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      gen:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+    command: python -m src.agents.gen_collector --gen-url http://gen:9999 --mode continuous --tick-cycles 60
 
   ui:
     build:
@@ -112,4 +192,5 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  minio_data:
   ui_node_modules:
