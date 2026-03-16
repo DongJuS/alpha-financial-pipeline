@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import TournamentTable from "@/components/TournamentTable/TournamentTable";
 import {
@@ -39,11 +39,18 @@ function previewText(value: string | null | undefined, maxLen: number = 90): str
 
 export default function Strategy() {
   const [selectedDebateId, setSelectedDebateId] = useState<number | null>(null);
+  const transcriptRef = useRef<HTMLDivElement>(null);
 
   const { data: combined, isLoading: combinedLoading } = useCombinedSignals();
   const { data: strategyB, isLoading: strategyBLoading } = useStrategyBSignals();
   const { data: debateList, isLoading: debateListLoading } = useDebateList(30);
   const { data: debate, isLoading: debateLoading } = useDebateTranscript(selectedDebateId);
+
+  useEffect(() => {
+    if (selectedDebateId && transcriptRef.current) {
+      transcriptRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [selectedDebateId]);
 
   const proposerByRound = parseRoundBlocks(debate?.proposer_content ?? null);
   const challenger1ByRound = parseRoundBlocks(debate?.challenger1_content ?? null);
@@ -280,7 +287,7 @@ export default function Strategy() {
           </div>
 
           {selectedDebateId && (
-            <div className="card space-y-4">
+            <div ref={transcriptRef} className="card space-y-4">
               <div className="flex items-center justify-between">
                 <p className="text-[20px] font-bold tracking-[-0.03em]" style={{ color: "var(--text-primary)" }}>
                   Debate #{selectedDebateId}

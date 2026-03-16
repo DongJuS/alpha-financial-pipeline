@@ -27,7 +27,6 @@ from src.db.models import PredictionSignal
 from src.db.queries import fetch_recent_ohlcv, insert_debate_transcript, insert_prediction
 from src.llm.claude_client import ClaudeClient
 from src.llm.gemini_client import GeminiClient
-from src.llm.gpt_client import GPTClient
 from src.services.model_config import get_strategy_b_roles
 from src.utils.config import get_settings
 from src.utils.logging import get_logger, setup_logging
@@ -56,7 +55,6 @@ class StrategyBConsensus:
     ) -> None:
         settings = get_settings()
         self.claude = ClaudeClient(model="claude-3-5-sonnet-latest")
-        self.gpt = GPTClient(model="gpt-4o-mini")
         self.gemini = GeminiClient(model="gemini-1.5-pro")
         default_rounds = settings.strategy_b_max_rounds
         default_threshold = settings.strategy_b_consensus_threshold
@@ -76,15 +74,14 @@ class StrategyBConsensus:
         lowered = model.lower()
         if "claude" in lowered:
             return "claude"
-        if "gpt" in lowered:
-            return "gpt"
         if "gemini" in lowered:
             return "gemini"
-        raise ValueError(f"지원하지 않는 model/provider 조합입니다: {model}")
+        raise ValueError(f"지원하지 않는 model/provider 조합입니다: {model}. 허용: claude, gemini")
 
     def _provider_order_for_model(self, model: str) -> list[str]:
+        """Claude CLI → Gemini OAuth 순으로 폴백."""
         primary = self._provider_name_for_model(model)
-        rest = [provider for provider in ("claude", "gpt", "gemini") if provider != primary]
+        rest = [provider for provider in ("claude", "gemini") if provider != primary]
         return [primary, *rest]
 
     async def _ensure_role_configs(self) -> dict[str, dict[str, Any]]:
@@ -106,9 +103,7 @@ class StrategyBConsensus:
         providers_tried = self._provider_order_for_model(model)
         for i, provider in enumerate(providers_tried):
             try:
-                if provider == "gpt" and self.gpt.is_configured:
-                    result = await self.gpt.ask_json(prompt, temperature=temperature)
-                elif provider == "gemini" and self.gemini.is_configured:
+                if provider == "gemini" and self.gemini.is_configured:
                     result = await self.gemini.ask_json(prompt, temperature=temperature)
                 elif provider == "claude" and self.claude.is_configured:
                     result = await self.claude.ask_json(prompt, temperature=temperature)
@@ -128,9 +123,7 @@ class StrategyBConsensus:
         providers_tried = self._provider_order_for_model(model)
         for i, provider in enumerate(providers_tried):
             try:
-                if provider == "gpt" and self.gpt.is_configured:
-                    result = await self.gpt.ask(prompt, temperature=temperature)
-                elif provider == "gemini" and self.gemini.is_configured:
+                if provider == "gemini" and self.gemini.is_configured:
                     result = await self.gemini.ask(prompt, temperature=temperature)
                 elif provider == "claude" and self.claude.is_configured:
                     result = await self.claude.ask(prompt, temperature=temperature)

@@ -44,14 +44,14 @@ _exp_mgr: RLExperimentManager | None = None
 def _get_store() -> RLPolicyStoreV2:
     global _store
     if _store is None:
-        _store = RLPolicyStoreV2(models_dir=DEFAULT_ARTIFACTS / "models")
+        _store = RLPolicyStoreV2(base_dir=DEFAULT_ARTIFACTS / "models")
     return _store
 
 
 def _get_exp_mgr() -> RLExperimentManager:
     global _exp_mgr
     if _exp_mgr is None:
-        _exp_mgr = RLExperimentManager(artifacts_dir=DEFAULT_ARTIFACTS)
+        _exp_mgr = RLExperimentManager(base_dir=DEFAULT_ARTIFACTS)
     return _exp_mgr
 
 
@@ -134,12 +134,8 @@ async def list_policies(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
 ) -> ListResponse:
-    try:
-        store = _get_store()
-        registry = store.load_registry()
-    except Exception as e:
-        logger.warning("RL 정책 레지스트리 로드 실패: %s", e)
-        return ListResponse(data=[], meta={"total": 0, "page": page, "per_page": per_page})
+    store = _get_store()
+    registry = store.load_registry()
 
     policies: list[dict] = []
     active_map = registry.list_active_policies()
@@ -183,12 +179,8 @@ async def list_policies(
 
 @router.get("/policies/active", summary="활성 정책 목록")
 async def list_active_policies() -> ListResponse:
-    try:
-        store = _get_store()
-        registry = store.load_registry()
-    except Exception as e:
-        logger.warning("RL 정책 레지스트리 로드 실패: %s", e)
-        return ListResponse(data=[], meta={"total": 0, "page": 1, "per_page": 0})
+    store = _get_store()
+    registry = store.load_registry()
     active_map = registry.list_active_policies()
 
     result: list[dict] = []
@@ -213,12 +205,8 @@ async def list_active_policies() -> ListResponse:
 
 @router.get("/policies/{ticker}", summary="종목별 정책 상세")
 async def get_ticker_policies(ticker: str) -> ListResponse:
-    try:
-        store = _get_store()
-        registry = store.load_registry()
-    except Exception as e:
-        logger.warning("RL 정책 레지스트리 로드 실패: %s", e)
-        return ListResponse(data=[], meta={"total": 0, "page": 1, "per_page": 0})
+    store = _get_store()
+    registry = store.load_registry()
     tp = registry.get_ticker(ticker)
 
     if not tp:
@@ -291,16 +279,12 @@ async def list_experiments(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
 ) -> ListResponse:
-    try:
-        mgr = _get_exp_mgr()
-        runs = mgr.list_runs(
-            ticker=ticker,
-            profile_id=profile_id,
-            approved_only=approved_only,
-        )
-    except Exception as e:
-        logger.warning("RL 실험 목록 로드 실패: %s", e)
-        return ListResponse(data=[], meta={"total": 0, "page": page, "per_page": per_page})
+    mgr = _get_exp_mgr()
+    runs = mgr.list_runs(
+        ticker=ticker,
+        profile_id=profile_id,
+        approved_only=approved_only,
+    )
 
     result: list[dict] = []
     for run in runs:
@@ -350,15 +334,8 @@ async def list_evaluations(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
 ) -> ListResponse:
-    try:
-        store = _get_store()
-        registry = store.load_registry()
-    except Exception as e:
-        logger.warning("RL 정책 레지스트리 로드 실패: %s", e)
-        return ListResponse(
-            data=[],
-            meta={"total": 0, "page": page, "per_page": per_page},
-        )
+    store = _get_store()
+    registry = store.load_registry()
 
     evaluations: list[dict] = []
     tickers = [ticker] if ticker else registry.list_all_tickers()

@@ -127,7 +127,7 @@ Tournament   Debate      RL Trading    Search/Research
 - **트리거:** OrchestratorAgent spawn (Strategy A: 08:45, Strategy B: 08:30)
 - **LLM 연동:**
   - 인스턴스 1, 2: Claude CLI (`subprocess` 호출)
-  - 인스턴스 3, 4: OpenAI GPT-4o (`openai` SDK, OAuth API Key)
+  - 인스턴스 3, 4: OpenAI GPT-4o (`openai` SDK)
   - 인스턴스 5: Gemini CLI (`subprocess` 호출)
 - **출력:** PostgreSQL `predictions`, Redis `redis:topic:signals`
 

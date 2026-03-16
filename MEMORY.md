@@ -8,6 +8,36 @@
 
 ## 📌 Recent Decisions
 
+### 2026-03-16 — 사용자 방침: LLM은 기존 구독/OAuth만 사용 (API 유료 호출 금지)
+- **방침:** LLM API Key 기반 유료 호출(Anthropic API Key, Gemini API Key, OpenAI API Key)을 사용하지 않는다.
+- **허용되는 LLM 접근 경로:**
+  - **Claude:** CLI (`/usr/bin/claude` 또는 `~/.claude/bin/claude`) — 기존 Claude 구독(OAuth/브라우저 로그인)으로 동작
+  - **Gemini:** gcloud OAuth ADC(Application Default Credentials) — `gcloud auth application-default login --scopes="https://www.googleapis.com/auth/generative-language,https://www.googleapis.com/auth/cloud-platform"` 으로 인증. API Key 불필요.
+  - **GPT:** 사용 안 함
+- **핵심 원칙:** OAuth로 CLI든 브라우저든 프로그램이든 접근 가능하므로, 별도 API 호출 비용이 발생하지 않는다.
+- **Gemini ACCESS_TOKEN_SCOPE_INSUFFICIENT 해결:** gcloud ADC 발급 시 `generative-language` scope를 포함하면 해결됨.
+- **Docker 환경:** 컨테이너에 `~/.claude` (Claude CLI 인증)와 `~/.config/gcloud/application_default_credentials.json` (Gemini OAuth)을 볼륨 마운트해야 한다.
+
+### 2026-03-16 — Pipeline Refactoring (PR #22)
+- **문제:** orchestrator.py에 존재하지 않는 `get_predictor_performance` import, 중복 StrategyRunnerRegistry, worker가 잘못된 9개 kwargs 전달로 crash-loop
+- **수정:**
+  1. `orchestrator.py` — broken import 제거, StrategyRegistry 통합, N-way 블렌딩 실제 구현
+  2. `strategy_a_runner.py` / `strategy_b_runner.py` / `rl_runner.py` — StrategyRunner 어댑터 3종 신규
+  3. `run_orchestrator_worker.py` — 환경변수 기반 전략 등록 패턴으로 전면 재작성
+  4. `rl.py` — `base_dir` → `models_dir` / `artifacts_dir` 파라미터명 수정
+- **결과:** Worker crash-loop 해소, Strategy A/B/RL 3개 등록 및 blend mode 실행 확인
+
+### 2026-03-16 — QA 검증 + MinIO/LLM 연동 수정
+- **문제:** docker-compose.yml에 MinIO 서비스 정의가 누락되어 S3/Data Lake 전체 불능, Predictor 5개 전부 실패(0종목/20종목)
+- **원인 분석:**
+  1. S3: MinIO 컨테이너가 없어 `http://minio:9000` 연결 불가
+  2. LLM: `ANTHROPIC_CLI_COMMAND`가 비어있을 때 Claude CLI 자동감지 미동작
+- **수정:**
+  1. `docker-compose.yml` — minio 서비스(9000/9001포트), minio-init(alpha-lake 버킷 자동생성), api/worker에 minio 의존성+healthcheck 추가
+  2. `cli_bridge.py` — `build_cli_command()` 에서 template이 비어있어도 `claude` 바이너리가 PATH에 있으면 자동으로 `[claude, -p, --model, {model}]` 명령 생성
+  3. 프로젝트 전체 LLM 연동 명칭 교체: "Anthropic API"→"Claude CLI", "OpenAI API"→"openai SDK", "Google Gemini API"→"Gemini OAuth(ADC)"
+- **교훈:** docker-compose에 서비스 추가 시 반드시 healthcheck+depends_on+volumes 3가지를 한 세트로 설정할 것. LLM 클라이언트는 환경변수 없이도 바이너리 자동감지로 작동해야 함.
+
 ### 2026-03-16 — Strategy S Orchestrator 통합 + 마켓플레이스 Closure
 - **결정:** SearchRunner를 StrategyRunner Protocol로 구현하여 Orchestrator에 등록. 4-way 블렌딩(A:0.3/B:0.3/S:0.2/RL:0.2) 완성.
 - **구현:**

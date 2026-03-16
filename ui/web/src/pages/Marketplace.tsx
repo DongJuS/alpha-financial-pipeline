@@ -225,7 +225,18 @@ function OverviewTab() {
         </p>
 
         {heatmap.isLoading && <div className="mt-4 h-64 skeleton" />}
-        {heatmap.data && (
+        {!heatmap.isLoading && (!heatmap.data || heatmap.data.length === 0) && (
+          <div className="mt-4 flex flex-col items-center justify-center py-12 rounded-xl"
+            style={{ background: "var(--bg-elevated)", border: "1px dashed var(--border-subtle)" }}>
+            <p className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
+              섹터 히트맵 데이터가 아직 없습니다.
+            </p>
+            <p className="mt-1 text-xs" style={{ color: "var(--text-tertiary)" }}>
+              stock_master 테이블에 섹터 정보가 시드되면 히트맵이 표시됩니다.
+            </p>
+          </div>
+        )}
+        {heatmap.data && heatmap.data.length > 0 && (
           <div className="mt-4" style={{ width: "100%", height: 400 }}>
             <ResponsiveContainer width="100%" height="100%">
               <Treemap
@@ -285,7 +296,12 @@ function OverviewTab() {
               <div key={i} className="h-10 skeleton" />
             ))}
           </div>}
-          {gainers.data && (
+          {!gainers.isLoading && (!gainers.data || gainers.data.length === 0) && (
+            <p className="mt-3 py-6 text-center text-xs" style={{ color: "var(--text-tertiary)" }}>
+              상승률 데이터가 없습니다.
+            </p>
+          )}
+          {gainers.data && gainers.data.length > 0 && (
             <div className="mt-3 space-y-2">
               {gainers.data.slice(0, 5).map((item) => (
                 <div
@@ -319,7 +335,12 @@ function OverviewTab() {
               <div key={i} className="h-10 skeleton" />
             ))}
           </div>}
-          {losers.data && (
+          {!losers.isLoading && (!losers.data || losers.data.length === 0) && (
+            <p className="mt-3 py-6 text-center text-xs" style={{ color: "var(--text-tertiary)" }}>
+              하락률 데이터가 없습니다.
+            </p>
+          )}
+          {losers.data && losers.data.length > 0 && (
             <div className="mt-3 space-y-2">
               {losers.data.slice(0, 5).map((item) => (
                 <div

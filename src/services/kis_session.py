@@ -29,7 +29,11 @@ async def issue_kis_token(
     app_secret = kis_app_secret_for_scope(active_settings, scope)
 
     if not app_key or not app_secret:
-        raise RuntimeError("KIS_APP_KEY 또는 KIS_APP_SECRET 이 설정되지 않았습니다.")
+        scope_upper = scope.upper()
+        raise RuntimeError(
+            f"KIS {scope} 계좌의 APP_KEY/APP_SECRET이 설정되지 않았습니다. "
+            f".env에 KIS_{scope_upper}_APP_KEY / KIS_{scope_upper}_APP_SECRET를 설정하세요."
+        )
 
     url = f"{active_settings.kis_base_url_for_scope(scope)}/oauth2/tokenP"
     payload = {

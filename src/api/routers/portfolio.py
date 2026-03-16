@@ -5,7 +5,7 @@ src/api/routers/portfolio.py — 포트폴리오 조회 및 설정 라우터
 from datetime import datetime
 from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.api.deps import get_admin_user, get_current_settings, get_current_user
@@ -21,7 +21,10 @@ from src.services.paper_trading import (
     build_broker_order_activity,
 )
 from src.utils.account_scope import is_paper_scope, normalize_account_scope
-from src.utils.config import Settings
+from src.utils.config import Settings, get_settings
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 from src.utils.db_client import execute, fetch, fetchrow
 from src.utils.market_hours import MARKET_HOURS_ENFORCED, market_session_status
 from src.utils.performance import compute_trade_performance
@@ -214,6 +217,36 @@ class TradingModeAuditItem(BaseModel):
 class ReadinessAuditResponse(BaseModel):
     operational_audits: list[OperationalAuditItem]
     mode_switch_audits: list[TradingModeAuditItem]
+
+
+class RealHoldingItem(BaseModel):
+    """KIS 실계좌에서 직접 조회한 보유 종목 1건."""
+    ticker: str
+    name: str
+    quantity: int
+    avg_price: int
+    current_price: int
+    unrealized_pnl: int
+    unrealized_pnl_pct: float
+    eval_amount: int
+
+
+class RealHoldingsSummary(BaseModel):
+    """KIS 실계좌 잔고 요약."""
+    cash_balance: int
+    total_eval_amount: int
+    total_equity: int
+    total_unrealized_pnl: int
+    total_unrealized_pnl_pct: float
+
+
+class RealHoldingsResponse(BaseModel):
+    """KIS Real 계좌 보유종목 라이브 조회 응답."""
+    account_scope: str = "real"
+    account_number_masked: str
+    fetched_at: str
+    positions: list[RealHoldingItem]
+    summary: RealHoldingsSummary
 
 
 async def _resolve_mode_is_paper(mode: str) -> bool:
@@ -740,4 +773,92 @@ async def get_readiness_audits(
     return ReadinessAuditResponse(
         operational_audits=[OperationalAuditItem(**row) for row in operational_rows],
         mode_switch_audits=[TradingModeAuditItem(**row) for row in mode_switch_rows],
+    )
+
+
+@router.get("/real-holdings", response_model=RealHoldingsResponse)
+async def get_real_holdings(
+    _: Annotated[dict, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_current_settings)],
+) -> RealHoldingsResponse:
+    """KIS 실계좌 보유종목을 라이브로 조회합니다.
+
+    DB가 아닌 KIS Open API를 직접 호출하여 실시간 데이터를 반환합니다.
+    토큰이 없으면 자동 발급을 시도합니다.
+    """
+    from src.brokers.kis import KISRealApiClient, KISAPIError
+
+    client = KISRealApiClient(settings=settings)
+    if not client.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="KIS Real 계좌 설정이 없습니다. .env에 KIS_REAL_APP_KEY, KIS_REAL_APP_SECRET, KIS_REAL_ACCOUNT_NUMBER를 확인하세요.",
+        )
+
+    try:
+        balance = await client.inquire_balance()
+    except KISAPIError as exc:
+        logger.error("KIS Real 잔고 조회 실패: %s", exc)
+        raise HTTPException(status_code=502, detail=f"KIS API 호출 실패: {exc}")
+    except Exception as exc:
+        logger.error("KIS Real 잔고 조회 중 예기치 않은 오류: %s", exc)
+        raise HTTPException(status_code=502, detail=f"KIS API 연결 오류: {exc}")
+
+    raw_positions = balance.get("positions") or []
+    summary_raw = balance.get("summary") or {}
+
+    def _to_int(v: str | int | None) -> int:
+        if v is None:
+            return 0
+        try:
+            return int(str(v).replace(",", ""))
+        except (ValueError, TypeError):
+            return 0
+
+    positions: list[RealHoldingItem] = []
+    for item in raw_positions:
+        qty = _to_int(item.get("hldg_qty"))
+        if qty <= 0:
+            continue
+        avg_price = _to_int(item.get("pchs_avg_pric"))
+        current_price = _to_int(item.get("prpr"))
+        eval_amount = _to_int(item.get("evlu_amt"))
+        pnl = _to_int(item.get("evlu_pfls_amt"))
+        pnl_pct = float(item.get("evlu_pfls_rt") or 0)
+
+        positions.append(
+            RealHoldingItem(
+                ticker=str(item.get("pdno") or ""),
+                name=str(item.get("prdt_name") or ""),
+                quantity=qty,
+                avg_price=avg_price,
+                current_price=current_price,
+                unrealized_pnl=pnl,
+                unrealized_pnl_pct=round(pnl_pct, 2),
+                eval_amount=eval_amount if eval_amount else qty * current_price,
+            )
+        )
+
+    cash_balance = _to_int(summary_raw.get("dnca_tot_amt"))
+    total_eval = _to_int(summary_raw.get("scts_evlu_amt")) or _to_int(summary_raw.get("evlu_amt_smtl_amt"))
+    total_equity = _to_int(summary_raw.get("tot_evlu_amt")) or (cash_balance + total_eval)
+    total_pnl = _to_int(summary_raw.get("evlu_pfls_smtl_amt"))
+    total_pnl_pct = round(
+        (total_pnl / (total_equity - total_pnl) * 100) if (total_equity - total_pnl) > 0 else 0.0, 2
+    )
+
+    account_number = settings.kis_real_account_number
+    masked = f"{account_number[:4]}****{account_number[-2:]}" if len(account_number) >= 6 else "****"
+
+    return RealHoldingsResponse(
+        account_number_masked=masked,
+        fetched_at=datetime.now().isoformat(),
+        positions=positions,
+        summary=RealHoldingsSummary(
+            cash_balance=cash_balance,
+            total_eval_amount=total_eval,
+            total_equity=total_equity,
+            total_unrealized_pnl=total_pnl,
+            total_unrealized_pnl_pct=total_pnl_pct,
+        ),
     )

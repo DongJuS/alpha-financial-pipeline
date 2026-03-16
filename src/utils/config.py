@@ -32,14 +32,10 @@ class Settings(BaseSettings):
     jwt_expires_in: str = Field(default="7d", alias="JWT_EXPIRES_IN")
 
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
-    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     anthropic_cli_command: str = Field(default="", alias="ANTHROPIC_CLI_COMMAND")
     llm_cli_timeout_seconds: int = Field(default=90, ge=5, le=600, alias="LLM_CLI_TIMEOUT_SECONDS")
 
-    kis_app_key: str = Field(default="", alias="KIS_APP_KEY")
-    kis_app_secret: str = Field(default="", alias="KIS_APP_SECRET")
-    kis_account_number: str = Field(default="", alias="KIS_ACCOUNT_NUMBER")
     kis_paper_app_key: str = Field(default="", alias="KIS_PAPER_APP_KEY")
     kis_paper_app_secret: str = Field(default="", alias="KIS_PAPER_APP_SECRET")
     kis_paper_account_number: str = Field(default="", alias="KIS_PAPER_ACCOUNT_NUMBER")
@@ -111,6 +107,16 @@ class Settings(BaseSettings):
     # ── 전략 승격 기준 오버라이드 ──────────────────────────────────────────
     promotion_criteria_override: str = Field(default="", alias="PROMOTION_CRITERIA_OVERRIDE")
 
+    # ── S3 / MinIO (Data Lake) ─────────────────────────────────────────────
+    s3_endpoint_url: str = Field(default="http://minio:9000", alias="S3_ENDPOINT_URL")
+    s3_access_key: str = Field(default="minioadmin", alias="S3_ACCESS_KEY")
+    s3_secret_key: str = Field(default="minioadmin", alias="S3_SECRET_KEY")
+    s3_region: str = Field(default="ap-northeast-2", alias="S3_REGION")
+    s3_bucket_name: str = Field(default="alpha-lake", alias="S3_BUCKET_NAME")
+
+    # ── Gen Data Server (테스트용 랜덤 데이터 생성) ────────────────────────────
+    gen_api_url: str = Field(default="", alias="GEN_API_URL")
+
     # ── Logging ──────────────────────────────────────────────────────────────
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
@@ -142,18 +148,18 @@ class Settings(BaseSettings):
 
     def kis_app_key_for_scope(self, account_scope: str) -> str:
         if account_scope == "real":
-            return self.kis_real_app_key or self.kis_app_key
-        return self.kis_paper_app_key or self.kis_app_key
+            return self.kis_real_app_key
+        return self.kis_paper_app_key
 
     def kis_app_secret_for_scope(self, account_scope: str) -> str:
         if account_scope == "real":
-            return self.kis_real_app_secret or self.kis_app_secret
-        return self.kis_paper_app_secret or self.kis_app_secret
+            return self.kis_real_app_secret
+        return self.kis_paper_app_secret
 
     def kis_account_number_for_scope(self, account_scope: str) -> str:
         if account_scope == "real":
-            return self.kis_real_account_number or self.kis_account_number
-        return self.kis_paper_account_number or self.kis_account_number
+            return self.kis_real_account_number
+        return self.kis_paper_account_number
 
 
 @lru_cache
@@ -165,21 +171,21 @@ def kis_app_key_for_scope(settings: Settings | object, account_scope: str) -> st
     if hasattr(settings, "kis_app_key_for_scope"):
         return settings.kis_app_key_for_scope(account_scope)
     if account_scope == "real":
-        return getattr(settings, "kis_real_app_key", "") or getattr(settings, "kis_app_key", "")
-    return getattr(settings, "kis_paper_app_key", "") or getattr(settings, "kis_app_key", "")
+        return getattr(settings, "kis_real_app_key", "")
+    return getattr(settings, "kis_paper_app_key", "")
 
 
 def kis_app_secret_for_scope(settings: Settings | object, account_scope: str) -> str:
     if hasattr(settings, "kis_app_secret_for_scope"):
         return settings.kis_app_secret_for_scope(account_scope)
     if account_scope == "real":
-        return getattr(settings, "kis_real_app_secret", "") or getattr(settings, "kis_app_secret", "")
-    return getattr(settings, "kis_paper_app_secret", "") or getattr(settings, "kis_app_secret", "")
+        return getattr(settings, "kis_real_app_secret", "")
+    return getattr(settings, "kis_paper_app_secret", "")
 
 
 def kis_account_number_for_scope(settings: Settings | object, account_scope: str) -> str:
     if hasattr(settings, "kis_account_number_for_scope"):
         return settings.kis_account_number_for_scope(account_scope)
     if account_scope == "real":
-        return getattr(settings, "kis_real_account_number", "") or getattr(settings, "kis_account_number", "")
-    return getattr(settings, "kis_paper_account_number", "") or getattr(settings, "kis_account_number", "")
+        return getattr(settings, "kis_real_account_number", "")
+    return getattr(settings, "kis_paper_account_number", "")

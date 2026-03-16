@@ -335,6 +335,49 @@ export function useUpdatePortfolioConfig() {
   });
 }
 
+/* ── KIS Real 계좌 라이브 보유종목 조회 ────────────────────────────── */
+
+export interface RealHoldingItem {
+  ticker: string;
+  name: string;
+  quantity: number;
+  avg_price: number;
+  current_price: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
+  eval_amount: number;
+}
+
+export interface RealHoldingsSummary {
+  cash_balance: number;
+  total_eval_amount: number;
+  total_equity: number;
+  total_unrealized_pnl: number;
+  total_unrealized_pnl_pct: number;
+}
+
+export interface RealHoldingsResponse {
+  account_scope: "real";
+  account_number_masked: string;
+  fetched_at: string;
+  positions: RealHoldingItem[];
+  summary: RealHoldingsSummary;
+}
+
+async function fetchRealHoldings(): Promise<RealHoldingsResponse> {
+  const { data } = await api.get<RealHoldingsResponse>("/portfolio/real-holdings");
+  return data;
+}
+
+export function useRealHoldings() {
+  return useQuery({
+    queryKey: ["portfolio", "real-holdings"],
+    queryFn: fetchRealHoldings,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+}
+
 export function useUpdateTradingMode() {
   const queryClient = useQueryClient();
   return useMutation({

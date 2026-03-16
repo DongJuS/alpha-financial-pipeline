@@ -82,14 +82,20 @@ class KISApiClient:
         account_number = kis_account_number_for_scope(self.settings, self.account_scope)
         digits = "".join(ch for ch in account_number if ch.isdigit())
         if len(digits) < 10:
-            raise KISAPIError("KIS_ACCOUNT_NUMBER 형식이 올바르지 않습니다. 예: 50012345-01")
+            scope_upper = self.account_scope.upper()
+            raise KISAPIError(f"KIS_{scope_upper}_ACCOUNT_NUMBER 형식이 올바르지 않습니다. 예: 50012345-01")
         return digits[:-2], digits[-2:]
 
     async def _resolve_token(self) -> str:
         try:
-            token = await self._token_provider(self.account_scope)
+            token = await self._token_provider(
+                settings=self.settings, account_scope=self.account_scope
+            )
         except TypeError:
-            token = await self._token_provider()
+            try:
+                token = await self._token_provider(self.account_scope)
+            except TypeError:
+                token = await self._token_provider()
         if not token:
             raise KISAPIError(
                 "KIS 토큰이 없습니다. `python scripts/kis_auth.py --scope "

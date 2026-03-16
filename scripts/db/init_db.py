@@ -191,15 +191,15 @@ CREATE_TABLES: list[str] = [
         config_key, strategy_code, role, role_label, agent_id,
         llm_model, persona, execution_order
     ) VALUES
-        ('strategy_a_predictor_1', 'A', 'predictor', 'Predictor 1', 'predictor_1', 'claude-3-5-sonnet-latest', '가치 투자형', 1),
-        ('strategy_a_predictor_2', 'A', 'predictor', 'Predictor 2', 'predictor_2', 'claude-3-5-sonnet-latest', '기술적 분석형', 2),
-        ('strategy_a_predictor_3', 'A', 'predictor', 'Predictor 3', 'predictor_3', 'gpt-4o-mini', '모멘텀형', 3),
-        ('strategy_a_predictor_4', 'A', 'predictor', 'Predictor 4', 'predictor_4', 'gpt-4o-mini', '역추세형', 4),
-        ('strategy_a_predictor_5', 'A', 'predictor', 'Predictor 5', 'predictor_5', 'gemini-1.5-pro', '거시경제형', 5),
-        ('strategy_b_proposer', 'B', 'proposer', 'Proposer', 'consensus_proposer', 'claude-3-5-sonnet-latest', '핵심 매매 가설을 세우는 수석 분석가', 1),
-        ('strategy_b_challenger_1', 'B', 'challenger', 'Challenger 1', 'consensus_challenger_1', 'gpt-4o-mini', '가설의 약점을 빠르게 파고드는 반론가', 2),
-        ('strategy_b_challenger_2', 'B', 'challenger', 'Challenger 2', 'consensus_challenger_2', 'gemini-1.5-pro', '거시 변수와 대안을 점검하는 반론가', 3),
-        ('strategy_b_synthesizer', 'B', 'synthesizer', 'Synthesizer', 'consensus_synthesizer', 'claude-3-5-sonnet-latest', '토론을 종합해 최종 결론을 내리는 조정자', 4)
+        ('strategy_a_predictor_1', 'A', 'predictor', 'Predictor 1', 'predictor_1', 'claude-opus-4-6', '가치 투자형', 1),
+        ('strategy_a_predictor_2', 'A', 'predictor', 'Predictor 2', 'predictor_2', 'claude-opus-4-6', '기술적 분석형', 2),
+        ('strategy_a_predictor_3', 'A', 'predictor', 'Predictor 3', 'predictor_3', 'gemini-3.1-pro-preview', '모멘텀형', 3),
+        ('strategy_a_predictor_4', 'A', 'predictor', 'Predictor 4', 'predictor_4', 'gemini-3.1-pro-preview', '역추세형', 4),
+        ('strategy_a_predictor_5', 'A', 'predictor', 'Predictor 5', 'predictor_5', 'claude-haiku-4-5-20251001', '거시경제형', 5),
+        ('strategy_b_proposer', 'B', 'proposer', 'Proposer', 'consensus_proposer', 'claude-opus-4-6', '핵심 매매 가설을 세우는 수석 분석가', 1),
+        ('strategy_b_challenger_1', 'B', 'challenger', 'Challenger 1', 'consensus_challenger_1', 'gemini-3.1-pro-preview', '가설의 약점을 빠르게 파고드는 반론가', 2),
+        ('strategy_b_challenger_2', 'B', 'challenger', 'Challenger 2', 'consensus_challenger_2', 'gemini-3-flash-preview', '거시 변수와 대안을 점검하는 반론가', 3),
+        ('strategy_b_synthesizer', 'B', 'synthesizer', 'Synthesizer', 'consensus_synthesizer', 'claude-opus-4-6', '토론을 종합해 최종 결론을 내리는 조정자', 4)
     ON CONFLICT (config_key) DO NOTHING;
     """,
 
@@ -333,7 +333,7 @@ CREATE_TABLES: list[str] = [
         ON portfolio_positions (ticker);
     """,
 
-    # 9. 거래 이력
+    # 10. 거래 이력
     """
     CREATE TABLE IF NOT EXISTS trade_history (
         id              BIGSERIAL PRIMARY KEY,
@@ -900,6 +900,7 @@ DROP TABLE IF EXISTS
     portfolio_positions,
     trading_accounts,
     portfolio_config,
+    model_role_configs,
     debate_transcripts,
     predictor_tournament_scores,
     predictions,
