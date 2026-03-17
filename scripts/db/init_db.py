@@ -458,6 +458,47 @@ CREATE_TABLES: list[str] = [
         ON account_snapshots (account_scope, snapshot_at DESC);
     """,
 
+    # 11-b. 에이전트 레지스트리 (중앙 관리)
+    """
+    CREATE TABLE IF NOT EXISTS agent_registry (
+        agent_id        VARCHAR(30) PRIMARY KEY,
+        display_name    TEXT NOT NULL,
+        agent_type      VARCHAR(20) NOT NULL CHECK (agent_type IN (
+            'orchestrator', 'predictor', 'collector', 'portfolio_manager',
+            'notifier', 'execution', 'rl', 'research', 'gen'
+        )),
+        description     TEXT,
+        is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+        is_on_demand    BOOLEAN NOT NULL DEFAULT FALSE,
+        default_config  JSONB DEFAULT '{}',
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_registry_type
+        ON agent_registry (agent_type, is_active);
+
+    -- 기본 에이전트 시드 데이터
+    INSERT INTO agent_registry (agent_id, display_name, agent_type, description, is_on_demand)
+    VALUES
+        ('collector_agent',           '데이터 수집기',       'collector',          '일봉/틱 OHLCV 수집',                    FALSE),
+        ('predictor_1',               '예측기 #1',          'predictor',          'LLM 기반 단기 예측 (temp=0.3)',            FALSE),
+        ('predictor_2',               '예측기 #2',          'predictor',          'LLM 기반 단기 예측 (temp=0.5)',            FALSE),
+        ('predictor_3',               '예측기 #3',          'predictor',          'LLM 기반 단기 예측 (temp=0.7)',            FALSE),
+        ('predictor_4',               '예측기 #4',          'predictor',          'LLM 기반 단기 예측 (temp=0.6)',            FALSE),
+        ('predictor_5',               '예측기 #5',          'predictor',          'LLM 기반 단기 예측 (temp=0.4)',            FALSE),
+        ('portfolio_manager_agent',   '포트폴리오 매니저',   'portfolio_manager',  '블렌딩 신호 기반 매매 실행',                FALSE),
+        ('notifier_agent',            '알림 에이전트',       'notifier',           '사이클 결과 알림 및 일일 리포트',            FALSE),
+        ('orchestrator_agent',        '오케스트레이터',      'orchestrator',       '전략 병렬 실행 → 블렌딩 → 주문 사이클',      FALSE),
+        ('fast_flow_agent',           '빠른 실행 에이전트',  'execution',          '빠른 흐름 설계 (on-demand)',               TRUE),
+        ('slow_meticulous_agent',     '꼼꼼한 검증 에이전트','execution',          '상세 검증 계획 (on-demand)',               TRUE)
+    ON CONFLICT (agent_id) DO UPDATE SET
+        display_name = EXCLUDED.display_name,
+        agent_type   = EXCLUDED.agent_type,
+        description  = EXCLUDED.description,
+        is_on_demand = EXCLUDED.is_on_demand,
+        updated_at   = NOW();
+    """,
+
     # 12. 에이전트 헬스비트 (7일 롤링)
     """
     CREATE TABLE IF NOT EXISTS agent_heartbeats (
@@ -708,6 +749,53 @@ CREATE_TABLES: list[str] = [
         ON stock_master (is_etf) WHERE is_etf = TRUE;
     """,
 
+    # 22-b. 티커 마스터 (정규화된 티커 통합 관리)
+    """
+    CREATE TABLE IF NOT EXISTS ticker_master (
+        canonical       VARCHAR(20) PRIMARY KEY,
+        raw_code        VARCHAR(10) NOT NULL,
+        name            TEXT NOT NULL,
+        market          VARCHAR(20) NOT NULL,
+        suffix          VARCHAR(5) NOT NULL,
+        asset_type      VARCHAR(10) NOT NULL DEFAULT 'stock'
+                            CHECK (asset_type IN ('stock', 'etf', 'etn', 'index', 'commodity', 'currency', 'rate')),
+        is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_master_raw
+        ON ticker_master (raw_code) WHERE is_active = TRUE;
+    CREATE INDEX IF NOT EXISTS idx_ticker_master_market
+        ON ticker_master (market, is_active);
+    CREATE INDEX IF NOT EXISTS idx_ticker_master_asset
+        ON ticker_master (asset_type, is_active);
+
+    -- 기본 종목 시드 데이터 (core 종목)
+    INSERT INTO ticker_master (canonical, raw_code, name, market, suffix, asset_type)
+    VALUES
+        ('005930.KS', '005930', '삼성전자', 'KOSPI', 'KS', 'stock'),
+        ('000660.KS', '000660', 'SK하이닉스', 'KOSPI', 'KS', 'stock'),
+        ('259960.KS', '259960', '크래프톤', 'KOSPI', 'KS', 'stock'),
+        ('005380.KS', '005380', '현대자동차', 'KOSPI', 'KS', 'stock'),
+        ('000270.KS', '000270', '기아', 'KOSPI', 'KS', 'stock'),
+        ('051910.KS', '051910', 'LG화학', 'KOSPI', 'KS', 'stock'),
+        ('006800.KS', '006800', '미래에셋증권', 'KOSPI', 'KS', 'stock'),
+        ('034020.KS', '034020', '두산에너빌리티', 'KOSPI', 'KS', 'stock'),
+        ('003670.KS', '003670', '포스코퓨처엠', 'KOSPI', 'KS', 'stock'),
+        ('028260.KS', '028260', '삼성물산', 'KOSPI', 'KS', 'stock'),
+        ('035420.KS', '035420', 'NAVER', 'KOSPI', 'KS', 'stock'),
+        ('035720.KS', '035720', '카카오', 'KOSPI', 'KS', 'stock'),
+        ('068270.KS', '068270', '셀트리온', 'KOSPI', 'KS', 'stock'),
+        ('105560.KS', '105560', 'KB금융', 'KOSPI', 'KS', 'stock'),
+        ('055550.KS', '055550', '신한지주', 'KOSPI', 'KS', 'stock'),
+        ('329180.KS', '329180', 'HD현대중공업', 'KOSPI', 'KS', 'stock'),
+        ('373220.KS', '373220', 'LG에너지솔루션', 'KOSPI', 'KS', 'stock'),
+        ('207940.KS', '207940', '삼성바이오로직스', 'KOSPI', 'KS', 'stock'),
+        ('247540.KQ', '247540', '에코프로비엠', 'KOSDAQ', 'KQ', 'stock'),
+        ('196170.KQ', '196170', '알테오젠', 'KOSDAQ', 'KQ', 'stock')
+    ON CONFLICT (canonical) DO NOTHING;
+    """,
+
     # 23. 테마 → 종목 매핑
     """
     CREATE TABLE IF NOT EXISTS theme_stocks (
@@ -883,6 +971,8 @@ DROP TABLE IF EXISTS
     daily_rankings,
     macro_indicators,
     theme_stocks,
+    agent_registry,
+    ticker_master,
     stock_master,
     research_outputs,
     page_extractions,

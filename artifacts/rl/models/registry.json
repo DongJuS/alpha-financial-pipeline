@@ -51,7 +51,7 @@
       ]
     },
     "259960.KS": {
-      "active_policy_id": "rl_259960.KS_20260314T065805Z",
+      "active_policy_id": "rl_259960.KS_20260314T044707Z",
       "policies": [
         {
           "policy_id": "rl_259960.KS_20260314T044107Z",
@@ -340,5 +340,5 @@
     "max_approved_per_ticker": 5,
     "keep_latest_failed": true
   },
-  "last_updated": "2026-03-14T14:50:10.529201Z"
+  "last_updated": "2026-03-17T09:56:26.196998Z"
 }

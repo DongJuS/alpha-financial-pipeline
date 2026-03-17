@@ -74,7 +74,7 @@ class OrchestratorAgent:
 
     def __init__(
         self,
-        agent_id: str = "orchestrator",
+        agent_id: str = "orchestrator_agent",
         strategy_blend_weights: dict[str, float] | None = None,
         independent_portfolio: bool = False,
     ) -> None:
@@ -469,7 +469,7 @@ class OrchestratorAgent:
 
         from src.agents.portfolio_manager import PortfolioManagerAgent
 
-        pm = PortfolioManagerAgent(agent_id="portfolio_manager_blend")
+        pm = PortfolioManagerAgent(agent_id="portfolio_manager_agent")
         try:
             orders = await pm.process_predictions(
                 blended_signals,
@@ -487,7 +487,7 @@ class OrchestratorAgent:
         """NotifierAgent 인스턴스를 생성합니다."""
         from src.agents.notifier import NotifierAgent
 
-        return NotifierAgent(agent_id="notifier_for_orchestrator")
+        return NotifierAgent(agent_id="notifier_agent")
 
 
 async def _main_async(args: argparse.Namespace) -> None:
