@@ -16,7 +16,7 @@ from src.db.models import (
     StockMasterRecord,
     WatchlistItem,
 )
-from src.utils.db_client import execute, fetch, fetchrow, fetchval
+from src.utils.db_client import execute, executemany, fetch, fetchrow, fetchval
 
 
 # ── stock_master ─────────────────────────────────────────────────────────────
@@ -48,21 +48,13 @@ async def upsert_stock_master(records: list[StockMasterRecord]) -> int:
             is_active = EXCLUDED.is_active,
             updated_at = NOW()
     """
-    for r in records:
-        await execute(
-            query,
-            r.ticker,
-            r.name,
-            r.market,
-            r.sector,
-            r.industry,
-            r.market_cap,
-            r.listing_date,
-            r.is_etf,
-            r.is_etn,
-            r.is_active,
-            r.tier,
+    await executemany(query, [
+        (
+            r.ticker, r.name, r.market, r.sector, r.industry, r.market_cap,
+            r.listing_date, r.is_etf, r.is_etn, r.is_active, r.tier,
         )
+        for r in records
+    ])
     return len(records)
 
 
@@ -204,24 +196,19 @@ async def upsert_theme_stocks(
 ) -> int:
     """테마에 종목 매핑을 upsert합니다."""
     leaders = set(leader_tickers or [])
-    count = 0
-    for ticker in tickers:
-        await execute(
-            """
-            INSERT INTO theme_stocks (theme_slug, theme_name, ticker, is_leader)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (theme_slug, ticker)
-            DO UPDATE SET
-                theme_name = EXCLUDED.theme_name,
-                is_leader = EXCLUDED.is_leader
-            """,
-            theme_slug,
-            theme_name,
-            ticker,
-            ticker in leaders,
-        )
-        count += 1
-    return count
+    query = """
+        INSERT INTO theme_stocks (theme_slug, theme_name, ticker, is_leader)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (theme_slug, ticker)
+        DO UPDATE SET
+            theme_name = EXCLUDED.theme_name,
+            is_leader = EXCLUDED.is_leader
+    """
+    await executemany(query, [
+        (theme_slug, theme_name, ticker, ticker in leaders)
+        for ticker in tickers
+    ])
+    return len(tickers)
 
 
 async def get_themes() -> list[dict]:
@@ -277,18 +264,13 @@ async def upsert_macro_indicators(indicators: list[MacroIndicator]) -> int:
             source = EXCLUDED.source,
             updated_at = NOW()
     """
-    for ind in indicators:
-        await execute(
-            query,
-            ind.category,
-            ind.symbol,
-            ind.name,
-            ind.value,
-            ind.change_pct,
-            ind.previous_close,
-            ind.snapshot_date,
-            ind.source,
+    await executemany(query, [
+        (
+            ind.category, ind.symbol, ind.name, ind.value, ind.change_pct,
+            ind.previous_close, ind.snapshot_date, ind.source,
         )
+        for ind in indicators
+    ])
     return len(indicators)
 
 
@@ -344,18 +326,14 @@ async def upsert_daily_rankings(rankings: list[DailyRanking]) -> int:
             change_pct = EXCLUDED.change_pct,
             extra = EXCLUDED.extra
     """
-    for r in rankings:
-        await execute(
-            query,
-            r.ranking_date,
-            r.ranking_type,
-            r.rank,
-            r.ticker,
-            r.name,
-            r.value,
-            r.change_pct,
+    await executemany(query, [
+        (
+            r.ranking_date, r.ranking_type, r.rank, r.ticker, r.name,
+            r.value, r.change_pct,
             json.dumps(r.extra or {}, ensure_ascii=False) if r.extra else None,
         )
+        for r in rankings
+    ])
     return len(rankings)
 
 

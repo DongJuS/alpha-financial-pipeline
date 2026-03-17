@@ -46,6 +46,9 @@ npm run lint
 8. 논의 문서 파일명은 `YYYYMMDD-topic-slug.md` 규칙을 따른다.
 9. 논의 작업은 `.agent/discussions/` 폴더에 기록한다.
 10. 논의 문서는 결론 확정 후 필요한 영구 문서에 반영하고, 반영이 끝나면 삭제한다.
+11. **테스트에서 시스템 바이너리 경로를 하드코딩하지 않는다.** `/usr/bin/echo` 대신 `echo` 또는 `shutil.which("echo")`를 사용한다.
+12. **파일 경로는 `__file__` 기준 상대 경로를 사용한다.** 절대 경로 하드코딩 금지. 예: `Path(__file__).parent / "fixtures" / "sample.json"`
+13. **테스트는 `pip install -r requirements.txt` 후 `pytest`로 실행한다.** Docker 환경이 없는 경우에도 동일하게 패키지를 설치한 뒤 직접 테스트를 돌린다.
 ---
 
 ## 📂 프로젝트 구조 요약
