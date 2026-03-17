@@ -134,9 +134,38 @@ class RLDatasetBuilder:
         ordered_rows = sorted(rows, key=lambda row: row["timestamp_kst"])
         closes = [float(row["close"]) for row in ordered_rows if row.get("close")]
         timestamps = [str(row["timestamp_kst"]) for row in ordered_rows if row.get("close")]
+
+        # DB 데이터 부족 시 FinanceDataReader 폴백
+        if len(closes) < self.min_history_points:
+            logger.info(
+                "DB 데이터 부족(ticker=%s, rows=%d) → FinanceDataReader 폴백 시도",
+                ticker, len(closes),
+            )
+            try:
+                import FinanceDataReader as fdr
+                from datetime import date, timedelta
+
+                end_date = date.today().strftime("%Y-%m-%d")
+                start_date = (date.today() - timedelta(days=days + 30)).strftime("%Y-%m-%d")
+                df = fdr.DataReader(ticker, start_date, end_date)
+                if df is not None and not df.empty:
+                    close_col = "Close" if "Close" in df.columns else "close"
+                    fdr_closes = [float(v) for v in df[close_col].dropna().tolist()]
+                    fdr_timestamps = [str(idx) for idx in df.index]
+                    if len(fdr_closes) >= self.min_history_points:
+                        closes = fdr_closes
+                        timestamps = fdr_timestamps
+                        logger.info(
+                            "FinanceDataReader 폴백 성공: ticker=%s, rows=%d",
+                            ticker, len(closes),
+                        )
+            except Exception as fdr_err:
+                logger.warning("FinanceDataReader 폴백 실패: %s", fdr_err)
+
         if len(closes) < self.min_history_points:
             raise ValueError(
-                f"RL 학습 이력 부족: ticker={ticker}, interval={resolved_interval}, history={len(closes)}, required={self.min_history_points}"
+                f"RL 학습 이력 부족: ticker={ticker}, interval={resolved_interval}, "
+                f"history={len(closes)}, required={self.min_history_points}"
             )
         return RLDataset(ticker=ticker, closes=closes, timestamps=timestamps)
 
