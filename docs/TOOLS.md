@@ -153,43 +153,29 @@ response = json.loads(result.stdout)
 
 ---
 
-### `llm_openai_api`
-- **설명:** OpenAI API (OAuth)를 통해 GPT-4o 호출
-- **접근 권한:** PredictorAgent (인스턴스 3, 4)
-- **모델:** `gpt-4o`
-- **사용 예시:**
-```python
-from openai import AsyncOpenAI
-
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-response = await client.chat.completions.create(
-    model="gpt-4o",
-    messages=[{"role": "system", "content": system_prompt},
-              {"role": "user", "content": user_prompt}],
-    response_format={"type": "json_object"},
-    temperature=0.3
-)
-```
-- **타임아웃:** 60초
+### `llm_openai_api` (비활성)
+- **상태:** 사용 안 함 (API 키 미사용 정책)
+- **비고:** 코드에 GPTClient가 존재하나, API 키 없이는 `is_configured=False`로 자동 스킵됨
 
 ---
 
-### `llm_gemini_cli`
-- **설명:** Gemini CLI를 subprocess로 호출
-- **접근 권한:** PredictorAgent (인스턴스 5)
+### `llm_gemini_oauth`
+- **설명:** Google Gemini을 OAuth ADC(Application Default Credentials) 모드로 호출
+- **접근 권한:** PredictorAgent (폴백 프로바이더)
 - **모델:** `gemini-1.5-pro`
+- **인증 방식:** 호스트의 `~/.config/gcloud/application_default_credentials.json`을 Docker 컨테이너에 마운트
 - **사용 예시:**
 ```python
-import subprocess
-import json
+import google.auth
+import google.generativeai as genai
 
-result = subprocess.run(
-    ["gemini", "-p", prompt, "-m", "gemini-1.5-pro"],
-    capture_output=True, text=True, timeout=60,
-    env={**os.environ, "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY")}
-)
+credentials, project_id = google.auth.default(scopes=[...])
+genai.configure(credentials=credentials)
+model = genai.GenerativeModel("gemini-1.5-pro")
+response = model.generate_content(prompt)
 ```
 - **타임아웃:** 60초
+- **⚠️ API 키를 사용하지 않음.** `GEMINI_API_KEY` 환경변수 불필요.
 
 ---
 

@@ -8,6 +8,33 @@
 
 ## 📌 Recent Decisions
 
+### 2026-03-17 — 에이전트 레지스트리 PostgreSQL 중앙 관리
+
+- **문제:** 에이전트 ID가 여러 곳에 하드코딩(API 라우터 `AGENT_IDS` 리스트, 각 에이전트 클래스 기본값)되어 불일치 발생. `OrchestratorAgent(agent_id="orchestrator")`이 하트비트를 `"orchestrator"`로 기록하지만 API는 `"orchestrator_agent"`를 조회 → 영원히 "연결 끊김" 표시.
+- **결정:** `agent_registry` PostgreSQL 테이블로 에이전트 목록을 중앙 관리. API는 DB에서 동적 조회, 폴백 하드코딩 유지.
+- **수정사항:**
+  - `scripts/db/init_db.py`: `agent_registry` 테이블 DDL + 11개 시드 데이터
+  - `src/api/routers/agents.py`: `AGENT_IDS` 하드코딩 → `_load_agent_registry()` DB 조회 (폴백 포함)
+  - `src/agents/orchestrator.py`: `agent_id` 기본값 `"orchestrator"` → `"orchestrator_agent"`, PM/Notifier 인스턴스도 정규 ID 사용
+  - 레지스트리 CRUD API: `/registry/list`, `/registry/register`, `/registry/{id}` DELETE
+- **운영 규칙:**
+  1. **새 에이전트 추가 시 반드시 `agent_registry` 테이블에 INSERT할 것.** 코드에만 추가하면 모니터링 누락.
+  2. **agent_id는 `agent_registry.agent_id`와 정확히 일치해야 한다.** 불일치 시 하트비트/상태 매칭 실패.
+  3. **비활성화는 soft delete (`is_active=FALSE`)**로 처리. 하드 삭제 금지.
+
+### 2026-03-17 — LLM 프로바이더 운영 정책
+
+- **정책:** API 키는 사용하지 않음. CLI/OAuth 모드만 사용.
+  - **Claude:** CLI 모드 전용 (`/usr/bin/claude`, 호스트 `~/.claude` 마운트)
+  - **GPT:** 사용 안 함 (API key 없음이 정상)
+  - **Gemini:** OAuth ADC 모드 전용 (호스트 `~/.config/gcloud` 마운트)
+- **현황:** Predictor 1~5 모든 종목 예측 실패 (0성공/3실패)
+- **원인 추정:** Claude CLI 또는 Gemini OAuth 호출이 Docker 컨테이너 내에서 실패 중. 컨테이너 로그(`docker compose logs worker`) 확인 필요.
+- **운영 규칙:**
+  1. **LLM API 키를 추가하거나 요구하지 말 것.** CLI/OAuth가 유일한 인증 방식.
+  2. Claude는 `ANTHROPIC_CLI_COMMAND` 환경변수 또는 `/usr/bin/claude` 바이너리에 의존.
+  3. Gemini는 `~/.config/gcloud/application_default_credentials.json` ADC 파일에 의존.
+
 ### 2026-03-16 — N+1 쿼리 배치 최적화 (executemany)
 
 - **결정:** 수집-저장 파이프라인의 모든 bulk upsert 함수(`for + await execute()` 패턴)를 `asyncpg executemany()`로 전환. 실시간 틱에는 메모리 버퍼 도입.
