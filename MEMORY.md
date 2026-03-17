@@ -8,6 +8,25 @@
 
 ## 📌 Recent Decisions
 
+### 2026-03-16 — N+1 쿼리 배치 최적화 (executemany)
+
+- **결정:** 수집-저장 파이프라인의 모든 bulk upsert 함수(`for + await execute()` 패턴)를 `asyncpg executemany()`로 전환. 실시간 틱에는 메모리 버퍼 도입.
+- **근거:**
+  - `for + await execute()`는 매 반복마다 커넥션 acquire/release + 네트워크 왕복 발생 → 2,400건 기준 10~30초
+  - `executemany`는 내부적으로 PostgreSQL extended protocol pipelining 사용 → 네트워크 왕복 1회, 0.1~0.5초
+  - `max_size`를 200으로 올려도 해결 불가: 직렬 `await`라 커넥션 1개만 사용, PostgreSQL 커넥션 비용(5~10MB/개), `max_connections=100` 초과 위험
+- **구현:**
+  - `db_client.py`: `executemany()` 헬퍼 (chunk_size=5,000 자동 분할)
+  - `queries.py`: `upsert_market_data()` 전환
+  - `marketplace_queries.py`: 4개 함수 전환 (stock_master/theme/macro/rankings)
+  - `collector.py`: `_tick_buffer` + `_flush_tick_buffer()` (100건 또는 1초 주기)
+- **운영 규칙:**
+  1. **새로운 bulk upsert 함수를 만들 때 반드시 `executemany()`를 사용할 것.** `for + await execute()` 패턴 금지.
+  2. **5,000건 이상 배치는 자동 청크 분할됨.** `executemany()` 호출 시 별도 처리 불필요.
+  3. **실시간 스트리밍 데이터(틱 등)는 반드시 버퍼링 후 배치 INSERT.** 단건 INSERT 금지.
+  4. **ON CONFLICT (upsert) 멱등성은 항상 유지할 것.** `executemany`는 `ON CONFLICT`와 호환됨.
+- **AI 합의:** GitHub Copilot + Claude Opus 모두 Option A(executemany) 추천. UNNEST(Option B)는 복잡도 대비 이점 미미, COPY(Option C)는 upsert 불가로 부적합.
+
 ### 2026-03-16 — Strategy S Orchestrator 통합 + 마켓플레이스 Closure
 - **결정:** SearchRunner를 StrategyRunner Protocol로 구현하여 Orchestrator에 등록. 4-way 블렌딩(A:0.3/B:0.3/S:0.2/RL:0.2) 완성.
 - **구현:**
@@ -211,12 +230,14 @@ Orchestrator
 
 ## 📋 Checklist for Next Phase
 
-- [ ] RL Trading 파이프라인 구현 (Strategy RL)
+- [x] RL Trading 파이프라인 구현 (Strategy RL)
 - [ ] SearXNG 로컬 검색 엔진 통합 (API 제한 극복)
 - [ ] SearchAgent 모델 호환성 테스트
 - [ ] 프로덕션 환경 배포 및 모니터링
 - [ ] 성능 튜닝 (블렌딩 가중치 최적화)
+- [x] N+1 쿼리 배치 최적화 (executemany 전환)
+- [ ] QA 잔여 이슈 처리 (C3: Orchestrator↔Collector 연결, H1~H4, M1~M4)
 
 ---
 
-*Last updated: 2026-03-15*
+*Last updated: 2026-03-16*

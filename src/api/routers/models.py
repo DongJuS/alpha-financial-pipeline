@@ -100,7 +100,7 @@ async def debug_providers() -> dict:
     import os
     import shutil
 
-    from src.llm.cli_bridge import build_cli_command, is_cli_available
+    from src.llm.cli_bridge import _claude_known_paths, build_cli_command, is_cli_available
     from src.llm.gemini_client import load_gemini_oauth_credentials
     from src.utils.config import get_settings
 
@@ -112,13 +112,7 @@ async def debug_providers() -> dict:
     claude_which = shutil.which("claude") if cli_command else None
     claude_known_paths = {
         p: os.path.isfile(p)
-        for p in [
-            os.path.expanduser("~/.claude/bin/claude"),
-            "/root/.claude/bin/claude",
-            "/usr/local/bin/claude",
-            "/usr/lib/node_modules/.bin/claude",
-            "/usr/local/lib/node_modules/.bin/claude",
-        ]
+        for p in _claude_known_paths()
     }
 
     # Gemini 진단

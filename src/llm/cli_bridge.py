@@ -9,6 +9,19 @@ import shlex
 import shutil
 
 
+def _claude_known_paths() -> list[str]:
+    """claude CLI가 설치될 수 있는 알려진 경로 목록을 반환합니다."""
+    import os
+
+    return [
+        os.path.expanduser("~/.claude/bin/claude"),
+        "/root/.claude/bin/claude",
+        "/usr/local/bin/claude",
+        "/usr/lib/node_modules/.bin/claude",       # npm global (Docker)
+        "/usr/local/lib/node_modules/.bin/claude",  # npm global (alt)
+    ]
+
+
 def _resolve_cli_path(cmd: str) -> str:
     """shutil.which 로 못 찾으면 알려진 경로를 직접 탐색합니다."""
     import os
@@ -18,13 +31,7 @@ def _resolve_cli_path(cmd: str) -> str:
         return resolved
 
     if cmd == "claude":
-        for p in [
-            os.path.expanduser("~/.claude/bin/claude"),
-            "/root/.claude/bin/claude",
-            "/usr/local/bin/claude",
-            "/usr/lib/node_modules/.bin/claude",       # npm global (Docker)
-            "/usr/local/lib/node_modules/.bin/claude",  # npm global (alt)
-        ]:
+        for p in _claude_known_paths():
             if os.path.isfile(p) and os.access(p, os.X_OK):
                 return p
     return cmd  # 원본 반환 (실행 시 에러로 잡힘)
@@ -53,16 +60,9 @@ def is_cli_available(command: list[str]) -> bool:
 
     import os
 
-    known_paths = [
-        os.path.expanduser("~/.claude/bin/claude"),
-        "/usr/local/bin/claude",
-        "/root/.claude/bin/claude",
-        "/usr/lib/node_modules/.bin/claude",
-        "/usr/local/lib/node_modules/.bin/claude",
-    ]
     cmd_name = command[0]
     if cmd_name == "claude":
-        return any(os.path.isfile(p) and os.access(p, os.X_OK) for p in known_paths)
+        return any(os.path.isfile(p) and os.access(p, os.X_OK) for p in _claude_known_paths())
     return False
 
 

@@ -47,11 +47,18 @@ logger = get_logger(__name__)
 KST = ZoneInfo("Asia/Seoul")
 
 
+TICK_BUFFER_MAX = 100       # 틱 버퍼 최대 건수
+TICK_BUFFER_FLUSH_SEC = 1.0  # 타임아웃 flush 주기 (초)
+
+
 class CollectorAgent:
     def __init__(self, agent_id: str = "collector_agent") -> None:
         self.agent_id = agent_id
         self.settings = get_settings()
         self._last_hb_db_at: Optional[datetime] = None
+        # 실시간 틱 버퍼 (건별 INSERT 대신 배치 flush)
+        self._tick_buffer: list[MarketDataPoint] = []
+        self._tick_buffer_last_flush: float = 0.0
 
     def _account_scope(self) -> str:
         return "paper" if self.settings.kis_is_paper_trading else "real"
@@ -172,6 +179,33 @@ class CollectorAgent:
                 )
             )
         return points
+
+    async def _flush_tick_buffer(self, force: bool = False) -> int:
+        """틱 버퍼를 DB에 배치 flush합니다.
+
+        버퍼가 TICK_BUFFER_MAX 이상이거나, 마지막 flush 이후
+        TICK_BUFFER_FLUSH_SEC가 경과했거나, force=True이면 flush합니다.
+
+        Returns:
+            flush된 건수 (flush하지 않았으면 0)
+        """
+        now = asyncio.get_event_loop().time()
+        elapsed = now - self._tick_buffer_last_flush
+        should_flush = (
+            force
+            or len(self._tick_buffer) >= TICK_BUFFER_MAX
+            or (self._tick_buffer and elapsed >= TICK_BUFFER_FLUSH_SEC)
+        )
+        if not should_flush or not self._tick_buffer:
+            return 0
+
+        batch = self._tick_buffer[:]
+        self._tick_buffer.clear()
+        self._tick_buffer_last_flush = now
+
+        flushed = await upsert_market_data(batch)
+        logger.debug("틱 버퍼 flush: %d건", flushed)
+        return flushed
 
     async def _cache_latest_tick(self, point: MarketDataPoint, source: str) -> None:
         redis = await get_redis()
@@ -720,6 +754,7 @@ class CollectorAgent:
                         if duration_seconds is not None:
                             elapsed = asyncio.get_running_loop().time() - started
                             if elapsed >= duration_seconds:
+                                await self._flush_tick_buffer(force=True)
                                 logger.info("KIS WebSocket 수집 종료 (duration=%ss)", duration_seconds)
                                 await self._beat(
                                     status="healthy",
@@ -732,6 +767,8 @@ class CollectorAgent:
                         try:
                             raw = await asyncio.wait_for(ws.recv(), timeout=30)
                         except asyncio.TimeoutError:
+                            # 타임아웃 시 잔여 버퍼 flush
+                            await self._flush_tick_buffer(force=True)
                             await self._beat(
                                 status="healthy",
                                 last_action=f"실시간 수집 대기중 ({received}건)",
@@ -776,7 +813,12 @@ class CollectorAgent:
                             volume=int(volume),
                             change_pct=None,
                         )
-                        await upsert_market_data([point])
+
+                        # 버퍼에 추가 → 조건 충족 시 배치 flush
+                        self._tick_buffer.append(point)
+                        await self._flush_tick_buffer()
+
+                        # Redis 캐시/Pub/Sub는 최신 1건만
                         await self._cache_latest_tick(point, source="kis_ws")
                         await publish_message(
                             TOPIC_MARKET_DATA,

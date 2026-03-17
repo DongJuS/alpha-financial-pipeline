@@ -51,6 +51,27 @@ async def execute(query: str, *args: object) -> str:
         return await conn.execute(query, *args)
 
 
+async def executemany(query: str, args_list: list[tuple], *, chunk_size: int = 5000) -> None:
+    """배치 DML 쿼리를 실행합니다.
+
+    asyncpg의 executemany는 내부적으로 prepared statement + pipeline protocol을
+    사용하여 네트워크 왕복을 최소화합니다.
+
+    Args:
+        query: 파라미터 플레이스홀더($1, $2, ...)가 포함된 SQL.
+        args_list: 각 행에 대응하는 파라미터 튜플 리스트.
+        chunk_size: 한 번에 전송할 최대 행 수 (기본 5,000건).
+                    PostgreSQL 메모리 스파이크를 방지합니다.
+    """
+    if not args_list:
+        return
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        for i in range(0, len(args_list), chunk_size):
+            chunk = args_list[i : i + chunk_size]
+            await conn.executemany(query, chunk)
+
+
 async def fetch(query: str, *args: object) -> list[asyncpg.Record]:
     """SELECT 쿼리를 실행하고 결과 행 목록을 반환합니다."""
     pool = await get_pool()
