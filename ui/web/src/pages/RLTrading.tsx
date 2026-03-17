@@ -12,11 +12,13 @@ import {
   useShadowPerformance,
   useActivatePolicy,
   useCreateTrainingJob,
+  useTrainingJobs,
   useRunWalkForward,
   usePromoteShadowToPaper,
   usePromotePaperToReal,
   usePolicyMode,
   type RLPolicy,
+  type TrainingJob,
   type TrainingJobRequest,
 } from "@/hooks/useRL";
 import { formatPct } from "@/utils/api";
@@ -168,6 +170,7 @@ function PolicyRow({ policy: p, onActivate }: { policy: RLPolicy; onActivate: ()
 /* ── 학습 실험 탭 ──────────────────────────────────────────────────────── */
 function ExperimentsTab() {
   const { data: experiments, isLoading } = useExperiments();
+  const { data: trainingJobs, isLoading: isJobsLoading } = useTrainingJobs();
   const createJob = useCreateTrainingJob();
   const runWF = useRunWalkForward();
   const [ticker, setTicker] = useState("");
@@ -180,7 +183,7 @@ function ExperimentsTab() {
     setTicker("");
   }
 
-  if (isLoading) return <div className="card"><div className="h-40 skeleton" /></div>;
+  if (isLoading && isJobsLoading) return <div className="card"><div className="h-40 skeleton" /></div>;
 
   return (
     <div className="space-y-4">
@@ -218,6 +221,56 @@ function ExperimentsTab() {
             트레이닝 잡 생성 완료: {createJob.data?.job_id}
           </p>
         )}
+      </div>
+
+      {/* 트레이닝 잡 목록 */}
+      <div className="card">
+        <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>트레이닝 잡</h3>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b" style={{ borderColor: "var(--border)" }}>
+                <th className="pb-2 font-semibold" style={{ color: "var(--text-secondary)" }}>Job ID</th>
+                <th className="pb-2 font-semibold" style={{ color: "var(--text-secondary)" }}>종목</th>
+                <th className="pb-2 font-semibold" style={{ color: "var(--text-secondary)" }}>알고리즘</th>
+                <th className="pb-2 font-semibold" style={{ color: "var(--text-secondary)" }}>상태</th>
+                <th className="pb-2 font-semibold text-right" style={{ color: "var(--text-secondary)" }}>진행률</th>
+                <th className="pb-2 font-semibold" style={{ color: "var(--text-secondary)" }}>생성</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(trainingJobs ?? []).map((job: TrainingJob) => (
+                <tr key={job.job_id} className="border-b last:border-0" style={{ borderColor: "var(--border)" }}>
+                  <td className="py-2 font-mono text-xs" style={{ color: "var(--text-primary)" }}>
+                    {job.job_id}
+                  </td>
+                  <td className="py-2 font-semibold" style={{ color: "var(--text-primary)" }}>
+                    {job.tickers?.join(", ") ?? job.ticker ?? "—"}
+                  </td>
+                  <td className="py-2" style={{ color: "var(--text-secondary)" }}>
+                    {job.policy_family ?? job.algorithm ?? "—"}
+                  </td>
+                  <td className="py-2">
+                    <StatusBadge status={job.status} />
+                  </td>
+                  <td className="py-2 text-right font-mono text-xs" style={{ color: "var(--text-primary)" }}>
+                    {job.progress_pct != null ? `${job.progress_pct.toFixed(0)}%` : "—"}
+                  </td>
+                  <td className="py-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+                    {(job.created_at ?? job.started_at)?.slice(0, 16).replace("T", " ") ?? "—"}
+                  </td>
+                </tr>
+              ))}
+              {(trainingJobs ?? []).length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-sm" style={{ color: "var(--text-secondary)" }}>
+                    아직 트레이닝 잡이 없습니다.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* 실험 목록 */}
