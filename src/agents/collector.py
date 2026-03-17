@@ -588,6 +588,15 @@ class CollectorAgent:
 
         saved = await upsert_market_data(points)
 
+        # S3(MinIO) 저장
+        try:
+            from src.services.datalake import store_daily_bars as _store_daily_bars
+            s3_records = [p.model_dump() for p in points]
+            await _store_daily_bars(s3_records)
+            logger.info("CollectorAgent S3 일봉 저장 완료: %d건", len(s3_records))
+        except Exception as s3_err:
+            logger.warning("CollectorAgent S3 저장 스킵: %s", s3_err)
+
         for point in latest_points:
             await self._cache_latest_tick(point, source="fdr_daily")
 
