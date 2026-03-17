@@ -295,12 +295,28 @@ class RLPolicyStoreV2:
         policy_id: str,
         ticker: str | None = None,
     ) -> Optional[PolicyEntry]:
-        """레지스트리에서 policy_id로 엔트리를 찾습니다."""
+        """레지스트리에서 policy_id로 엔트리를 찾습니다.
+
+        티커 정규화를 통해 005930 ↔ 005930.KS 양방향 매칭을 지원합니다.
+        """
         if ticker:
+            # 직접 매칭
             tp = registry.tickers.get(ticker)
             if tp:
-                return tp.get_policy(policy_id)
+                entry = tp.get_policy(policy_id)
+                if entry:
+                    return entry
+
+            # 티커 정규화 매칭 (005930 ↔ 005930.KS)
+            from src.utils.ticker import to_raw
+            raw = to_raw(ticker)
+            for reg_ticker, tp in registry.tickers.items():
+                if to_raw(reg_ticker) == raw:
+                    entry = tp.get_policy(policy_id)
+                    if entry:
+                        return entry
             return None
+
         # 전체 종목 검색
         for tp in registry.tickers.values():
             entry = tp.get_policy(policy_id)

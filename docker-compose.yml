@@ -90,8 +90,8 @@ services:
       - ./:/app
       # Gemini OAuth: 호스트의 gcloud ADC 인증 파일을 컨테이너에 마운트
       - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
-      # Claude CLI: 호스트의 claude 바이너리를 컨테이너에 마운트
-      - ${HOME}/.claude:/root/.claude:ro
+      # Claude CLI: named volume으로 컨테이너 내 인증 정보 영구 보존
+      - claude_auth:/root/.claude
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 
   worker:
@@ -127,7 +127,8 @@ services:
     volumes:
       - ./:/app
       - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
-      - ${HOME}/.claude:/root/.claude:ro
+      # Claude CLI: api와 동일한 named volume 공유 → 한 번 로그인하면 둘 다 사용 가능
+      - claude_auth:/root/.claude
     command: python scripts/run_orchestrator_worker.py
 
   gen:
@@ -194,3 +195,4 @@ volumes:
   redis_data:
   minio_data:
   ui_node_modules:
+  claude_auth:          # Claude CLI 인증 토큰 영구 보존

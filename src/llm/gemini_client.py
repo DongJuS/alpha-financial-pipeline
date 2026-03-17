@@ -12,7 +12,10 @@ from src.utils.logging import get_logger
 from src.utils.secret_validation import is_placeholder_secret
 
 logger = get_logger(__name__)
-GEMINI_OAUTH_SCOPES = ("https://www.googleapis.com/auth/generative-language",)
+# cloud-platform 스코프만 사용 (generative-language는 ADC에서 invalid_scope 에러 발생)
+GEMINI_OAUTH_SCOPES = (
+    "https://www.googleapis.com/auth/cloud-platform",
+)
 
 import re
 
