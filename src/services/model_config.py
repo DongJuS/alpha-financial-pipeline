@@ -11,6 +11,7 @@ from src.db.queries import (
 )
 from src.llm.claude_client import ClaudeClient
 from src.llm.gemini_client import GeminiClient
+from src.llm.gpt_client import GPTClient
 
 SUPPORTED_MODEL_OPTIONS = [
     # ── Claude (CLI) ────────────────────────────────────────────
@@ -20,6 +21,10 @@ SUPPORTED_MODEL_OPTIONS = [
     {"model": "claude-sonnet-4-5-20250514", "provider": "claude", "label": "Claude Sonnet 4.5", "description": "이전 세대 Sonnet · 코딩 특화"},
     {"model": "claude-opus-4-5-20251114", "provider": "claude", "label": "Claude Opus 4.5", "description": "이전 세대 Opus · 안정적 추론"},
     {"model": "claude-3-5-sonnet-latest", "provider": "claude", "label": "Claude 3.5 Sonnet", "description": "레거시 호환 · 복합 추론"},
+    # ── GPT (OpenAI API Key) ────────────────────────────────────
+    {"model": "gpt-4o", "provider": "gpt", "label": "GPT-4o", "description": "최신 멀티모달 · 고성능 추론 · 128K 컨텍스트"},
+    {"model": "gpt-4o-mini", "provider": "gpt", "label": "GPT-4o Mini", "description": "경량 고속 · 저비용 · 일상 분석 최적"},
+    {"model": "gpt-4-turbo", "provider": "gpt", "label": "GPT-4 Turbo", "description": "이전 세대 Turbo · 안정적 추론"},
     # ── Gemini (OAuth/ADC) ──────────────────────────────────────
     {"model": "gemini-3.1-pro-preview", "provider": "gemini", "label": "Gemini 3.1 Pro", "description": "최신 최상위 · 복합 추론 · 에이전트 최적화"},
     {"model": "gemini-3.1-flash-lite-preview", "provider": "gemini", "label": "Gemini 3.1 Flash Lite", "description": "3.1 경량 · 최저비용 · 대량 처리"},
@@ -88,41 +93,82 @@ def provider_name_for_model(model: str) -> str:
     text = model.lower()
     if "claude" in text:
         return "claude"
+    if "gpt" in text:
+        return "gpt"
     if "gemini" in text:
         return "gemini"
     raise ValueError(f"지원하지 않는 provider 모델명입니다: {model}")
 
 
 def provider_status() -> list[dict]:
-    claude = ClaudeClient(model="claude-opus-4-6")
-    gemini = GeminiClient(model="gemini-3.1-pro-preview")
+    """각 LLM 프로바이더의 연결 상태를 반환한다.
 
+    개별 프로바이더 초기화 실패가 전체 목록을 막지 않도록
+    각각 독립적으로 try-except 처리한다.
+    """
+    results: list[dict] = []
 
-    if claude._cli_command:
-        claude_mode = "CLI"
-    elif claude._client is not None:
-        claude_mode = "SDK (API Key)"
-    else:
-        claude_mode = "미연결"
-
-
-    gemini_mode = gemini.auth_mode or "미연결"
-    if gemini_mode == "oauth":
-        gemini_mode = "OAuth (ADC)"
-    elif gemini_mode == "api_key":
-        gemini_mode = "API Key"
-
-    return [
-        {
+    # ── Claude ──
+    try:
+        claude = ClaudeClient(model="claude-opus-4-6")
+        if claude._cli_command:
+            claude_mode = "CLI"
+        elif claude._client is not None:
+            claude_mode = "SDK (API Key)"
+        else:
+            claude_mode = "미연결"
+        results.append({
             "provider": "claude",
             "mode": claude_mode,
             "default_model": "claude-opus-4-6",
             "configured": claude.is_configured,
-        },
-        {
+        })
+    except Exception:
+        results.append({
+            "provider": "claude",
+            "mode": "미연결",
+            "default_model": "claude-opus-4-6",
+            "configured": False,
+        })
+
+    # ── GPT ──
+    try:
+        gpt = GPTClient(model="gpt-4o-mini")
+        gpt_mode = "API Key" if gpt.is_configured else "미연결"
+        results.append({
+            "provider": "gpt",
+            "mode": gpt_mode,
+            "default_model": "gpt-4o-mini",
+            "configured": gpt.is_configured,
+        })
+    except Exception:
+        results.append({
+            "provider": "gpt",
+            "mode": "미연결",
+            "default_model": "gpt-4o-mini",
+            "configured": False,
+        })
+
+    # ── Gemini ──
+    try:
+        gemini = GeminiClient(model="gemini-3.1-pro-preview")
+        gemini_mode = gemini.auth_mode or "미연결"
+        if gemini_mode == "oauth":
+            gemini_mode = "OAuth (ADC)"
+        elif gemini_mode == "api_key":
+            gemini_mode = "API Key"
+        results.append({
             "provider": "gemini",
             "mode": gemini_mode,
             "default_model": "gemini-3.1-pro-preview",
             "configured": gemini.is_configured,
-        },
-    ]
+        })
+    except Exception:
+        results.append({
+            "provider": "gemini",
+            "mode": "미연결",
+            "default_model": "gemini-3.1-pro-preview",
+            "configured": False,
+        })
+
+    return results

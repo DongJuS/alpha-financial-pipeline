@@ -8,6 +8,7 @@ Hive-style 파티셔닝(data_type/date=YYYY-MM-DD/)을 사용합니다.
 
 from __future__ import annotations
 
+import asyncio
 import io
 from datetime import date, datetime
 from enum import Enum
@@ -128,6 +129,33 @@ def _make_s3_key(
     return f"{data_type.value}/date={dt.isoformat()}/{name}"
 
 
+# ── 재시도 로직 (exponential backoff) ────────────────────────────────────────
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 1.0  # seconds
+
+
+async def _upload_with_retry(
+    data: bytes,
+    key: str,
+    content_type: str = "application/x-parquet",
+) -> str:
+    """S3 업로드를 최대 _MAX_RETRIES회 재시도합니다 (exponential backoff)."""
+    last_exc: Exception | None = None
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            return await upload_bytes(data, key, content_type=content_type)
+        except Exception as e:
+            last_exc = e
+            if attempt < _MAX_RETRIES:
+                delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                logger.warning(
+                    "S3 업로드 재시도 %d/%d (key=%s): %s — %.1f초 후 재시도",
+                    attempt, _MAX_RETRIES, key, e, delay,
+                )
+                await asyncio.sleep(delay)
+    raise last_exc  # type: ignore[misc]
+
+
 async def store_daily_bars(records: list[dict[str, Any]], partition_date: date | None = None) -> str | None:
     """일봉 데이터를 Parquet으로 S3에 저장합니다."""
     if not records:
@@ -135,11 +163,11 @@ async def store_daily_bars(records: list[dict[str, Any]], partition_date: date |
     try:
         data = _to_parquet_bytes(records, DAILY_BARS_SCHEMA)
         key = _make_s3_key(DataType.DAILY_BARS, partition_date)
-        s3_uri = await upload_bytes(data, key, content_type="application/x-parquet")
+        s3_uri = await _upload_with_retry(data, key)
         logger.info("S3 일봉 저장 완료: %s (%d건, %d bytes)", s3_uri, len(records), len(data))
         return s3_uri
     except Exception as e:
-        logger.warning("S3 일봉 저장 실패 (비필수): %s", e)
+        logger.error("S3 일봉 저장 최종 실패 (%d회 재시도 후): %s", _MAX_RETRIES, e, exc_info=True)
         return None
 
 
@@ -150,11 +178,11 @@ async def store_predictions(records: list[dict[str, Any]], partition_date: date 
     try:
         data = _to_parquet_bytes(records, PREDICTIONS_SCHEMA)
         key = _make_s3_key(DataType.PREDICTIONS, partition_date)
-        s3_uri = await upload_bytes(data, key, content_type="application/x-parquet")
+        s3_uri = await _upload_with_retry(data, key)
         logger.info("S3 예측 저장 완료: %s (%d건)", s3_uri, len(records))
         return s3_uri
     except Exception as e:
-        logger.warning("S3 예측 저장 실패 (비필수): %s", e)
+        logger.error("S3 예측 저장 최종 실패 (%d회 재시도 후): %s", _MAX_RETRIES, e, exc_info=True)
         return None
 
 
@@ -165,11 +193,11 @@ async def store_orders(records: list[dict[str, Any]], partition_date: date | Non
     try:
         data = _to_parquet_bytes(records, ORDERS_SCHEMA)
         key = _make_s3_key(DataType.ORDERS, partition_date)
-        s3_uri = await upload_bytes(data, key, content_type="application/x-parquet")
+        s3_uri = await _upload_with_retry(data, key)
         logger.info("S3 주문 저장 완료: %s (%d건)", s3_uri, len(records))
         return s3_uri
     except Exception as e:
-        logger.warning("S3 주문 저장 실패 (비필수): %s", e)
+        logger.error("S3 주문 저장 최종 실패 (%d회 재시도 후): %s", _MAX_RETRIES, e, exc_info=True)
         return None
 
 
@@ -180,9 +208,9 @@ async def store_blend_results(records: list[dict[str, Any]], partition_date: dat
     try:
         data = _to_parquet_bytes(records, BLEND_RESULTS_SCHEMA)
         key = _make_s3_key(DataType.BLEND_RESULTS, partition_date)
-        s3_uri = await upload_bytes(data, key, content_type="application/x-parquet")
+        s3_uri = await _upload_with_retry(data, key)
         logger.info("S3 블렌딩 저장 완료: %s (%d건)", s3_uri, len(records))
         return s3_uri
     except Exception as e:
-        logger.warning("S3 블렌딩 저장 실패 (비필수): %s", e)
+        logger.error("S3 블렌딩 저장 최종 실패 (%d회 재시도 후): %s", _MAX_RETRIES, e, exc_info=True)
         return None

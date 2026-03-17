@@ -228,9 +228,25 @@ Strategy L  → [real] [paper] [virtual]
 
 논의 문서: `.agent/discussions/20260315-marketplace-sector-expansion.md` (Closed)
 
+### 수집-저장 파이프라인 최적화 (2026-03-16)
+
+목표:
+- N+1 쿼리 안티패턴 제거로 DB 부하 95%+ 감소
+- 실시간 틱 단건 INSERT를 버퍼 배치로 전환
+
+완료 항목:
+- [x] `db_client.py`에 `executemany()` 헬퍼 추가 (chunk_size=5,000 내장)
+- [x] `queries.py` — `upsert_market_data()` for→executemany 전환 (2,400 RTT → 1 RTT)
+- [x] `marketplace_queries.py` — 4개 함수 전환 (stock_master/theme/macro/rankings)
+- [x] `collector.py` — 실시간 틱 버퍼 도입 (100건 또는 1초 주기 flush)
+- [x] AST 검증 통과, AI 합의(Copilot/Claude Opus) 확인
+
+논의 문서: `.agent/discussions/20260316-n1-query-batch-optimization.md`
+
 ## 현재 상태 요약
 
 - 코어 트레이딩 트랙: 구현 완료 및 유지보수 단계
+- **수집-저장 파이프라인**: N+1 쿼리 제거 + 틱 버퍼링으로 최적화 완료 (2026-03-16)
 - RL 트레이딩: Phase 9 전체 구현 완료 (dataset builder v2, trading env, walk-forward, shadow inference, promotion gate, REST API 17개)
 - 검색/스크래핑 스택: 파이프라인 설계 완료, MVP 구현 완료, SearchRunner Orchestrator 통합 완료
 - N-way 블렌딩: 설계 확정, 구현 완료 (Phase 11), Strategy S 포함 4-way 블렌딩 운영 중
