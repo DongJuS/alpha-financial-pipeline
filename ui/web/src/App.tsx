@@ -19,6 +19,7 @@ const SystemHealth = lazy(() => import("@/pages/SystemHealth"));
 const DataLakePage = lazy(() => import("@/pages/DataLake"));
 const NotificationsPage = lazy(() => import("@/pages/Notifications"));
 const AuditTrailPage = lazy(() => import("@/pages/AuditTrail"));
+const RealAccountPage = lazy(() => import("@/pages/RealAccount"));
 
 function RouteFallback() {
   return (
@@ -62,6 +63,7 @@ export default function App() {
           <Route path="/datalake" element={withSuspense(<DataLakePage />)} />
           <Route path="/notifications" element={withSuspense(<NotificationsPage />)} />
           <Route path="/audit" element={withSuspense(<AuditTrailPage />)} />
+          <Route path="/real-account" element={withSuspense(<RealAccountPage />)} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

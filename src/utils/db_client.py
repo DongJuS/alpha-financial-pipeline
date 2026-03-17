@@ -28,10 +28,10 @@ async def get_pool() -> asyncpg.Pool:
         _pool = await asyncpg.create_pool(
             dsn=settings.database_url,
             min_size=2,
-            max_size=20,
+            max_size=30,  # QA: 5 Predictor + Collector + Orchestrator + PM + API 동시 사용 대비
             command_timeout=30,
         )
-        logger.info("PostgreSQL 연결 풀 생성 완료")
+        logger.info("PostgreSQL 연결 풀 생성 완료 (max_size=30)")
     return _pool
 
 

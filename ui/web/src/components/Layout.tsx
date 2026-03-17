@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { to: "/notifications", label: "알림", description: "알림 센터" },
   { to: "/audit", label: "감사", description: "감사 추적" },
   { to: "/settings", label: "설정", description: "운영 정책" },
+  { to: "/real-account", label: "실계좌", description: "KIS 실거래" },
 ];
 
 function BrandMark() {
@@ -53,6 +54,7 @@ export default function Layout() {
   const navigate = useNavigate();
 
   function handleLogout() {
+    if (!window.confirm("정말로 로그아웃하시겠습니까?")) return;
     localStorage.removeItem("alpha_token");
     navigate("/login", { replace: true });
   }

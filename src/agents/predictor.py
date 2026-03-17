@@ -153,7 +153,11 @@ class PredictorAgent:
                     "reasoning_summary": raw.get("reasoning_summary") or "LLM reasoning omitted",
                 }
             except Exception as e:
-                logger.warning("%s 신호 생성 실패 [%s]: %s", provider, ticker, e)
+                logger.error(
+                    "%s 신호 생성 실패 [%s]: %s",
+                    provider, ticker, e,
+                    exc_info=True,
+                )
 
         raise RuntimeError(
             f"사용 가능한 LLM provider가 없어 예측을 생성하지 못했습니다. providers={attempted_providers}, ticker={ticker}"
@@ -182,7 +186,25 @@ class PredictorAgent:
                         ticker=ticker, candles=candles, position=position,
                     )
                 except Exception as e:
-                    logger.warning("%s 예측 생략 [%s]: %s", self.agent_id, ticker, e)
+                    logger.error(
+                        "%s 예측 실패 [%s]: %s",
+                        self.agent_id, ticker, e,
+                        exc_info=True,
+                    )
+                    # 실패 레코드도 DB에 기록하여 추적 가능하게 함
+                    try:
+                        await insert_prediction(PredictionSignal(
+                            agent_id=self.agent_id,
+                            llm_model=self.llm_model,
+                            strategy=self.strategy,
+                            ticker=ticker,
+                            signal="HOLD",
+                            confidence=0.0,
+                            reasoning_summary=f"[ERROR] 예측 실패: {str(e)[:200]}",
+                            trading_date=date.today(),
+                        ))
+                    except Exception:
+                        logger.error("예측 실패 레코드 DB 저장도 실패 [%s]", ticker, exc_info=True)
                     return None
                 return PredictionSignal(
                     agent_id=self.agent_id,
@@ -245,8 +267,16 @@ class PredictorAgent:
         heartbeat_status = "healthy"
         if failed_tickers and results:
             heartbeat_status = "degraded"
+            logger.warning(
+                "%s 부분 실패: 성공 %d / 실패 %d — %s",
+                self.agent_id, len(results), len(failed_tickers), failed_tickers,
+            )
         elif failed_tickers and not results:
             heartbeat_status = "error"
+            logger.error(
+                "%s 전체 실패: %d종목 전부 예측 불가 — LLM 프로바이더 설정을 확인하세요",
+                self.agent_id, len(failed_tickers),
+            )
 
         await set_heartbeat(self.agent_id)
         await insert_heartbeat(

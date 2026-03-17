@@ -225,7 +225,7 @@ function OverviewTab() {
         </p>
 
         {heatmap.isLoading && <div className="mt-4 h-64 skeleton" />}
-        {heatmap.data && (
+        {heatmap.data && heatmap.data.length > 0 && (
           <div className="mt-4" style={{ width: "100%", height: 400 }}>
             <ResponsiveContainer width="100%" height="100%">
               <Treemap
@@ -242,6 +242,19 @@ function OverviewTab() {
                 ))}
               </Treemap>
             </ResponsiveContainer>
+          </div>
+        )}
+        {heatmap.data && heatmap.data.length === 0 && !heatmap.isLoading && (
+          <div
+            className="mt-4 flex flex-col items-center justify-center rounded-lg py-16"
+            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)" }}
+          >
+            <p className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
+              섹터 데이터가 아직 준비되지 않았습니다.
+            </p>
+            <p className="mt-1 text-xs" style={{ color: "var(--text-tertiary)" }}>
+              stock_master 테이블에 섹터/업종 데이터가 시딩되면 히트맵이 표시됩니다.
+            </p>
           </div>
         )}
         <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -285,7 +298,7 @@ function OverviewTab() {
               <div key={i} className="h-10 skeleton" />
             ))}
           </div>}
-          {gainers.data && (
+          {gainers.data && gainers.data.length > 0 && (
             <div className="mt-3 space-y-2">
               {gainers.data.slice(0, 5).map((item) => (
                 <div
@@ -308,6 +321,11 @@ function OverviewTab() {
               ))}
             </div>
           )}
+          {gainers.data && gainers.data.length === 0 && (
+            <p className="mt-3 text-center py-6 text-sm" style={{ color: "var(--text-tertiary)" }}>
+              랭킹 데이터가 아직 없습니다.
+            </p>
+          )}
         </div>
 
         <div className="card">
@@ -319,7 +337,7 @@ function OverviewTab() {
               <div key={i} className="h-10 skeleton" />
             ))}
           </div>}
-          {losers.data && (
+          {losers.data && losers.data.length > 0 && (
             <div className="mt-3 space-y-2">
               {losers.data.slice(0, 5).map((item) => (
                 <div
@@ -341,6 +359,11 @@ function OverviewTab() {
                 </div>
               ))}
             </div>
+          )}
+          {losers.data && losers.data.length === 0 && (
+            <p className="mt-3 text-center py-6 text-sm" style={{ color: "var(--text-tertiary)" }}>
+              랭킹 데이터가 아직 없습니다.
+            </p>
           )}
         </div>
       </div>
@@ -389,7 +412,13 @@ function RankingsTab() {
         </div>
       )}
 
-      {rankings.data && (
+      {rankings.data && rankings.data.length === 0 && (
+        <p className="text-center py-12 text-sm" style={{ color: "var(--text-tertiary)" }}>
+          선택한 랭킹 유형의 데이터가 아직 없습니다. 시장 데이터가 수집되면 자동으로 표시됩니다.
+        </p>
+      )}
+
+      {rankings.data && rankings.data.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
