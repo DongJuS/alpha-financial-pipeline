@@ -4,15 +4,20 @@ src/api/routers/market.py — 시장 데이터 조회 라우터
 
 import asyncio
 from datetime import datetime, time, timedelta
-from typing import Annotated, Optional
+from typing import Annotated, List, Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.api.deps import get_current_user
+from src.db.models import MarketDataPoint
+from src.db.queries import upsert_market_data
 from src.utils.db_client import fetch, fetchrow
+from src.utils.logging import get_logger
 from src.utils.redis_client import KEY_LATEST_TICKS, KEY_REALTIME_SERIES, get_redis
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 KST = ZoneInfo("Asia/Seoul")
@@ -337,4 +342,123 @@ async def get_index(
     return IndexResponse(
         kospi={"value": 0.0, "change_pct": 0.0, "note": "데이터 수집 전"},
         kosdaq={"value": 0.0, "change_pct": 0.0, "note": "데이터 수집 전"},
+    )
+
+
+# ── 데이터 수집 엔드포인트 ─────────────────────────────────────────────────
+
+
+class CollectRequest(BaseModel):
+    tickers: List[str] = Field(
+        default_factory=list,
+        description="수집할 종목 코드 목록. 비워두면 KOSPI/KOSDAQ 상위 30개 자동 선택",
+    )
+    days: int = Field(default=120, ge=10, le=365, description="수집 기간(일)")
+
+
+class CollectResponse(BaseModel):
+    saved: int
+    tickers_collected: List[str]
+    tickers_failed: List[str]
+    message: str
+
+
+def _collect_fdr_to_db_sync(tickers: list[str], days: int) -> tuple[int, list[str], list[str]]:
+    """FDR로 일봉 데이터를 수집하고 DB용 MarketDataPoint 리스트를 반환합니다."""
+    import FinanceDataReader as fdr
+
+    start = (datetime.now(KST).date() - timedelta(days=days + 5)).isoformat()
+
+    # 종목 코드 → (이름, 마켓) 매핑
+    listing = fdr.StockListing("KRX")
+    info: dict[str, tuple[str, str]] = {}
+    for _, row in listing.iterrows():
+        code = str(row.get("Code", "")).strip()
+        name = str(row.get("Name", code)).strip()
+        market = str(row.get("Market", "")).strip().upper()
+        if market in {"KOSPI", "KOSDAQ"}:
+            info[code] = (name, market)
+
+    # 대상 종목 결정: 요청 없으면 KOSPI 상위 30개
+    if not tickers:
+        tickers = list(info.keys())[:30]
+
+    points: list[MarketDataPoint] = []
+    collected: list[str] = []
+    failed: list[str] = []
+
+    for ticker in tickers:
+        try:
+            df = fdr.DataReader(ticker, start)
+            if df is None or df.empty:
+                failed.append(ticker)
+                continue
+
+            name, market = info.get(ticker, (ticker, "KOSPI"))
+
+            for idx, row in df.iterrows():
+                trade_date = idx.date() if hasattr(idx, "date") else datetime.now(KST).date()
+                ts = datetime(
+                    trade_date.year, trade_date.month, trade_date.day,
+                    15, 30, 0, tzinfo=KST,
+                )
+                close_val = int(row.get("Close", 0))
+                if close_val <= 0:
+                    continue
+                change = row.get("Change")
+                points.append(
+                    MarketDataPoint(
+                        ticker=ticker,
+                        name=name,
+                        market=market,  # type: ignore[arg-type]
+                        timestamp_kst=ts,
+                        interval="daily",
+                        open=int(row.get("Open", close_val)),
+                        high=int(row.get("High", close_val)),
+                        low=int(row.get("Low", close_val)),
+                        close=close_val,
+                        volume=int(row.get("Volume", 0)),
+                        change_pct=float(change * 100.0) if change is not None else None,
+                    )
+                )
+            collected.append(ticker)
+        except Exception as e:
+            logger.warning("FDR 수집 실패 [%s]: %s", ticker, e)
+            failed.append(ticker)
+
+    return points, collected, failed
+
+
+@router.post("/collect", response_model=CollectResponse, status_code=status.HTTP_202_ACCEPTED)
+async def collect_market_data(
+    req: CollectRequest,
+    _: Annotated[dict, Depends(get_current_user)],
+) -> CollectResponse:
+    """FinanceDataReader로 일봉 데이터를 수집하여 DB에 저장합니다.
+
+    tickers를 비워서 요청하면 KOSPI/KOSDAQ 상위 30개 종목을 자동으로 수집합니다.
+    """
+    try:
+        points, collected, failed = await asyncio.to_thread(
+            _collect_fdr_to_db_sync, req.tickers, req.days
+        )
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="FinanceDataReader가 설치되어 있지 않습니다. `pip install finance-datareader`",
+        )
+    except Exception as e:
+        logger.error("FDR 수집 오류: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    saved = await upsert_market_data(points)
+    logger.info("FDR 수집 완료: saved=%d, tickers=%s", saved, collected)
+
+    return CollectResponse(
+        saved=saved,
+        tickers_collected=collected,
+        tickers_failed=failed,
+        message=f"{len(collected)}개 종목 {saved}건 저장 완료" + (
+            f" ({len(failed)}개 실패: {', '.join(failed[:5])})" if failed else ""
+        ),
     )
