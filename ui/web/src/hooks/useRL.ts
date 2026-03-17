@@ -62,14 +62,21 @@ export interface TrainingJobRequest {
 
 export interface TrainingJob {
   job_id: string;
-  ticker: string;
-  algorithm: string;
+  /** 단일 학습 작업 상태 조회 시 반환 */
+  ticker?: string;
+  algorithm?: string;
+  progress_pct?: number;
+  started_at?: string | null;
+  result_policy_id?: number | null;
+  error?: string | null;
+  /** 목록 조회 시 반환 (백엔드 실제 필드) */
+  tickers?: string[];
+  policy_family?: string;
+  dataset_interval?: string;
+  dataset_days?: number;
+  created_at?: string;
   status: "queued" | "running" | "completed" | "failed";
-  progress_pct: number;
-  started_at: string | null;
   completed_at: string | null;
-  result_policy_id: number | null;
-  error: string | null;
 }
 
 export interface WalkForwardRequest {
@@ -334,6 +341,17 @@ export function useTrainingJob(jobId: string | null) {
   });
 }
 
+export function useTrainingJobs() {
+  return useQuery({
+    queryKey: ["rl", "training-jobs"],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: TrainingJob[]; total: number }>("/rl/training-jobs");
+      return Array.isArray(data) ? data : (data?.data ?? []);
+    },
+    refetchInterval: 5_000,
+  });
+}
+
 export function usePolicyMode(policyId: number | string | null, ticker: string | null) {
   return useQuery({
     queryKey: ["rl", "policy-mode", policyId, ticker],
@@ -375,6 +393,7 @@ export function useCreateTrainingJob() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["rl", "experiments"] });
+      qc.invalidateQueries({ queryKey: ["rl", "training-jobs"] });
     },
   });
 }
