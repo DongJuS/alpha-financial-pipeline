@@ -201,6 +201,13 @@ class RLDatasetBuilder:
                             if points:
                                 saved = await upsert_market_data(points)
                                 logger.info("FDR 데이터 DB 자동 저장: ticker=%s, %d건", ticker, saved)
+                                # S3(MinIO)에도 저장
+                                try:
+                                    from src.services.datalake import store_daily_bars as _s3_store
+                                    await _s3_store([p.model_dump() for p in points])
+                                    logger.info("FDR 데이터 S3 자동 저장: ticker=%s, %d건", ticker, len(points))
+                                except Exception as s3_err:
+                                    logger.warning("FDR → S3 저장 실패 (무시): %s", s3_err)
                         except Exception as save_err:
                             logger.warning("FDR → DB 저장 실패 (무시): %s", save_err)
             except Exception as fdr_err:
