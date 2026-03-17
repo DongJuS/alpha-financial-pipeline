@@ -13,12 +13,10 @@
 [ ] Redis 7+
 [ ] Docker (권장, 컨테이너 실행용)
 [ ] KIS Developers 계좌 및 앱 등록 완료
-[ ] Anthropic API 키 발급
-[ ] OpenAI API 키 발급
-[ ] Google Gemini API 키 발급
 [ ] Telegram Bot 생성 및 Chat ID 확인
-[ ] claude CLI 설치: npm install -g @anthropic-ai/claude-code
-[ ] gemini CLI 설치: (공식 Google Gemini CLI 문서 참조)
+[ ] claude CLI 설치: npm install -g @anthropic-ai/claude-code (LLM 호출에 CLI 모드 사용)
+[ ] gcloud CLI 설치 + ADC 인증: gcloud auth application-default login (Gemini OAuth 모드 사용)
+# ⚠️ LLM API 키는 사용하지 않습니다. Claude CLI + Gemini OAuth(ADC) 모드만 사용합니다.
 ```
 
 ---
@@ -45,10 +43,11 @@ DATABASE_URL=postgresql://alpha_user:password@localhost:5432/alpha_db
 # ─── Redis ─────────────────────────────────────────────
 REDIS_URL=redis://localhost:6379
 
-# ─── LLM API Keys ──────────────────────────────────────
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-GEMINI_API_KEY=AIza...
+# ─── LLM (API 키 사용 안 함 — CLI/OAuth 모드) ──────────
+# Claude: CLI 모드 (호스트의 ~/.claude 마운트)
+ANTHROPIC_CLI_COMMAND=claude
+# Gemini: OAuth ADC 모드 (호스트의 ~/.config/gcloud 마운트)
+# GPT: 사용 안 함
 
 # ─── KIS Developers (한국투자증권) ───────────────────────
 KIS_APP_KEY=PSxxxxxxxxxxxxxxxxxxxxxxxxxx

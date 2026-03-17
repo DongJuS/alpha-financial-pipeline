@@ -91,7 +91,8 @@
 ```bash
 # 1. 환경변수 설정
 cp .env.example .env
-# .env 파일에 API 키 입력 (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, KIS_*, TELEGRAM_*)
+# .env 파일에 KIS/Telegram 시크릿 입력 (KIS_*, TELEGRAM_*)
+# ⚠️ LLM API 키 불필요 — Claude CLI + Gemini OAuth(ADC) 모드 사용
 
 # 2. 컨테이너 빌드 및 실행 (API/UI + Orchestrator worker)
 docker compose up -d --build postgres redis api worker ui

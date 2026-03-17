@@ -7,7 +7,7 @@ import { api } from "@/utils/api";
 /* ── 타입 정의 ─────────────────────────────────────────────────────────── */
 
 export interface RLPolicy {
-  id: number;
+  id: number | string;
   ticker: string;
   version: string;
   algorithm: string;
@@ -73,17 +73,30 @@ export interface TrainingJob {
 }
 
 export interface WalkForwardRequest {
-  policy_id: number;
-  n_splits?: number;
+  ticker: string;
+  n_folds?: number;
+  dataset_days?: number;
 }
 
 export interface WalkForwardResult {
-  policy_id: number;
-  passed: boolean;
-  splits: number;
-  avg_return: number;
-  worst_split_return: number;
+  /** 백엔드 실제 필드 */
+  n_folds: number;
+  total_data_points: number;
+  avg_return_pct: number;
+  std_return_pct: number;
+  min_return_pct: number;
+  max_return_pct: number;
+  avg_excess_return_pct: number;
+  avg_max_drawdown_pct: number;
+  avg_win_rate: number;
+  approved_folds: number;
   consistency_score: number;
+  overall_approved: boolean;
+  created_at: string;
+  folds: unknown[];
+  /** 하위 호환용 alias */
+  passed?: boolean;
+  avg_return?: number;
 }
 
 export interface ShadowSignalRequest {
@@ -124,12 +137,19 @@ export interface ShadowRecord {
 }
 
 export interface PromotionResult {
-  policy_id: number;
-  from_mode: string;
-  to_mode: string;
-  approved: boolean;
-  reason: string;
-  metrics: Record<string, unknown>;
+  policy_id: string;
+  ticker: string;
+  promotion_type: string;
+  /** 백엔드 필드: passed (shadow→paper, paper→real 공통) */
+  passed: boolean;
+  /** 백엔드 필드: failures 배열 */
+  failures: string[];
+  criteria: Record<string, unknown>;
+  actual: Record<string, unknown>;
+  checked_at: string;
+  /** 하위 호환용 alias — 일부 응답에만 존재 */
+  approved?: boolean;
+  reason?: string;
 }
 
 export interface PolicyMode {
@@ -146,19 +166,44 @@ interface ListApiResponse<T> {
   meta: Record<string, unknown>;
 }
 
+/** 백엔드 PolicySummary → 프론트엔드 RLPolicy 매핑 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapPolicy(raw: any): RLPolicy {
+  return {
+    id: raw.policy_id ?? raw.id,
+    ticker: raw.ticker,
+    version: raw.state_version ?? raw.version ?? "",
+    algorithm: raw.algorithm,
+    mode: raw.mode ?? (raw.is_active ? "paper" : "shadow"),
+    is_active: raw.is_active ?? false,
+    excess_return: raw.excess_return ?? raw.excess_return_pct ?? raw.return_pct ?? null,
+    sharpe_ratio: raw.sharpe_ratio ?? null,
+    max_drawdown: raw.max_drawdown ?? raw.max_drawdown_pct ?? null,
+    win_rate: raw.win_rate ?? null,
+    total_trades: raw.total_trades ?? raw.trades ?? 0,
+    training_episodes: raw.training_episodes ?? raw.episodes ?? 0,
+    walk_forward_passed: raw.walk_forward_passed ?? raw.approved ?? false,
+    created_at: raw.created_at,
+    activated_at: raw.activated_at ?? null,
+  };
+}
+
 async function fetchPolicies(): Promise<RLPolicy[]> {
-  const { data } = await api.get<ListApiResponse<RLPolicy>>("/rl/policies");
-  return Array.isArray(data) ? data : (data?.data ?? []);
+  const { data } = await api.get<ListApiResponse<Record<string, unknown>>>("/rl/policies");
+  const items = Array.isArray(data) ? data : (data?.data ?? []);
+  return items.map(mapPolicy);
 }
 
 async function fetchActivePolicies(): Promise<RLPolicy[]> {
-  const { data } = await api.get<ListApiResponse<RLPolicy>>("/rl/policies/active");
-  return Array.isArray(data) ? data : (data?.data ?? []);
+  const { data } = await api.get<ListApiResponse<Record<string, unknown>>>("/rl/policies/active");
+  const items = Array.isArray(data) ? data : (data?.data ?? []);
+  return items.map(mapPolicy);
 }
 
 async function fetchTickerPolicies(ticker: string): Promise<RLPolicy[]> {
-  const { data } = await api.get<ListApiResponse<RLPolicy>>(`/rl/policies/${ticker}`);
-  return Array.isArray(data) ? data : (data?.data ?? []);
+  const { data } = await api.get<ListApiResponse<Record<string, unknown>>>(`/rl/policies/${ticker}`);
+  const items = Array.isArray(data) ? data : (data?.data ?? []);
+  return items.map(mapPolicy);
 }
 
 async function fetchExperiments(): Promise<RLExperiment[]> {
@@ -196,8 +241,10 @@ async function fetchTrainingJob(jobId: string): Promise<TrainingJob> {
   return data;
 }
 
-async function fetchPolicyMode(policyId: number): Promise<PolicyMode> {
-  const { data } = await api.get<PolicyMode>(`/rl/promotion/policy-mode/${policyId}`);
+async function fetchPolicyMode(policyId: number | string, ticker: string): Promise<PolicyMode> {
+  const { data } = await api.get<PolicyMode>(
+    `/rl/promotion/policy-mode/${policyId}?ticker=${encodeURIComponent(ticker)}`,
+  );
   return data;
 }
 
@@ -287,11 +334,11 @@ export function useTrainingJob(jobId: string | null) {
   });
 }
 
-export function usePolicyMode(policyId: number | null) {
+export function usePolicyMode(policyId: number | string | null, ticker: string | null) {
   return useQuery({
-    queryKey: ["rl", "policy-mode", policyId],
-    queryFn: () => fetchPolicyMode(policyId as number),
-    enabled: policyId !== null,
+    queryKey: ["rl", "policy-mode", policyId, ticker],
+    queryFn: () => fetchPolicyMode(policyId as number | string, ticker as string),
+    enabled: policyId !== null && ticker !== null,
   });
 }
 
@@ -300,8 +347,10 @@ export function usePolicyMode(policyId: number | null) {
 export function useActivatePolicy() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (policyId: number) => {
-      const { data } = await api.post(`/rl/policies/${policyId}/activate`);
+    mutationFn: async ({ policyId, ticker }: { policyId: number | string; ticker: string }) => {
+      const { data } = await api.post(
+        `/rl/policies/${policyId}/activate?ticker=${encodeURIComponent(ticker)}`,
+      );
       return data;
     },
     onSuccess: () => {
@@ -314,7 +363,14 @@ export function useCreateTrainingJob() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (payload: TrainingJobRequest) => {
-      const { data } = await api.post<TrainingJob>("/rl/training-jobs", payload);
+      // 백엔드 TrainingJobRequest 스키마에 맞게 변환
+      const backendPayload = {
+        tickers: [payload.ticker],
+        policy_family: payload.algorithm ?? "tabular_q_v2",
+        dataset_interval: "daily" as const,
+        dataset_days: payload.lookback_days ?? 120,
+      };
+      const { data } = await api.post<TrainingJob>("/rl/training-jobs", backendPayload);
       return data;
     },
     onSuccess: () => {
@@ -327,7 +383,15 @@ export function useRunWalkForward() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (payload: WalkForwardRequest) => {
-      const { data } = await api.post<WalkForwardResult>("/rl/walk-forward", payload);
+      // 백엔드 WalkForwardRequestModel 스키마에 맞게 변환
+      const backendPayload = {
+        ticker: payload.ticker,
+        n_folds: payload.n_folds ?? 5,
+        expanding_window: true,
+        trainer_version: "v2" as const,
+        dataset_days: payload.dataset_days ?? 120,
+      };
+      const { data } = await api.post<WalkForwardResult>("/rl/walk-forward", backendPayload);
       return data;
     },
     onSuccess: () => {
@@ -352,8 +416,11 @@ export function useCreateShadowSignal() {
 export function usePromoteShadowToPaper() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { policy_id: number }) => {
-      const { data } = await api.post<PromotionResult>("/rl/promotion/shadow-to-paper", payload);
+    mutationFn: async (payload: { policy_id: number | string; ticker: string }) => {
+      const { data } = await api.post<PromotionResult>("/rl/promotion/shadow-to-paper", {
+        policy_id: String(payload.policy_id),
+        ticker: payload.ticker,
+      });
       return data;
     },
     onSuccess: () => {
@@ -365,8 +432,15 @@ export function usePromoteShadowToPaper() {
 export function usePromotePaperToReal() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { policy_id: number; confirmation_code: string }) => {
-      const { data } = await api.post<PromotionResult>("/rl/promotion/paper-to-real", payload);
+    mutationFn: async (payload: {
+      policy_id: number | string;
+      ticker: string;
+      confirmation_code?: string;
+    }) => {
+      const { data } = await api.post<PromotionResult>("/rl/promotion/paper-to-real", {
+        policy_id: String(payload.policy_id),
+        ticker: payload.ticker,
+      });
       return data;
     },
     onSuccess: () => {

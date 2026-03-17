@@ -77,13 +77,13 @@ async def get_audit_trail(
                 signal_source AS agent_id,
                 CONCAT(side, ' ', name, ' x', quantity, ' @ ', price) AS description,
                 'executed' AS result
-            FROM real_trading_audit
+            FROM trade_history
             UNION ALL
             SELECT
                 'operational_audit' AS event_type,
-                to_char(checked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_time,
-                agent_id,
-                check_name AS description,
+                to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_time,
+                executed_by AS agent_id,
+                audit_type AS description,
                 CASE WHEN passed THEN 'pass' ELSE 'fail' END AS result
             FROM operational_audits
             UNION ALL
@@ -110,11 +110,11 @@ async def get_audit_trail(
                    to_char(executed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_time,
                    signal_source AS agent_id,
                    '' AS description, '' AS result
-            FROM real_trading_audit
+            FROM trade_history
             UNION ALL
             SELECT 'operational_audit' AS event_type,
-                   to_char(checked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_time,
-                   agent_id, '' AS description, '' AS result
+                   to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_time,
+                   executed_by AS agent_id, '' AS description, '' AS result
             FROM operational_audits
             UNION ALL
             SELECT 'notification' AS event_type,
@@ -144,7 +144,7 @@ async def get_audit_summary(
     summary_row = await fetchrow(
         """
         WITH unified AS (
-            SELECT 'trade' AS event_type, TRUE AS passed FROM real_trading_audit
+            SELECT 'trade' AS event_type, TRUE AS passed FROM trade_history
             UNION ALL
             SELECT 'operational_audit', passed FROM operational_audits
             UNION ALL
@@ -160,7 +160,7 @@ async def get_audit_summary(
     type_rows = await fetch(
         """
         WITH unified AS (
-            SELECT 'trade' AS event_type FROM real_trading_audit
+            SELECT 'trade' AS event_type FROM trade_history
             UNION ALL
             SELECT 'operational_audit' FROM operational_audits
             UNION ALL

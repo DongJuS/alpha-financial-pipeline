@@ -15,6 +15,7 @@ from src.agents.rl_trading_v2 import TabularQTrainerV2
 from src.db.models import PredictionSignal
 from src.db.queries import fetch_recent_ohlcv
 from src.utils.logging import get_logger
+from src.utils.ticker import find_in_map, to_raw
 
 logger = get_logger(__name__)
 
@@ -58,13 +59,17 @@ class RLRunner:
 
         signals: list[PredictionSignal] = []
         for ticker in tickers:
-            policy_id = active_map.get(ticker)
+            # 티커 정규화: 005930 ↔ 005930.KS 양방향 매칭
+            policy_id = find_in_map(ticker, active_map)
             if not policy_id:
                 logger.debug("RLRunner: %s에 활성 정책 없음, 건너뜁니다.", ticker)
                 continue
 
+            # DB 조회용 raw 코드 (market_data는 plain 코드 사용)
+            db_ticker = to_raw(ticker)
+
             try:
-                signal = await self._infer_for_ticker(ticker, policy_id)
+                signal = await self._infer_for_ticker(db_ticker, policy_id, ticker)
                 if signal:
                     signals.append(signal)
             except Exception as e:
@@ -75,18 +80,30 @@ class RLRunner:
 
     async def _infer_for_ticker(
         self,
-        ticker: str,
+        db_ticker: str,
         policy_id: str,
+        original_ticker: str | None = None,
     ) -> PredictionSignal | None:
-        """단일 티커에 대해 RL 추론을 실행합니다."""
-        # 정책 아티팩트 로드
-        artifact = self._store.load_policy(policy_id, ticker)
+        """단일 티커에 대해 RL 추론을 실행합니다.
+
+        Args:
+            db_ticker: DB 조회용 raw 코드 (e.g., "005930")
+            policy_id: 정책 ID
+            original_ticker: 원본 티커 (시그널 출력용, e.g., "005930" 또는 "005930.KS")
+        """
+        signal_ticker = original_ticker or db_ticker
+
+        # 정책 아티팩트 로드 (레지스트리에 저장된 티커 형식으로 시도)
+        artifact = self._store.load_policy(policy_id, db_ticker)
         if artifact is None:
-            logger.warning("RLRunner: 정책 파일 로드 실패: %s/%s", policy_id, ticker)
+            # 정규화된 형식으로 재시도
+            artifact = self._store.load_policy(policy_id, signal_ticker)
+        if artifact is None:
+            logger.warning("RLRunner: 정책 파일 로드 실패: %s/%s", policy_id, db_ticker)
             return None
 
-        # 최근 OHLCV 데이터 조회
-        candles = await fetch_recent_ohlcv(ticker=ticker, days=60)
+        # 최근 OHLCV 데이터 조회 (DB는 raw 코드 사용)
+        candles = await fetch_recent_ohlcv(ticker=db_ticker, days=60)
         if not candles or len(candles) < _MIN_CLOSES_FOR_INFERENCE:
             logger.warning(
                 "RLRunner: %s 캔들 데이터 부족 (%d건, 최소 %d건 필요)",
@@ -112,7 +129,7 @@ class RLRunner:
             agent_id=f"rl_agent_{policy_id}",
             llm_model="tabular-q-learning-v2",
             strategy="RL",
-            ticker=ticker,
+            ticker=db_ticker,
             signal=signal,
             confidence=confidence,
             target_price=None,

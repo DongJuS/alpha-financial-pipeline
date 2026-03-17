@@ -1,5 +1,8 @@
 """
 src/api/routers/agents.py — 에이전트 상태 및 관리 라우터
+
+에이전트 목록은 PostgreSQL `agent_registry` 테이블에서 중앙 관리합니다.
+테이블이 아직 없을 경우 하드코딩된 폴백 목록을 사용합니다.
 """
 
 import json
@@ -18,11 +21,14 @@ from src.agents import (
 from src.api.deps import get_admin_user, get_current_user
 from src.utils.agent_activity import classify_agent_activity
 from src.utils.db_client import fetch
+from src.utils.logging import get_logger
 from src.utils.redis_client import check_heartbeat
 
 router = APIRouter()
+logger = get_logger(__name__)
 
-AGENT_IDS = [
+# ── 폴백 (agent_registry 테이블 미존재 시) ──────────────────────────────────
+_FALLBACK_AGENT_IDS = [
     "collector_agent",
     "predictor_1",
     "predictor_2",
@@ -35,7 +41,59 @@ AGENT_IDS = [
     FAST_FLOW_AGENT_ID,
     SLOW_METICULOUS_AGENT_ID,
 ]
-ON_DEMAND_AGENT_IDS = {FAST_FLOW_AGENT_ID, SLOW_METICULOUS_AGENT_ID}
+_FALLBACK_ON_DEMAND = {FAST_FLOW_AGENT_ID, SLOW_METICULOUS_AGENT_ID}
+
+
+async def _load_agent_registry() -> tuple[list[dict], set[str]]:
+    """agent_registry 테이블에서 활성 에이전트 목록을 조회합니다.
+
+    Returns:
+        (agent_rows, on_demand_ids)
+        - agent_rows: [{agent_id, display_name, agent_type, is_on_demand, ...}]
+        - on_demand_ids: on-demand 에이전트 ID 집합
+    """
+    try:
+        rows = await fetch(
+            """
+            SELECT agent_id, display_name, agent_type, description,
+                   is_on_demand, default_config
+            FROM agent_registry
+            WHERE is_active = TRUE
+            ORDER BY
+                CASE agent_type
+                    WHEN 'collector'         THEN 1
+                    WHEN 'predictor'         THEN 2
+                    WHEN 'portfolio_manager' THEN 3
+                    WHEN 'notifier'          THEN 4
+                    WHEN 'orchestrator'      THEN 5
+                    WHEN 'execution'         THEN 6
+                    ELSE 7
+                END,
+                agent_id
+            """
+        )
+        if not rows:
+            raise ValueError("agent_registry is empty")
+        agent_rows = [dict(r) for r in rows]
+        on_demand = {r["agent_id"] for r in agent_rows if r["is_on_demand"]}
+        return agent_rows, on_demand
+    except Exception as e:
+        logger.warning(
+            "agent_registry 테이블 조회 실패 (폴백 사용): %s", e,
+        )
+        fallback_rows = [
+            {"agent_id": aid, "display_name": aid, "agent_type": "unknown",
+             "description": None, "is_on_demand": aid in _FALLBACK_ON_DEMAND,
+             "default_config": {}}
+            for aid in _FALLBACK_AGENT_IDS
+        ]
+        return fallback_rows, _FALLBACK_ON_DEMAND
+
+
+async def _get_known_agent_ids() -> set[str]:
+    """검증용: 등록된 에이전트 ID 집합을 반환합니다."""
+    rows, _ = await _load_agent_registry()
+    return {r["agent_id"] for r in rows}
 
 
 class AgentMetrics(BaseModel):
@@ -130,9 +188,15 @@ def _parse_agent_metrics(raw_metrics: Any) -> Optional[AgentMetrics]:
 async def get_agents_status(
     _: Annotated[dict, Depends(get_current_user)],
 ) -> AgentsStatusResponse:
-    """모든 에이전트의 최신 헬스 상태를 반환합니다."""
-    # DB에서 각 에이전트의 최신 헬스비트 조회
-    rows = await fetch(
+    """모든 에이전트의 최신 헬스 상태를 반환합니다.
+
+    에이전트 목록은 agent_registry 테이블에서 조회합니다.
+    """
+    # 1) agent_registry에서 활성 에이전트 목록 로드
+    agent_rows, on_demand_ids = await _load_agent_registry()
+
+    # 2) 최신 하트비트 조회
+    hb_rows = await fetch(
         """
         SELECT DISTINCT ON (agent_id)
             agent_id, status, last_action, metrics,
@@ -141,14 +205,16 @@ async def get_agents_status(
         ORDER BY agent_id, recorded_at DESC
         """
     )
+    db_status: dict[str, dict] = {r["agent_id"]: dict(r) for r in hb_rows}
 
-    db_status: dict[str, dict] = {r["agent_id"]: dict(r) for r in rows}
-
+    # 3) 에이전트별 상태 조합
     items: list[AgentStatusItem] = []
-    for agent_id in AGENT_IDS:
+    for reg in agent_rows:
+        agent_id = reg["agent_id"]
         is_alive = await check_heartbeat(agent_id)
         db_row = db_status.get(agent_id)
-        if db_row is None and agent_id in ON_DEMAND_AGENT_IDS:
+
+        if db_row is None and agent_id in on_demand_ids:
             items.append(
                 AgentStatusItem(
                     agent_id=agent_id,
@@ -162,6 +228,7 @@ async def get_agents_status(
                 )
             )
             continue
+
         status_value = db_row["status"] if db_row else ("healthy" if is_alive else "dead")
         updated_at = db_row["updated_at"] if db_row else None
         last_action = db_row["last_action"] if db_row else None
@@ -215,7 +282,7 @@ async def get_agent_logs(
     level: Optional[str] = Query(default=None, pattern="^(INFO|WARNING|ERROR)$"),
 ) -> dict:
     """특정 에이전트의 최근 헬스비트 로그를 반환합니다."""
-    if agent_id not in AGENT_IDS:
+    if agent_id not in await _get_known_agent_ids():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"에이전트 '{agent_id}'를 찾을 수 없습니다.",
@@ -240,7 +307,7 @@ async def restart_agent(
     _: Annotated[dict, Depends(get_admin_user)],
 ) -> dict:
     """에이전트 재시작 신호를 발행합니다 (관리자 전용)."""
-    if agent_id not in AGENT_IDS:
+    if agent_id not in await _get_known_agent_ids():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"에이전트 '{agent_id}'를 찾을 수 없습니다.",
@@ -269,7 +336,7 @@ async def pause_agent(
     _: Annotated[dict, Depends(get_admin_user)],
 ) -> dict:
     """에이전트 일시정지 신호를 발행합니다 (관리자 전용)."""
-    if agent_id not in AGENT_IDS:
+    if agent_id not in await _get_known_agent_ids():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"에이전트 '{agent_id}'를 찾을 수 없습니다.",
@@ -291,7 +358,7 @@ async def resume_agent(
     _: Annotated[dict, Depends(get_admin_user)],
 ) -> dict:
     """에이전트 재개 신호를 발행합니다 (관리자 전용)."""
-    if agent_id not in AGENT_IDS:
+    if agent_id not in await _get_known_agent_ids():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"에이전트 '{agent_id}'를 찾을 수 없습니다.",
@@ -305,3 +372,102 @@ async def resume_agent(
         json.dumps({"type": "resume_request", "agent_id": agent_id, "requested_by": "admin"}),
     )
     return {"message": f"'{agent_id}' 재개 신호가 발행되었습니다."}
+
+
+# ── Agent Registry CRUD ─────────────────────────────────────────────────────
+
+
+class AgentRegistryItem(BaseModel):
+    agent_id: str
+    display_name: str
+    agent_type: str
+    description: Optional[str] = None
+    is_active: bool = True
+    is_on_demand: bool = False
+    default_config: Optional[dict] = None
+
+
+class AgentRegistryResponse(BaseModel):
+    agents: list[AgentRegistryItem]
+
+
+@router.get("/registry/list", response_model=AgentRegistryResponse)
+async def list_agent_registry(
+    _: Annotated[dict, Depends(get_current_user)],
+    include_inactive: bool = Query(default=False),
+) -> AgentRegistryResponse:
+    """등록된 에이전트 목록을 조회합니다."""
+    where = "" if include_inactive else "WHERE is_active = TRUE"
+    rows = await fetch(
+        f"""
+        SELECT agent_id, display_name, agent_type, description,
+               is_active, is_on_demand, default_config
+        FROM agent_registry {where}
+        ORDER BY agent_id
+        """
+    )
+    items = [AgentRegistryItem(**dict(r)) for r in rows]
+    return AgentRegistryResponse(agents=items)
+
+
+class RegisterAgentRequest(BaseModel):
+    agent_id: str = Field(..., min_length=2, max_length=30)
+    display_name: str
+    agent_type: str
+    description: Optional[str] = None
+    is_on_demand: bool = False
+    default_config: Optional[dict] = None
+
+
+@router.post("/registry/register")
+async def register_agent(
+    body: RegisterAgentRequest,
+    _: Annotated[dict, Depends(get_admin_user)],
+) -> dict:
+    """새 에이전트를 레지스트리에 등록합니다 (관리자 전용)."""
+    from src.utils.db_client import execute
+
+    await execute(
+        """
+        INSERT INTO agent_registry (agent_id, display_name, agent_type, description, is_on_demand, default_config)
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+        ON CONFLICT (agent_id) DO UPDATE SET
+            display_name  = EXCLUDED.display_name,
+            agent_type    = EXCLUDED.agent_type,
+            description   = EXCLUDED.description,
+            is_on_demand  = EXCLUDED.is_on_demand,
+            default_config = EXCLUDED.default_config,
+            is_active     = TRUE,
+            updated_at    = NOW()
+        """,
+        body.agent_id,
+        body.display_name,
+        body.agent_type,
+        body.description,
+        body.is_on_demand,
+        json.dumps(body.default_config or {}),
+    )
+    return {"message": f"에이전트 '{body.agent_id}' 등록 완료"}
+
+
+@router.delete("/registry/{agent_id}")
+async def deactivate_agent(
+    agent_id: str,
+    _: Annotated[dict, Depends(get_admin_user)],
+) -> dict:
+    """에이전트를 비활성화합니다 (soft delete, 관리자 전용)."""
+    from src.utils.db_client import execute
+
+    result = await execute(
+        """
+        UPDATE agent_registry SET is_active = FALSE, updated_at = NOW()
+        WHERE agent_id = $1
+        """,
+        agent_id,
+    )
+    if result == "UPDATE 0":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"에이전트 '{agent_id}'를 찾을 수 없습니다.",
+        )
+    return {"message": f"에이전트 '{agent_id}' 비활성화 완료"}

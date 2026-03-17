@@ -32,15 +32,16 @@ const TABS: { key: Tab; label: string; desc: string }[] = [
 
 /* ── 모드 배지 ─────────────────────────────────────────────────────────── */
 function ModeBadge({ mode }: { mode: string }) {
+  const m = mode ?? "shadow";
   const style =
-    mode === "real"
+    m === "real"
       ? { background: "var(--red-bg)", color: "var(--red)" }
-      : mode === "paper"
+      : m === "paper"
         ? { background: "var(--yellow-bg)", color: "var(--yellow)" }
         : { background: "var(--blue-bg)", color: "var(--blue)" };
   return (
     <span className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" style={style}>
-      {mode.toUpperCase()}
+      {m.toUpperCase()}
     </span>
   );
 }
@@ -104,7 +105,11 @@ function PoliciesTab() {
             </thead>
             <tbody>
               {items.map((p) => (
-                <PolicyRow key={p.id} policy={p} onActivate={() => activatePolicy.mutate(p.id)} />
+                <PolicyRow
+                  key={String(p.id)}
+                  policy={p}
+                  onActivate={() => activatePolicy.mutate({ policyId: p.id, ticker: p.ticker })}
+                />
               ))}
               {items.length === 0 && (
                 <tr>
@@ -269,38 +274,44 @@ function ExperimentsTab() {
       <div className="card">
         <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>Walk-Forward 검증</h3>
         <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
-          정책 ID를 입력하여 교차 검증을 실행합니다.
+          종목 코드를 입력하여 교차 검증을 실행합니다.
         </p>
-        <WalkForwardRunner onRun={(id) => runWF.mutate({ policy_id: id })} isPending={runWF.isPending} result={runWF.data} />
+        <WalkForwardRunner onRun={(ticker) => runWF.mutate({ ticker })} isPending={runWF.isPending} result={runWF.data} />
       </div>
     </div>
   );
 }
 
 function WalkForwardRunner({ onRun, isPending, result }: {
-  onRun: (id: number) => void;
+  onRun: (ticker: string) => void;
   isPending: boolean;
-  result?: { passed: boolean; avg_return: number; consistency_score: number } | null;
+  result?: import("@/hooks/useRL").WalkForwardResult | null;
 }) {
-  const [policyId, setPolicyId] = useState("");
+  const [ticker, setTicker] = useState("");
   return (
     <div className="mt-3 flex flex-wrap items-end gap-3">
       <div>
-        <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>Policy ID</label>
+        <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>종목 코드</label>
         <input
-          type="number"
-          value={policyId}
-          onChange={(e) => setPolicyId(e.target.value)}
-          className="mt-1 block w-24 rounded-xl border px-3 py-2 text-sm"
+          type="text"
+          value={ticker}
+          onChange={(e) => setTicker(e.target.value)}
+          placeholder="005930"
+          className="mt-1 block w-28 rounded-xl border px-3 py-2 text-sm"
           style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
         />
       </div>
-      <button onClick={() => onRun(Number(policyId))} disabled={isPending || !policyId} className="btn-primary">
+      <button onClick={() => onRun(ticker)} disabled={isPending || !ticker} className="btn-primary">
         {isPending ? "검증 중..." : "Walk-Forward 실행"}
       </button>
       {result && (
-        <span className="text-xs font-semibold" style={{ color: result.passed ? "var(--green)" : "var(--red)" }}>
-          {result.passed ? "PASS" : "FAIL"} — 평균 수익 {formatPct(result.avg_return)}, 일관성 {result.consistency_score.toFixed(2)}
+        <span className="text-xs font-semibold" style={{ color: (result.overall_approved ?? result.passed) ? "var(--green)" : "var(--red)" }}>
+          {(result.overall_approved ?? result.passed) ? "PASS" : "FAIL"}
+          {" — "}
+          평균 수익 {formatPct(result.avg_return_pct ?? result.avg_return ?? 0)},
+          {" "}
+          일관성 {(result.consistency_score ?? 0).toFixed(2)}
+          {result.approved_folds != null && ` (${result.approved_folds}/${result.n_folds} folds)`}
         </span>
       )}
     </div>
@@ -418,8 +429,10 @@ function PromotionTab() {
   const { data: policies } = usePolicies();
   const promoteShadow = usePromoteShadowToPaper();
   const promoteReal = usePromotePaperToReal();
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const { data: policyMode } = usePolicyMode(selectedId);
+  const [selectedId, setSelectedId] = useState<number | string | null>(null);
+  const selectedPolicy = (policies ?? []).find((p) => String(p.id) === String(selectedId));
+  const selectedTicker = selectedPolicy?.ticker ?? null;
+  const { data: policyMode } = usePolicyMode(selectedId, selectedTicker);
   const [confirmCode, setConfirmCode] = useState("");
 
   const shadowPolicies = (policies ?? []).filter((p) => p.mode === "shadow" && p.walk_forward_passed);
@@ -453,7 +466,7 @@ function PromotionTab() {
                   </td>
                   <td className="py-2 text-right">
                     <button
-                      onClick={() => promoteShadow.mutate({ policy_id: p.id })}
+                      onClick={() => promoteShadow.mutate({ policy_id: p.id, ticker: p.ticker })}
                       disabled={promoteShadow.isPending}
                       className="btn-primary text-xs"
                     >
@@ -473,8 +486,10 @@ function PromotionTab() {
           </table>
         </div>
         {promoteShadow.data && (
-          <p className="mt-2 text-xs font-semibold" style={{ color: promoteShadow.data.approved ? "var(--green)" : "var(--red)" }}>
-            {promoteShadow.data.approved ? "승격 승인됨" : `거부: ${promoteShadow.data.reason}`}
+          <p className="mt-2 text-xs font-semibold" style={{ color: (promoteShadow.data.passed ?? promoteShadow.data.approved) ? "var(--green)" : "var(--red)" }}>
+            {(promoteShadow.data.passed ?? promoteShadow.data.approved)
+              ? "승격 승인됨"
+              : `거부: ${promoteShadow.data.failures?.join(", ") ?? promoteShadow.data.reason ?? "조건 미충족"}`}
           </p>
         )}
       </div>
@@ -497,15 +512,17 @@ function PromotionTab() {
               <input
                 type="text"
                 placeholder="확인 코드"
-                value={selectedId === p.id ? confirmCode : ""}
+                value={String(selectedId) === String(p.id) ? confirmCode : ""}
                 onFocus={() => setSelectedId(p.id)}
                 onChange={(e) => { setSelectedId(p.id); setConfirmCode(e.target.value); }}
                 className="w-28 rounded-xl border px-2 py-1.5 text-xs"
                 style={{ borderColor: "var(--border)", background: "white" }}
               />
               <button
-                onClick={() => promoteReal.mutate({ policy_id: p.id, confirmation_code: confirmCode })}
-                disabled={promoteReal.isPending || selectedId !== p.id || !confirmCode}
+                onClick={() =>
+                  promoteReal.mutate({ policy_id: p.id, ticker: p.ticker, confirmation_code: confirmCode })
+                }
+                disabled={promoteReal.isPending || String(selectedId) !== String(p.id) || !confirmCode}
                 className="btn-primary text-xs"
                 style={{ background: "linear-gradient(135deg, var(--red), #ff6b6b)" }}
               >
@@ -520,8 +537,10 @@ function PromotionTab() {
           )}
         </div>
         {promoteReal.data && (
-          <p className="mt-2 text-xs font-semibold" style={{ color: promoteReal.data.approved ? "var(--green)" : "var(--red)" }}>
-            {promoteReal.data.approved ? "실거래 승격 완료" : `거부: ${promoteReal.data.reason}`}
+          <p className="mt-2 text-xs font-semibold" style={{ color: (promoteReal.data.passed ?? promoteReal.data.approved) ? "var(--green)" : "var(--red)" }}>
+            {(promoteReal.data.passed ?? promoteReal.data.approved)
+              ? "실거래 승격 완료"
+              : `거부: ${promoteReal.data.failures?.join(", ") ?? promoteReal.data.reason ?? "조건 미충족"}`}
           </p>
         )}
       </div>
@@ -533,10 +552,11 @@ function PromotionTab() {
           <div>
             <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>Policy ID</label>
             <input
-              type="number"
+              type="text"
               value={selectedId ?? ""}
-              onChange={(e) => setSelectedId(e.target.value ? Number(e.target.value) : null)}
-              className="mt-1 block w-24 rounded-xl border px-3 py-2 text-sm"
+              onChange={(e) => setSelectedId(e.target.value ? e.target.value : null)}
+              placeholder="tabular_005930_..."
+              className="mt-1 block w-40 rounded-xl border px-3 py-2 text-sm"
               style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
             />
           </div>

@@ -164,7 +164,7 @@ async def list_policies(
                     trades=entry.trades,
                     win_rate=entry.win_rate,
                     approved=entry.approved,
-                    created_at=entry.created_at,
+                    created_at=entry.created_at.isoformat() if isinstance(entry.created_at, datetime) else str(entry.created_at),
                     is_active=(active_map.get(t) == entry.policy_id),
                 ).model_dump()
             )
@@ -193,6 +193,8 @@ async def list_active_policies() -> ListResponse:
 
     result: list[dict] = []
     for t, pid in active_map.items():
+        if pid is None:
+            continue
         tp = registry.get_ticker(t)
         entry = tp.get_policy(pid) if tp else None
         result.append(
@@ -241,12 +243,12 @@ async def get_ticker_policies(ticker: str) -> ListResponse:
                 win_rate=entry.win_rate,
                 holdout_steps=entry.holdout_steps,
                 approved=entry.approved,
-                created_at=entry.created_at,
+                created_at=entry.created_at.isoformat() if isinstance(entry.created_at, datetime) else str(entry.created_at),
                 is_active=(entry.policy_id == active_pid),
                 lookback=entry.lookback,
                 episodes=entry.episodes,
-                learning_rate=entry.lr,
-                discount_factor=entry.gamma,
+                learning_rate=entry.learning_rate,
+                discount_factor=entry.discount_factor,
                 epsilon=entry.epsilon,
                 trade_penalty_bps=entry.trade_penalty_bps,
                 file_path=entry.file_path,
