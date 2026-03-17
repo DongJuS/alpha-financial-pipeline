@@ -287,6 +287,18 @@ class OrchestratorAgent:
                     len(all_predictions),
                 )
                 blended = self._blend_nway_predictions(all_predictions)
+                if not blended and collected_count > 0:
+                    logger.warning(
+                        "Strategies produced %d predictions but blending yielded 0 signals — "
+                        "check ticker coverage across strategies.",
+                        collected_count,
+                    )
+                elif not blended:
+                    logger.error(
+                        "All %d strategies ran but produced 0 predictions total — "
+                        "LLM providers may be misconfigured. Check /models/debug-providers.",
+                        len(all_predictions),
+                    )
                 all_orders = await self._execute_blended_signals(blended)
                 mode_name = "blend_mode"
                 blend_meta = {
@@ -439,6 +451,12 @@ class OrchestratorAgent:
                 scores,
             )
 
+        if blended:
+            logger.info(
+                "N-way blending produced %d signals from %d strategies",
+                len(blended),
+                len(all_predictions),
+            )
         return blended
 
     async def _execute_blended_signals(
