@@ -501,6 +501,51 @@ async def _main_async(args: argparse.Namespace) -> None:
         else ["005930", "000660"]  # 기본값: 삼성전자, SK하이닉스
     )
 
+    # ── Strategy Runner 등록 ──────────────────────────────────────────────
+    # 활성화할 전략을 결정합니다. --strategies 미지정 시 A/B/S/RL 모두 등록.
+    active = set(s.strip().upper() for s in args.strategies.split(",") if s.strip()) if args.strategies else {"A", "B", "S", "RL"}
+
+    if "A" in active:
+        try:
+            from src.agents.strategy_a_runner import StrategyARunner
+            orchestrator.register_strategy(StrategyARunner())
+            logger.info("Strategy A (Tournament) 등록 완료")
+        except Exception as e:
+            logger.error("Strategy A 등록 실패: %s", e)
+
+    if "B" in active:
+        try:
+            from src.agents.strategy_b_runner import StrategyBRunner
+            orchestrator.register_strategy(StrategyBRunner())
+            logger.info("Strategy B (Consensus) 등록 완료")
+        except Exception as e:
+            logger.error("Strategy B 등록 실패: %s", e)
+
+    if "S" in active:
+        try:
+            from src.agents.search_runner import SearchRunner
+            orchestrator.register_strategy(SearchRunner())
+            logger.info("Strategy S (Search) 등록 완료")
+        except Exception as e:
+            logger.error("Strategy S 등록 실패: %s", e)
+
+    if "RL" in active:
+        try:
+            from src.agents.rl_runner import RLRunner
+            orchestrator.register_strategy(RLRunner())
+            logger.info("Strategy RL (Reinforcement Learning) 등록 완료")
+        except Exception as e:
+            logger.error("Strategy RL 등록 실패: %s", e)
+
+    registered = orchestrator.registry.runner_count
+    logger.info("총 %d개 Runner 등록 완료 (요청: %s)", registered, active)
+    if registered == 0:
+        logger.error(
+            "등록된 Runner가 없습니다. "
+            "LLM 프로바이더 설정(ANTHROPIC_API_KEY 등)을 확인하거나 "
+            "--strategies 옵션으로 전략을 지정하세요."
+        )
+
     result = await orchestrator.run_cycle(tickers)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
@@ -518,6 +563,11 @@ def main() -> None:
         "--independent-portfolio",
         action="store_true",
         help="독립 포트폴리오 모드 활성화 (per-strategy PM + 집계 위험 모니터링)",
+    )
+    parser.add_argument(
+        "--strategies",
+        default="",
+        help="활성화할 전략 목록 쉼표 구분 (예: A,B,RL). 미지정 시 A,B,S,RL 모두 등록",
     )
     args = parser.parse_args()
     asyncio.run(_main_async(args))
