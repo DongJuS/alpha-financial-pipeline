@@ -263,16 +263,17 @@ class OrchestratorAgent:
                                 strategy_name,
                             )
                     except Exception as e:
-                        logger.warning(
+                        logger.error(
                             "Promotion check failed for %s: %s",
                             strategy_name,
                             e,
+                            exc_info=True,
                         )
 
                 try:
                     await risk_monitor.record_risk_snapshot()
                 except Exception as e:
-                    logger.warning("Risk snapshot recording failed: %s", e)
+                    logger.error("Risk snapshot recording failed: %s", e, exc_info=True)
 
                 mode_name = (
                     f"independent_portfolio({len(all_predictions)} strategies)"

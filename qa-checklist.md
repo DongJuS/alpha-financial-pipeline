@@ -490,7 +490,7 @@
 
 - [ ] `/api/v1/marketplace/sectors/heatmap` 응답에 실제 섹터 데이터 포함 여부
 - [ ] `stock_master` 테이블에 sector/industry 데이터 시드 여부
-- [ ] 섹터 데이터 없을 때 적절한 empty state 표시 (현재: 빈 공간만 보임)
+- [x] 섹터 데이터 없을 때 적절한 empty state 표시 ~~(현재: 빈 공간만 보임)~~ → **FIX 완료 (2026-03-17)**: Marketplace.tsx에 히트맵·랭킹 empty state 메시지 추가
 
 ---
 
@@ -498,6 +498,23 @@
 
 > **QA 검증 중 추가:** 모델 관리 페이지에서 GPT Provider 카드가 보이지 않음
 
-- [ ] Provider 상태 카드 3개 모두 렌더링 (Claude, GPT, Gemini) — 현재 2개만 표시
+- [x] Provider 상태 카드 3개 모두 렌더링 (Claude, GPT, Gemini) ~~— 현재 2개만 표시~~ → **FIX 완료 (2026-03-17)**: `model_config.py`에 GPT 프로바이더 및 모델 옵션 추가
 - [ ] OPENAI_API_KEY 미설정 시 GPT 카드 "NOT CONFIGURED" 표시 여부
 - [ ] OPENAI_API_KEY 설정 시 GPT 카드 "READY" 전환 확인
+
+---
+
+## 3rd QA 수정 반영 사항 (2026-03-17)
+
+> **수정 완료 항목 (코드 변경)**
+
+### 코드 수정
+
+- [x] **GPT Provider 카드 누락**: `model_config.py`에 GPT 모델 3종(gpt-4o, gpt-4o-mini, gpt-4-turbo) 추가 + `provider_status()`에 GPT 상태 반환 + `provider_name_for_model()`에 GPT 분기 추가
+- [x] **/real-account 라우트 누락**: `App.tsx`에 `/real-account` 라우트 추가 + `Layout.tsx` NAV_ITEMS에 실계좌 항목 추가
+- [x] **Predictor silent failure**: `predictor.py`에서 `logger.warning` → `logger.error(exc_info=True)` + 실패 레코드 DB 기록 (다른 에이전트가 선수정)
+- [x] **Marketplace empty state**: 히트맵·상승률·하락률·랭킹 탭에 데이터 없을 때 안내 메시지 추가
+
+### QA 오판 정정
+
+- [x] **ErrorBoundary**: 1st/2nd QA에서 "No global ErrorBoundary" FAIL 판정 → **실제로는 `main.tsx`에 `<ErrorBoundary>` 존재 확인**. 앱 전체를 감싸고 있으며 `ErrorBoundary.tsx`(145줄)에 완전한 에러 복구 UI 구현됨. **이 항목은 PASS로 정정해야 함.**
