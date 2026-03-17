@@ -86,11 +86,36 @@ BLEND_RESULTS_SCHEMA = pa.schema([
     ("created_at", pa.timestamp("ms")),
 ])
 
+TICK_DATA_SCHEMA = pa.schema([
+    ("ticker", pa.string()),
+    ("price", pa.int64()),
+    ("volume", pa.int64()),
+    ("timestamp_kst", pa.timestamp("ms")),
+    ("change_pct", pa.float64()),
+    ("source", pa.string()),  # "kis_websocket" | "kis_rest_fallback"
+])
+
+DEBATE_TRANSCRIPTS_SCHEMA = pa.schema([
+    ("transcript_id", pa.int64()),
+    ("ticker", pa.string()),
+    ("strategy", pa.string()),       # "B"
+    ("round_number", pa.int64()),
+    ("proposer_text", pa.string()),
+    ("challenger_text", pa.string()),
+    ("synthesizer_text", pa.string()),
+    ("consensus_signal", pa.string()),
+    ("consensus_confidence", pa.float64()),
+    ("trading_date", pa.string()),
+    ("created_at", pa.timestamp("ms")),
+])
+
 SCHEMAS: dict[DataType, pa.Schema] = {
     DataType.DAILY_BARS: DAILY_BARS_SCHEMA,
     DataType.PREDICTIONS: PREDICTIONS_SCHEMA,
     DataType.ORDERS: ORDERS_SCHEMA,
     DataType.BLEND_RESULTS: BLEND_RESULTS_SCHEMA,
+    DataType.TICK_DATA: TICK_DATA_SCHEMA,
+    DataType.DEBATE_TRANSCRIPTS: DEBATE_TRANSCRIPTS_SCHEMA,
 }
 
 
@@ -213,4 +238,44 @@ async def store_blend_results(records: list[dict[str, Any]], partition_date: dat
         return s3_uri
     except Exception as e:
         logger.error("S3 블렌딩 저장 최종 실패 (%d회 재시도 후): %s", _MAX_RETRIES, e, exc_info=True)
+        return None
+
+
+async def store_tick_data(records: list[dict[str, Any]], partition_date: date | None = None) -> str | None:
+    """실시간 틱 데이터를 Parquet으로 S3에 저장합니다.
+
+    collector.py의 collect_realtime_ticks()에서 배치 flush 시 호출합니다.
+    필드: ticker, price, volume, timestamp_kst, change_pct, source
+    """
+    if not records:
+        return None
+    try:
+        data = _to_parquet_bytes(records, TICK_DATA_SCHEMA)
+        key = _make_s3_key(DataType.TICK_DATA, partition_date)
+        s3_uri = await _upload_with_retry(data, key)
+        logger.info("S3 틱 데이터 저장 완료: %s (%d건, %d bytes)", s3_uri, len(records), len(data))
+        return s3_uri
+    except Exception as e:
+        logger.error("S3 틱 데이터 저장 최종 실패 (%d회 재시도 후): %s", _MAX_RETRIES, e, exc_info=True)
+        return None
+
+
+async def store_debate_transcripts(records: list[dict[str, Any]], partition_date: date | None = None) -> str | None:
+    """Strategy B 토론 전문을 Parquet으로 S3에 저장합니다.
+
+    strategy_b 에서 debate_transcripts 테이블 insert 후 S3 아카이빙에 사용합니다.
+    필드: transcript_id, ticker, strategy, round_number,
+          proposer_text, challenger_text, synthesizer_text,
+          consensus_signal, consensus_confidence, trading_date, created_at
+    """
+    if not records:
+        return None
+    try:
+        data = _to_parquet_bytes(records, DEBATE_TRANSCRIPTS_SCHEMA)
+        key = _make_s3_key(DataType.DEBATE_TRANSCRIPTS, partition_date)
+        s3_uri = await _upload_with_retry(data, key)
+        logger.info("S3 토론 전문 저장 완료: %s (%d건)", s3_uri, len(records))
+        return s3_uri
+    except Exception as e:
+        logger.error("S3 토론 전문 저장 최종 실패 (%d회 재시도 후): %s", _MAX_RETRIES, e, exc_info=True)
         return None

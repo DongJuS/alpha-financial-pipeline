@@ -8,6 +8,27 @@
 
 ## 📌 Recent Decisions
 
+### 2026-03-18 — 데이터 수집/저장 경로 전수 감사 및 끊어진 파이프라인 식별
+
+- **작업:** 코드 기반으로 전체 데이터 수집 소스 9개, 저장소 4종(PG 20테이블, Redis 13키+5 Pub/Sub, S3 4 DataType, 로컬 파일 2경로)을 매핑.
+- **산출물:** `DATA-STOCK_ARCHITECTURE.md` (상세 문서), `architecture.md` 데이터 아키텍처 섹션 갱신 (참조 링크 추가)
+- **발견된 끊어진 파이프라인 (Critical 3건, Warning 5건, Notice 3건):**
+  1. 🔴 **SearchAgent 완전 stub** — `run_research()`에 TODO 3개만 있고 항상 neutral/0.5 반환. SearXNG 클라이언트는 완성되어 있으나 SearchAgent에서 호출 안 함.
+  2. 🔴 **Orchestrator CLI에서 Runner 미등록** — `_main_async()`에서 StrategyRegistry가 비어 있어 전략 실행 0건.
+  3. 🔴 **LLM 프로바이더 전원 장애** — Docker 내 Claude CLI 부재, GPT 미사용 정책, Gemini ADC 미마운트 → Predictor 전체 실패.
+  4. 🟡 **Yahoo 일봉 Redis/S3 미저장** — `collect_yahoo_daily_bars()`는 PG만 사용.
+  5. 🟡 **실시간 틱 S3 미저장** — `store_tick_data()` 함수 미구현 (enum만 존재).
+  6. 🟡 **Historical Bulk Redis/S3 미사용** — 벌크 시드 후 Redis 캐시 빈 채로 남음.
+  7. 🟡 **IndexCollector DB 미저장** — Redis 120초 캐시만, 지수 이력 분석 불가.
+  8. 🟡 **debate_transcripts/rl_episodes S3 미구현** — DataType enum만 존재.
+  9. 🟠 **스케줄러가 IndexCollector만 가동** — 일봉/매크로/종목마스터 자동 수집 없음.
+  10. 🟠 **ticker_master 테이블 누락 가능성** — lifespan에서 조회하지만 init_db에 DDL 미확인.
+  11. 🟠 **RLRunner 활성 정책 0건** — 학습 → 활성화 파이프라인 미실행 시 RL 시그널 0건.
+- **운영 규칙:**
+  1. 새 수집 경로 추가 시 PG+Redis+S3 3중 저장 일관성을 반드시 맞출 것. `collect_daily_bars()`를 참조 구현으로 삼을 것.
+  2. SearchAgent stub 해소 전까지 Strategy S 가중치를 0으로 설정하거나, SearXNG 클라이언트를 직접 연결할 것.
+  3. Orchestrator CLI 엔트리포인트에 기본 Runner 4종(A/B/RL/S) 자동 등록 코드를 추가할 것.
+
 ### 2026-03-17 — 에이전트 레지스트리 PostgreSQL 중앙 관리
 
 - **문제:** 에이전트 ID가 여러 곳에 하드코딩(API 라우터 `AGENT_IDS` 리스트, 각 에이전트 클래스 기본값)되어 불일치 발생. `OrchestratorAgent(agent_id="orchestrator")`이 하트비트를 `"orchestrator"`로 기록하지만 API는 `"orchestrator_agent"`를 조회 → 영원히 "연결 끊김" 표시.

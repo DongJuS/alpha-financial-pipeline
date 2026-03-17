@@ -27,6 +27,9 @@ from src.api.routers import (
     system_health,
 )
 from src.schedulers.index_scheduler import start_index_scheduler, stop_index_scheduler
+from src.schedulers.collector_agent_scheduler import start_collector_scheduler, stop_collector_scheduler
+from src.schedulers.macro_collector_scheduler import start_macro_scheduler, stop_macro_scheduler
+from src.schedulers.stock_master_scheduler import start_stock_master_scheduler, stop_stock_master_scheduler
 from src.utils.config import get_settings
 from src.utils.db_client import close_pool, get_pool
 from src.utils.logging import get_logger, setup_logging
@@ -65,10 +68,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Index scheduler 시작
     await start_index_scheduler()
 
+    # CollectorAgent scheduler 시작 (08:30 KST)
+    await start_collector_scheduler()
+
+    # MacroCollector scheduler 시작 (08:20 KST)
+    await start_macro_scheduler()
+
+    # StockMasterCollector scheduler 시작 (08:10 KST)
+    await start_stock_master_scheduler()
+
     yield
 
     # Index scheduler 종료
     await stop_index_scheduler()
+
+    # CollectorAgent scheduler 종료
+    await stop_collector_scheduler()
+
+    # MacroCollector scheduler 종료
+    await stop_macro_scheduler()
+
+    # StockMasterCollector scheduler 종료
+    await stop_stock_master_scheduler()
 
     logger.info("🔴 Alpha Trading System 종료 중...")
     await close_pool()
