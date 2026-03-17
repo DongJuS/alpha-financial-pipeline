@@ -116,6 +116,7 @@ class Settings(BaseSettings):
     s3_access_key: str = Field(default="", alias="S3_ACCESS_KEY")
     s3_secret_key: str = Field(default="", alias="S3_SECRET_KEY")
     s3_bucket_name: str = Field(default="alpha-datalake", alias="S3_BUCKET_NAME")
+    s3_region: str = Field(default="us-east-1", alias="S3_REGION")
 
     # ── Gen Data Server (테스트용 랜덤 데이터 생성) ────────────────────────────
     gen_api_url: str = Field(default="", alias="GEN_API_URL")

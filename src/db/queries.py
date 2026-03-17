@@ -16,7 +16,7 @@ from src.db.models import (
     PredictionSignal,
 )
 from src.utils.account_scope import AccountScope, normalize_account_scope, scope_from_is_paper
-from src.utils.db_client import execute, fetch, fetchrow, fetchval
+from src.utils.db_client import execute, executemany, fetch, fetchrow, fetchval
 
 
 async def upsert_market_data(points: list[MarketDataPoint]) -> int:
@@ -47,23 +47,14 @@ async def upsert_market_data(points: list[MarketDataPoint]) -> int:
             market_cap = EXCLUDED.market_cap,
             foreigner_ratio = EXCLUDED.foreigner_ratio
     """
-    for p in points:
-        await execute(
-            query,
-            p.ticker,
-            p.name,
-            p.market,
-            p.timestamp_kst,
-            p.interval,
-            p.open,
-            p.high,
-            p.low,
-            p.close,
-            p.volume,
-            p.change_pct,
-            p.market_cap,
-            p.foreigner_ratio,
+    await executemany(query, [
+        (
+            p.ticker, p.name, p.market, p.timestamp_kst, p.interval,
+            p.open, p.high, p.low, p.close, p.volume,
+            p.change_pct, p.market_cap, p.foreigner_ratio,
         )
+        for p in points
+    ])
     return len(points)
 
 
