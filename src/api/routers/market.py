@@ -454,6 +454,15 @@ async def collect_market_data(
     saved = await upsert_market_data(points)
     logger.info("FDR 수집 완료: saved=%d, tickers=%s", saved, collected)
 
+    # S3(MinIO) 저장
+    try:
+        from src.services.datalake import store_daily_bars as _store_daily_bars
+        s3_records = [p.model_dump() for p in points]
+        await _store_daily_bars(s3_records)
+        logger.info("FDR 수집 S3 저장 완료: %d건", len(s3_records))
+    except Exception as s3_err:
+        logger.warning("FDR 수집 S3 저장 스킵: %s", s3_err)
+
     return CollectResponse(
         saved=saved,
         tickers_collected=collected,
