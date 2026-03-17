@@ -32,7 +32,9 @@ from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import (
     KEY_MACRO,
     TTL_MACRO,
+    TOPIC_ALERTS,
     get_redis,
+    publish_message,
     set_heartbeat,
 )
 from src.db.queries import insert_heartbeat
@@ -226,6 +228,9 @@ class MacroCollector:
         # Redis 캐시 갱신 (카테고리별)
         await self._refresh_macro_cache(all_indicators)
 
+        # Redis Pub/Sub으로 매크로 변동 이벤트 발행
+        await self._publish_macro_alert(all_indicators)
+
         await self._beat(
             status="healthy",
             last_action=f"매크로 지표 수집 완료 ({saved}건)",
@@ -257,6 +262,21 @@ class MacroCollector:
                 ex=TTL_MACRO,
             )
         logger.info("Redis 매크로 캐시 갱신: %s", list(by_category.keys()))
+
+    async def _publish_macro_alert(self, indicators: list[MacroIndicator]) -> None:
+        """매크로 지표 수집 완료 이벤트를 redis:topic:alerts 채널에 발행합니다."""
+        try:
+            event = {
+                "type": "macro_indicators_updated",
+                "timestamp": datetime.now(KST).isoformat(),
+                "count": len(indicators),
+                "categories": list(set(ind.category for ind in indicators)),
+                "indicators": [ind.model_dump(mode="json") for ind in indicators],
+            }
+            await publish_message(TOPIC_ALERTS, json.dumps(event, ensure_ascii=False, default=str))
+            logger.info("매크로 지표 변동 이벤트 발행: %d건", len(indicators))
+        except Exception as exc:
+            logger.warning("매크로 지표 이벤트 발행 실패: %s", exc)
 
 
 async def _main_async(args: argparse.Namespace) -> None:

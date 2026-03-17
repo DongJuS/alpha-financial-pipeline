@@ -91,6 +91,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
+| 2026-03-18 | **데이터 수집/저장 경로 전수 감사** — 코드 기반으로 9개 수집 소스, 20개 DB 테이블, 13개 Redis 키, S3 파티션 구조 전체 매핑. `DATA-STOCK_ARCHITECTURE.md` 작성, `architecture.md` 데이터 아키텍처 섹션 갱신. 끊어진 파이프라인 11건 식별: SearchAgent stub(3 TODO), Orchestrator 빈 registry, Yahoo/Historical/Realtime S3 미저장, IndexCollector DB 미저장, debate_transcripts/rl_episodes S3 미구현, 스케줄러 IndexCollector만 가동 | 🔄 진단완료 |
 | 2026-03-17 | **RL Trading UI 버그 6종 수정** — `useRL.ts`: `usePromoteShadowToPaper`/`usePromotePaperToReal`에 누락된 `ticker` 필드 추가(422 에러 해결), `useActivatePolicy` ticker 쿼리 파라미터 추가, `usePolicyMode` ticker 파라미터 추가, `useRunWalkForward` payload policy_id→ticker 기반으로 수정, `useCreateTrainingJob` ticker→tickers 배열 변환, `PromotionResult` 인터페이스 백엔드 `PromotionCheckResult` 구조에 맞게 수정(passed/failures 필드). `RLTrading.tsx`: 활성화 버튼 ticker 전달, Walk-Forward UI 종목코드 입력으로 변경, 승격 결과 passed/failures 필드 정상 표시. Playwright로 전 탭 버튼 테스트 — 에러 0건 확인 | ✅ 완료 |
 | 2026-03-17 | **에이전트 레지스트리 PostgreSQL 중앙 관리 + agent_id 불일치 수정** — `agent_registry` 테이블 DDL 추가(init_db.py), 11개 에이전트 시드 데이터, `agents.py` 라우터 하드코딩→DB 조회 전환(`_load_agent_registry()`+폴백), agent_id 불일치 수정(orchestrator→orchestrator_agent, portfolio_manager_blend→portfolio_manager_agent, notifier_for_orchestrator→notifier_agent), 레지스트리 CRUD API 3개(`/registry/list`, `/registry/register`, `/registry/{id}` DELETE) | ✅ 완료 |
 | 2026-03-17 | **에이전트 연결 끊김/오류 진단** — Predictor 1~5 전체 실패(LLM 프로바이더 문제: Claude CLI만 가용, API key 미설정, GPT 미구성), Orchestrator/Collector/PM/Notifier "연결 끊김"(agent_id 불일치로 하트비트 매칭 실패), `ticker_master` 테이블+티커 정규화 유틸 구현(이전 세션) | 🔄 진행중 |
@@ -260,6 +261,84 @@ S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아
 
 ---
 
+## ✅ Critical 파이프라인 수정 (2026-03-18)
+
+| 항목 | 파일 | 처리 내용 |
+|---|---|---|
+| ✅ Orchestrator Runner 등록 | `orchestrator.py` `_main_async()` | A/B/S/RL 4개 Runner 자동 등록 + `--strategies` CLI 옵션 추가 |
+| ✅ SearchAgent stub 제거 | `search_agent.py` | SearXNG → Claude 감성 분석 파이프라인 구현. graceful degradation 포함 |
+| ✅ datalake store 함수 추가 | `datalake.py` | `store_tick_data()` + `store_debate_transcripts()` + PyArrow 스키마 2종 추가 |
+
+---
+
+## 🚨 끊어진 파이프라인 진단 (2026-03-18)
+
+> 코드 기반 감사 결과. 구현은 되어 있지만 실제로 연결이 안 되거나 데이터가 흐르지 않는 지점들.
+
+### 🔴 Critical — 데이터 수집/저장이 전혀 안 되는 항목
+
+1. ~~**SearchAgent 완전 stub 상태**~~ ✅ **수정 완료** (2026-03-18)
+   - 파일: `src/agents/search_agent.py`
+   - 상태: `run_research()` 내부에 `# TODO: Implement Tavily API call`, `# TODO: Implement ScrapeGraphAI`, `# TODO: Implement Claude/GPT sentiment analysis` 3개 TODO만 있고, 항상 `sentiment="neutral", confidence=0.5, sources=[], key_facts=[], risk_factors=[]` 반환
+   - 영향: **Strategy S 전체가 사실상 무기능.** SearchRunner → ResearchPortfolioManager → SearchAgent 호출 체인은 완성되어 있지만, 실제 검색/스크래핑이 이뤄지지 않아 모든 종목에 대해 `HOLD(confidence=0.3)` 고정 시그널만 생성. N-way 블렌딩 S:0.20 가중치가 의미 없음
+   - SearXNG 클라이언트(`src/utils/searxng_client.py`)는 완성되어 있으나 SearchAgent에서 **호출하지 않음**
+
+2. ~~**Orchestrator에 Runner 자동 등록 없음**~~ ✅ **수정 완료** (2026-03-18)
+   - 파일: `src/agents/orchestrator.py` — `__init__`에서 `self.registry = StrategyRegistry()` 빈 레지스트리 생성
+   - 상태: `register_strategy()`를 외부에서 호출해야 하는데, `_main_async()`(CLI 엔트리포인트)에서 **어떤 Runner도 등록하지 않음**. `orchestrator.run_cycle(tickers)` 실행해도 `registry.runner_count == 0` → 즉시 빈 dict 반환
+   - 영향: **CLI로 `python -m src.agents.orchestrator`를 실행해도 전략이 하나도 등록되지 않아 예측/주문 0건**
+   - `scripts/run_orchestrator_worker.py`에서 등록하는 코드가 있을 수 있으나, 기본 엔트리포인트에는 없음
+
+3. ~~**LLM 프로바이더 전원 장애 (2026-03-17 진단)**~~ ✅ **해결 확인** (2026-03-18)
+   - Dockerfile에 `npm install -g @anthropic-ai/claude-code`로 Claude CLI 설치, `claude_auth` named volume 마운트로 인증 토큰 공유, `${HOME}/.config/gcloud:/root/.config/gcloud` Gemini ADC 마운트 — 모두 이미 구성됨
+   - docker exec로 `claude` 로그인 완료 확인됨
+
+### 🟡 Warning — 데이터 저장 불일치/누락
+
+4. **Yahoo 일봉 수집 시 Redis/S3 저장 누락**
+   - 파일: `src/agents/collector.py` → `collect_yahoo_daily_bars()`
+   - 상태: PostgreSQL `market_data`에만 upsert. Redis 캐시(`latest_ticks`), S3 Parquet(`daily_bars/`) 저장 없음
+   - 비교: `collect_daily_bars()`는 PG + Redis + S3 + Pub/Sub 4곳 모두 저장
+   - 영향: Yahoo 수집 데이터가 실시간 대시보드(Redis 의존)에 표시 안 됨
+
+5. **실시간 틱 S3 미저장**
+   - 파일: `src/agents/collector.py` → `collect_realtime_ticks()`
+   - 상태: PostgreSQL + Redis만 사용. `datalake.store_tick_data()`가 아직 미구현 (DataType enum에 `TICK_DATA`는 있지만 `datalake.py`에 `store_tick_data()` 함수 없음)
+   - 영향: 틱 데이터의 장기 보관/분석 불가
+
+6. **Historical Bulk 수집 시 Redis/S3/Pub/Sub 미사용**
+   - 파일: `src/agents/collector.py` → `fetch_historical_ohlcv()`
+   - 상태: PostgreSQL `market_data`에만 저장. Redis 캐시 갱신 없고 S3 백업도 없음
+   - 영향: 벌크 시드 후 Redis 캐시가 빈 채로 남음
+
+7. **IndexCollector DB 미저장**
+   - 파일: `src/agents/index_collector.py`
+   - 상태: Redis `redis:cache:market_index` (TTL 120초)에만 캐시. PostgreSQL에 시계열 기록 없음
+   - 영향: 지수 이력 분석/백테스트 불가. 서버 재시작 시 지수 데이터 유실
+
+8. ~~**debate_transcripts, rl_episodes S3 저장 미구현**~~ ✅ **부분 수정** — `store_debate_transcripts()` + `store_tick_data()` 추가. `rl_episodes` store 함수는 RL 파이프라인 완성 후 추가 예정
+   - 파일: `src/services/datalake.py`
+   - 상태: `DataType.DEBATE_TRANSCRIPTS`와 `DataType.RL_EPISODES`가 enum에만 존재. PyArrow 스키마/저장 함수 미구현
+   - 영향: 토론 전문과 RL 에피소드 S3 아카이빙 불가
+
+### 🟠 Notice — 구조적 비활성 상태
+
+9. **스케줄러가 IndexCollector만 가동**
+   - 파일: `src/api/main.py` lifespan → `start_index_scheduler()` 만 호출
+   - 상태: CollectorAgent 일봉 수집, MacroCollector, StockMasterCollector에 대한 스케줄러가 **없음**. 수동 CLI 실행에 의존
+   - 영향: 서버만 띄워도 자동 데이터 수집은 지수(30초 간격)만 이뤄짐. 일봉/매크로/종목마스터는 별도 크론이나 수동 실행 필요
+
+10. **ticker_master 테이블 미생성 가능성**
+    - 파일: `src/api/main.py` lifespan에서 `SELECT raw_code, canonical FROM ticker_master`를 조회하는데, `init_db.py`에 `ticker_master` CREATE TABLE이 있는지 확인 필요 (최근 추가된 테이블)
+    - 영향: 앱 시작 시 `⚠️ 티커 마스터 캐시 로드 실패 (비필수)` 경고 발생 가능
+
+11. **RLRunner 활성 정책 없으면 0건 반환 (정상이나 주의)**
+    - 파일: `src/agents/rl_runner.py`
+    - 상태: `registry.json`에 활성 정책이 없으면 `"활성 정책이 없습니다. 건너뜁니다."` 로그 후 빈 리스트 반환
+    - 영향: RL 학습 → 정책 활성화 → 추론 파이프라인이 순차적으로 실행되지 않으면 Strategy RL은 항상 빈 시그널
+
+---
+
 ## 🎯 Next Immediate Tasks
 
 1. [x] Orchestrator에 Strategy S 통합 (SearchRunner 등록) **← COMPLETED**
@@ -284,5 +363,5 @@ S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아
 
 ---
 
-*Last updated: 2026-03-16*
-*N+1 쿼리 배치 최적화 완료 — executemany 전환 5개 함수, 틱 버퍼링 도입*
+*Last updated: 2026-03-18*
+*Critical 3건 수정 완료 — Orchestrator Runner 등록, SearchAgent 구현, datalake store 함수 추가*

@@ -193,13 +193,16 @@ Tournament   Debate      RL Trading    Search/Research
 
 ## 📮 데이터 아키텍처
 
+> **상세 문서:** 수집 소스별 저장 경로, 테이블 전체 목록, Redis 키/TTL, S3 파티셔닝 구조, 저장소 일관성 매트릭스 등
+> 코드 레벨의 상세 내용은 **[DATA-STOCK_ARCHITECTURE.md](DATA-STOCK_ARCHITECTURE.md)** 를 참조하세요.
+
 ### 메모리 3-Tier
 
 | Tier | 저장소 | 수명 | 용도 |
 |------|--------|------|------|
 | Hot | Redis | ~24h | 실시간 틱, 진행 중 토론 상태, 헬스비트, OAuth 토큰 |
 | Warm | PostgreSQL | 90일 | 거래 이력, 예측 기록, 토너먼트 점수, 토론 전문 |
-| Cold | PostgreSQL Archive | 무기한 | 연간 성과, 주요 이벤트 로그 |
+| Cold | S3/MinIO (Parquet) + PostgreSQL Archive | 무기한 | 연간 성과, 원본 OHLCV, 주요 이벤트 로그 |
 
 ### 주요 PostgreSQL 테이블
 
@@ -212,16 +215,39 @@ Tournament   Debate      RL Trading    Search/Research
 | `trade_history` | PortfolioManagerAgent |
 | `debate_transcripts` | OrchestratorAgent |
 | `agent_heartbeats` | 모든 에이전트 (7일 롤링) |
+| `stock_master` | StockMasterCollector |
+| `macro_indicators` | MacroCollector |
+| `broker_orders` | KIS Broker |
+| `trading_accounts` | KIS Broker |
+| `account_snapshots` | AccountState |
+
+> 전체 20개 테이블의 유니크 제약, 쿼리 파일 매핑은 → [DATA-STOCK_ARCHITECTURE.md §2-1](DATA-STOCK_ARCHITECTURE.md#2-1-postgresql-srcutilsdb_clientpy)
 
 ### Redis 주요 키
 
 | 키 패턴 | TTL | 용도 |
 |---------|-----|------|
 | `heartbeat:{agent_id}` | 90s | 에이전트 생존 신호 |
-| `kis:oauth_token` | 23h | KIS API 인증 토큰 |
+| `kis:oauth_token:{scope}` | 23h | KIS API 인증 토큰 |
 | `krx:holidays:{year}` | 24h | KRX 휴장일 캘린더 |
 | `redis:cache:latest_ticks:{ticker}` | 60s | 실시간 시세 캐시 |
-| `memory:macro_context` | 4h | 거시경제 캐텍스트 |
+| `redis:cache:market_index` | 120s | KOSPI/KOSDAQ 지수 |
+| `redis:cache:stock_master` | 24h | 전종목 마스터 |
+| `redis:cache:macro:{category}` | 1h | 매크로 지표 |
+| `memory:macro_context` | 4h | 거시경제 컨텍스트 |
+
+> 전체 13개 키 패턴 + 5개 Pub/Sub 채널 상세는 → [DATA-STOCK_ARCHITECTURE.md §2-2](DATA-STOCK_ARCHITECTURE.md#2-2-redis-srcutilsredis_clientpy)
+
+### S3/MinIO Data Lake
+
+| 파티션 | 저장 내용 | 압축 |
+|--------|----------|------|
+| `daily_bars/date=YYYY-MM-DD/` | 일봉 OHLCV Parquet | Snappy |
+| `predictions/date=.../` | 예측 시그널 | Snappy |
+| `orders/date=.../` | 주문 기록 | Snappy |
+| `blend_results/date=.../` | 블렌딩 결과 | Snappy |
+
+> PyArrow 스키마, 재시도 로직, DataType enum 상세는 → [DATA-STOCK_ARCHITECTURE.md §2-3](DATA-STOCK_ARCHITECTURE.md#2-3-s3minio-srcutilss3_clientpy--srcservicesdatalakepy)
 
 ---
 
@@ -324,5 +350,5 @@ ui/src/
 2. 모든 전략 계열 기능은 `paper first` 원칙을 유지합니다.
 3. 주문 권한은 계속 `PortfolioManagerAgent`에 집중합니다.
 
-*Last updated: 2026-03-12*
+*Last updated: 2026-03-18*
 

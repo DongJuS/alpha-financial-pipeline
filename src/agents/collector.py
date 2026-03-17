@@ -205,6 +205,26 @@ class CollectorAgent:
 
         flushed = await upsert_market_data(batch)
         logger.debug("틱 버퍼 flush: %d건", flushed)
+
+        # S3(MinIO)에 틱 데이터 저장
+        try:
+            from src.services.datalake import store_tick_data
+            # MarketDataPoint → 틱 데이터 스키마로 변환
+            tick_records = []
+            for point in batch:
+                tick_records.append({
+                    "ticker": point.ticker,
+                    "price": point.close,
+                    "volume": point.volume,
+                    "timestamp_kst": point.timestamp_kst,
+                    "change_pct": point.change_pct,
+                    "source": "kis_websocket",
+                })
+            await store_tick_data(tick_records)
+            logger.debug("S3 틱 데이터 저장 완료: %d건", len(tick_records))
+        except Exception as s3_err:
+            logger.warning("S3 틱 데이터 저장 스킵: %s", s3_err)
+
         return flushed
 
     async def _cache_latest_tick(self, point: MarketDataPoint, source: str) -> None:
@@ -699,6 +719,45 @@ class CollectorAgent:
                 )
 
         saved = await upsert_market_data(points)
+
+        # S3(MinIO) 저장
+        try:
+            from src.services.datalake import store_daily_bars as _store_daily_bars
+            s3_records = [p.model_dump() for p in points]
+            await _store_daily_bars(s3_records)
+            logger.info("CollectorAgent S3 Yahoo 일봉 저장 완료: %d건", len(s3_records))
+        except Exception as s3_err:
+            logger.warning("CollectorAgent S3 저장 스킵: %s", s3_err)
+
+        # 최신 data point들로 Redis 캐시 + Pub/Sub 발행
+        if points:
+            latest_points = []
+            # ticker별로 최신 1건씩 추출
+            seen_tickers = set()
+            for p in reversed(points):
+                if p.ticker not in seen_tickers:
+                    latest_points.append(p)
+                    seen_tickers.add(p.ticker)
+                    if len(latest_points) >= len(selected):
+                        break
+
+            for point in latest_points:
+                await self._cache_latest_tick(point, source="yahoo_daily")
+
+            await publish_message(
+                TOPIC_MARKET_DATA,
+                json.dumps(
+                    {
+                        "type": "data_ready",
+                        "agent_id": self.agent_id,
+                        "count": saved,
+                        "tickers": [p.ticker for p in latest_points[:20]],
+                        "timestamp_utc": datetime.utcnow().isoformat() + "Z",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
         await self._beat(
             status="healthy",
             last_action=f"Yahoo 일봉 수집 완료 ({saved}건)",
