@@ -273,7 +273,7 @@ ui/src/
 
 ## 🔐 보안 설계
 
-1. **API 키 격리:** 모든 시크릿은 `.env`에만 존재, 코드에 하드코딩 절대 금지
+1. **시크릿 격리:** KIS/Telegram 등 시크릿은 `.env`에만 존재, 코드에 하드코딩 절대 금지. LLM은 API 키 대신 CLI/OAuth 모드 사용 (Claude CLI + Gemini ADC)
 2. **트레이딩 권한 분리:** `kis_place_order`는 PortfolioManagerAgent 전용
 3. **리스크 규칙 하드코딩:** 서킷브레이커는 LLM 레이어 아래 코드 레벨에서 강제
 4. **페이퍼 트레이딩 기본값:** `KIS_IS_PAPER_TRADING=true`, 실거래 전환 시 별도 확인 단계

@@ -37,9 +37,46 @@ load_dotenv(ROOT / ".env")
 
 from src.agents.orchestrator import OrchestratorAgent
 from src.utils.logging import get_logger, setup_logging
+from src.utils.redis_client import set_heartbeat
 
 setup_logging()
 logger = get_logger(__name__)
+
+# ── Heartbeat Keepalive ─────────────────────────────────────────────────────
+
+# worker 프로세스가 살아있는 동안 heartbeat를 갱신할 에이전트 목록
+_WORKER_AGENT_IDS = [
+    "orchestrator_agent",
+    "collector_agent",
+    "predictor_1",
+    "predictor_2",
+    "predictor_3",
+    "predictor_4",
+    "predictor_5",
+    "portfolio_manager_agent",
+    "notifier_agent",
+]
+
+_KEEPALIVE_INTERVAL = 30  # 초 — TTL_HEARTBEAT(90s)보다 충분히 짧게
+
+
+async def _heartbeat_keepalive(stop_event: asyncio.Event) -> None:
+    """백그라운드에서 주기적으로 모든 에이전트의 Redis heartbeat를 갱신합니다.
+
+    이렇게 하면 사이클 간 대기 시간(ORCH_INTERVAL_SECONDS)이 TTL(90s)보다
+    길어도 에이전트가 "연결됨" 상태를 유지합니다.
+    """
+    while not stop_event.is_set():
+        try:
+            for agent_id in _WORKER_AGENT_IDS:
+                await set_heartbeat(agent_id)
+        except Exception as e:
+            logger.warning("Heartbeat keepalive 실패 (계속 진행): %s", e)
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=_KEEPALIVE_INTERVAL)
+            break  # stop_event가 설정되면 종료
+        except asyncio.TimeoutError:
+            pass  # 타임아웃 → 다시 루프
 
 
 # ── Environment Helpers ──────────────────────────────────────────────────────
@@ -182,12 +219,21 @@ async def main_async() -> int:
     )
 
     if run_once:
-        result = await agent.run_cycle(tickers=tickers or ["005930", "000660"])
+        result = await agent.run_cycle(tickers=tickers or ["005930", "000660", "259960"])
         if enable_daily_report:
             notifier = agent._create_notifier()
             await notifier.send_paper_daily_report()
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
+
+    # ── 백그라운드 heartbeat keepalive 시작 ──────────────────────────────
+    stop_event = asyncio.Event()
+    keepalive_task = asyncio.create_task(_heartbeat_keepalive(stop_event))
+    logger.info(
+        "Heartbeat keepalive 시작: agents=%s, interval=%ss",
+        _WORKER_AGENT_IDS,
+        _KEEPALIVE_INTERVAL,
+    )
 
     report_time = time(
         hour=max(0, min(report_hour, 23)),
@@ -196,25 +242,29 @@ async def main_async() -> int:
     kst = ZoneInfo("Asia/Seoul")
     last_report_date = None
 
-    while True:
-        try:
-            await agent.run_cycle(tickers=tickers or ["005930", "000660"])
-        except Exception as e:
-            logger.error("사이클 실행 실패 (계속 진행): %s", e, exc_info=True)
+    try:
+        while True:
+            try:
+                await agent.run_cycle(tickers=tickers or ["005930", "000660", "259960"])
+            except Exception as e:
+                logger.error("사이클 실행 실패 (계속 진행): %s", e, exc_info=True)
 
-        if enable_daily_report:
-            now_kst = datetime.now(kst)
-            today = now_kst.date()
-            if now_kst.time() >= report_time and last_report_date != today:
-                try:
-                    notifier = agent._create_notifier()
-                    ok = await notifier.send_paper_daily_report(report_date=today)
-                    if ok:
-                        last_report_date = today
-                except Exception as e:
-                    logger.warning("일일 리포트 발송 실패: %s", e)
+            if enable_daily_report:
+                now_kst = datetime.now(kst)
+                today = now_kst.date()
+                if now_kst.time() >= report_time and last_report_date != today:
+                    try:
+                        notifier = agent._create_notifier()
+                        ok = await notifier.send_paper_daily_report(report_date=today)
+                        if ok:
+                            last_report_date = today
+                    except Exception as e:
+                        logger.warning("일일 리포트 발송 실패: %s", e)
 
-        await asyncio.sleep(interval_seconds)
+            await asyncio.sleep(interval_seconds)
+    finally:
+        stop_event.set()
+        await keepalive_task
 
     return 0
 
