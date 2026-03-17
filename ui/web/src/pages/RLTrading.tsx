@@ -329,43 +329,60 @@ function ExperimentsTab() {
         <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
           종목 코드를 입력하여 교차 검증을 실행합니다.
         </p>
-        <WalkForwardRunner onRun={(ticker) => runWF.mutate({ ticker })} isPending={runWF.isPending} result={runWF.data} />
+        <WalkForwardRunner
+          onRun={(ticker) => runWF.mutate({ ticker })}
+          isPending={runWF.isPending}
+          result={runWF.data}
+          error={runWF.isError ? (runWF.error as Error)?.message ?? "알 수 없는 오류" : null}
+        />
       </div>
     </div>
   );
 }
 
-function WalkForwardRunner({ onRun, isPending, result }: {
+function WalkForwardRunner({ onRun, isPending, result, error }: {
   onRun: (ticker: string) => void;
   isPending: boolean;
   result?: import("@/hooks/useRL").WalkForwardResult | null;
+  error?: string | null;
 }) {
   const [ticker, setTicker] = useState("");
   return (
-    <div className="mt-3 flex flex-wrap items-end gap-3">
-      <div>
-        <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>종목 코드</label>
-        <input
-          type="text"
-          value={ticker}
-          onChange={(e) => setTicker(e.target.value)}
-          placeholder="005930"
-          className="mt-1 block w-28 rounded-xl border px-3 py-2 text-sm"
-          style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
-        />
+    <div className="mt-3 space-y-2">
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>종목 코드</label>
+          <input
+            type="text"
+            value={ticker}
+            onChange={(e) => setTicker(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !isPending && ticker && onRun(ticker)}
+            placeholder="005930"
+            className="mt-1 block w-28 rounded-xl border px-3 py-2 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
+          />
+        </div>
+        <button onClick={() => onRun(ticker)} disabled={isPending || !ticker} className="btn-primary">
+          {isPending ? "검증 중..." : "Walk-Forward 실행"}
+        </button>
+        {result && (
+          <span className="text-xs font-semibold" style={{ color: (result.overall_approved ?? result.passed) ? "var(--green)" : "var(--red)" }}>
+            {(result.overall_approved ?? result.passed) ? "✓ PASS" : "✗ FAIL"}
+            {" — "}
+            평균 수익 {formatPct(result.avg_return_pct ?? result.avg_return ?? 0)},
+            {" "}
+            일관성 {(result.consistency_score ?? 0).toFixed(2)}
+            {result.approved_folds != null && ` (${result.approved_folds}/${result.n_folds} folds)`}
+          </span>
+        )}
       </div>
-      <button onClick={() => onRun(ticker)} disabled={isPending || !ticker} className="btn-primary">
-        {isPending ? "검증 중..." : "Walk-Forward 실행"}
-      </button>
-      {result && (
-        <span className="text-xs font-semibold" style={{ color: (result.overall_approved ?? result.passed) ? "var(--green)" : "var(--red)" }}>
-          {(result.overall_approved ?? result.passed) ? "PASS" : "FAIL"}
-          {" — "}
-          평균 수익 {formatPct(result.avg_return_pct ?? result.avg_return ?? 0)},
-          {" "}
-          일관성 {(result.consistency_score ?? 0).toFixed(2)}
-          {result.approved_folds != null && ` (${result.approved_folds}/${result.n_folds} folds)`}
-        </span>
+      {error && (
+        <div
+          className="rounded-xl px-3 py-2 text-xs font-semibold"
+          style={{ background: "var(--red-bg)", color: "var(--red)" }}
+        >
+          ⚠ 오류: {error}
+        </div>
       )}
     </div>
   );
