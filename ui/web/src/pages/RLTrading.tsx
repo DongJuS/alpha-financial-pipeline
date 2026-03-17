@@ -3,6 +3,7 @@
  * RL Trading 대시보드 — 정책 관리, 실험, 섀도우 추론, 승격
  */
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import {
   usePolicies,
   useActivePolicies,
@@ -21,7 +22,21 @@ import {
   type TrainingJob,
   type TrainingJobRequest,
 } from "@/hooks/useRL";
-import { formatPct } from "@/utils/api";
+import { api, formatPct } from "@/utils/api";
+
+/** 특정 종목의 시장 데이터를 FDR로 즉시 수집 → DB 저장 */
+function useCollectMarketData() {
+  return useMutation({
+    mutationFn: async (tickers: string[]) => {
+      const { data } = await api.post(
+        "/market/collect",
+        { tickers, days: 150 },
+        { timeout: 120_000 },
+      );
+      return data as { saved: number; tickers_collected: string[]; tickers_failed: string[]; message: string };
+    },
+  });
+}
 
 /* ── 탭 정의 ───────────────────────────────────────────────────────────── */
 type Tab = "policies" | "experiments" | "shadow" | "promotion";
@@ -327,7 +342,7 @@ function ExperimentsTab() {
       <div className="card">
         <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>Walk-Forward 검증</h3>
         <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
-          종목 코드를 입력하여 교차 검증을 실행합니다.
+          종목 코드를 입력하여 교차 검증을 실행합니다. DB에 데이터가 없으면 자동으로 FinanceDataReader에서 수집합니다.
         </p>
         <WalkForwardRunner
           onRun={(ticker) => runWF.mutate({ ticker })}
@@ -336,6 +351,9 @@ function ExperimentsTab() {
           error={runWF.isError ? (runWF.error as Error)?.message ?? "알 수 없는 오류" : null}
         />
       </div>
+
+      {/* 시장 데이터 수집 */}
+      <MarketDataCollector />
     </div>
   );
 }
@@ -383,6 +401,55 @@ function WalkForwardRunner({ onRun, isPending, result, error }: {
         >
           ⚠ 오류: {error}
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ── 시장 데이터 수집 컴포넌트 ────────────────────────────────────────── */
+function MarketDataCollector() {
+  const collect = useCollectMarketData();
+  const [tickerInput, setTickerInput] = useState("");
+
+  function handleCollect() {
+    const tickers = tickerInput
+      .split(/[\s,]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    collect.mutate(tickers);
+  }
+
+  return (
+    <div className="card">
+      <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>시장 데이터 수집</h3>
+      <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+        FinanceDataReader(FDR)로 일봉 데이터를 수집하여 DB에 저장합니다. 비워두면 KOSPI/KOSDAQ 상위 30개 종목을 자동 수집합니다.
+      </p>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <div className="flex-1">
+          <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>종목 코드 (쉼표/공백 구분, 비워두면 자동)</label>
+          <input
+            type="text"
+            value={tickerInput}
+            onChange={(e) => setTickerInput(e.target.value)}
+            placeholder="005930, 000660, 035720"
+            className="mt-1 block w-full rounded-xl border px-3 py-2 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
+          />
+        </div>
+        <button onClick={handleCollect} disabled={collect.isPending} className="btn-primary">
+          {collect.isPending ? "수집 중..." : "데이터 수집"}
+        </button>
+      </div>
+      {collect.isSuccess && collect.data && (
+        <p className="mt-2 text-xs font-semibold" style={{ color: "var(--green)" }}>
+          ✓ {collect.data.message}
+        </p>
+      )}
+      {collect.isError && (
+        <p className="mt-2 text-xs font-semibold" style={{ color: "var(--red)" }}>
+          ⚠ 수집 실패: {(collect.error as Error)?.message ?? "알 수 없는 오류"}
+        </p>
       )}
     </div>
   );

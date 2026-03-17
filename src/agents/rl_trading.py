@@ -135,7 +135,7 @@ class RLDatasetBuilder:
         closes = [float(row["close"]) for row in ordered_rows if row.get("close")]
         timestamps = [str(row["timestamp_kst"]) for row in ordered_rows if row.get("close")]
 
-        # DB 데이터 부족 시 FinanceDataReader 폴백
+        # DB 데이터 부족 시 FinanceDataReader 폴백 + DB 자동 저장
         if len(closes) < self.min_history_points:
             logger.info(
                 "DB 데이터 부족(ticker=%s, rows=%d) → FinanceDataReader 폴백 시도",
@@ -143,8 +143,10 @@ class RLDatasetBuilder:
             )
             try:
                 import FinanceDataReader as fdr
-                from datetime import date, timedelta
+                from datetime import date, timedelta, timezone as tz
+                from zoneinfo import ZoneInfo
 
+                KST = ZoneInfo("Asia/Seoul")
                 end_date = date.today().strftime("%Y-%m-%d")
                 start_date = (date.today() - timedelta(days=days + 30)).strftime("%Y-%m-%d")
                 df = fdr.DataReader(ticker, start_date, end_date)
@@ -159,6 +161,48 @@ class RLDatasetBuilder:
                             "FinanceDataReader 폴백 성공: ticker=%s, rows=%d",
                             ticker, len(closes),
                         )
+                        # 수집한 데이터를 DB에 백그라운드로 저장 (다음 요청부터 DB에서 제공)
+                        try:
+                            from src.db.models import MarketDataPoint
+                            from src.db.queries import upsert_market_data
+
+                            # 마켓 정보 조회 (FDR StockListing)
+                            listing = fdr.StockListing("KRX")
+                            found = listing.loc[listing["Code"] == ticker]
+                            name = str(found.iloc[0]["Name"]) if not found.empty else ticker
+                            market_str = str(found.iloc[0]["Market"]).upper() if not found.empty else "KOSPI"
+                            if market_str not in {"KOSPI", "KOSDAQ"}:
+                                market_str = "KOSPI"
+
+                            points = []
+                            for idx_row, row_data in df.iterrows():
+                                trade_date = idx_row.date() if hasattr(idx_row, "date") else date.today()
+                                ts = datetime(
+                                    trade_date.year, trade_date.month, trade_date.day,
+                                    15, 30, 0, tzinfo=KST,
+                                )
+                                close_val = int(row_data.get("Close", 0))
+                                if close_val <= 0:
+                                    continue
+                                change = row_data.get("Change")
+                                points.append(MarketDataPoint(
+                                    ticker=ticker,
+                                    name=name,
+                                    market=market_str,  # type: ignore[arg-type]
+                                    timestamp_kst=ts,
+                                    interval="daily",
+                                    open=int(row_data.get("Open", close_val)),
+                                    high=int(row_data.get("High", close_val)),
+                                    low=int(row_data.get("Low", close_val)),
+                                    close=close_val,
+                                    volume=int(row_data.get("Volume", 0)),
+                                    change_pct=float(change * 100.0) if change is not None else None,
+                                ))
+                            if points:
+                                saved = await upsert_market_data(points)
+                                logger.info("FDR 데이터 DB 자동 저장: ticker=%s, %d건", ticker, saved)
+                        except Exception as save_err:
+                            logger.warning("FDR → DB 저장 실패 (무시): %s", save_err)
             except Exception as fdr_err:
                 logger.warning("FinanceDataReader 폴백 실패: %s", fdr_err)
 
