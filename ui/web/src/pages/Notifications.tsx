@@ -42,7 +42,7 @@ function StatsCards({ stats }: { stats: any }) {
 export default function NotificationsPage() {
   const { data: prefs, isLoading: prefsLoading } = useNotificationPreferences();
   const updatePrefs = useUpdateNotificationPreferences();
-  const { data: stats } = useNotificationStats();
+  const { data: stats, isLoading: statsLoading } = useNotificationStats();
   const { data: history, isLoading: historyLoading } = useNotificationHistory(20);
   const sendTest = useSendTestNotification();
   const [testMsg, setTestMsg] = useState("테스트 알림입니다.");
@@ -64,7 +64,21 @@ export default function NotificationsPage() {
         </h1>
       </section>
 
-      {stats && <StatsCards stats={stats} />}
+      {statsLoading ? (
+        <div className="grid gap-3 md:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="card h-20 skeleton" />
+          ))}
+        </div>
+      ) : stats ? (
+        <StatsCards stats={stats} />
+      ) : (
+        <div className="card">
+          <p className="py-4 text-center text-sm" style={{ color: "var(--text-tertiary)" }}>
+            알림 통계 데이터를 불러올 수 없습니다.
+          </p>
+        </div>
+      )}
 
       {/* 테스트 발송 */}
       <div className="card">
