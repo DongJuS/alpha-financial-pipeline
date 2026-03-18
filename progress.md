@@ -91,7 +91,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|-----------|------|
-| 2026-03-18 | **데이터 수집/저장 경로 전수 감사** — 코드 기반으로 9개 수집 소스, 20개 DB 테이블, 13개 Redis 키, S3 파티션 구조 전체 매핑. `DATA-STOCK_ARCHITECTURE.md` 작성, `architecture.md` 데이터 아키텍처 섹션 갱신. 끊어진 파이프라인 11건 식별: SearchAgent stub(3 TODO), Orchestrator 빈 registry, Yahoo/Historical/Realtime S3 미저장, IndexCollector DB 미저장, debate_transcripts/rl_episodes S3 미구현, 스케줄러 IndexCollector만 가동 | 🔄 진단완료 |
+| 2026-03-18 | **끊어진 파이프라인 전수 수정 완료** — 11건 진단 중 Critical 3건(Orchestrator Runner 등록, SearchAgent SearXNG 구현, datalake store 함수 추가) + Warning 4건(Yahoo Redis/S3, 실시간 틱 S3, Historical Bulk Redis 캐시, IndexCollector DB) + Notice 1건(ticker_master DDL 확인) 총 8건 처리. `_fetch_historical_daily()` → `_cache_latest_tick()` 추가로 마지막 남은 #6 수정 완료 | ✅ 완료 |
 | 2026-03-17 | **RL Trading UI 버그 6종 수정** — `useRL.ts`: `usePromoteShadowToPaper`/`usePromotePaperToReal`에 누락된 `ticker` 필드 추가(422 에러 해결), `useActivatePolicy` ticker 쿼리 파라미터 추가, `usePolicyMode` ticker 파라미터 추가, `useRunWalkForward` payload policy_id→ticker 기반으로 수정, `useCreateTrainingJob` ticker→tickers 배열 변환, `PromotionResult` 인터페이스 백엔드 `PromotionCheckResult` 구조에 맞게 수정(passed/failures 필드). `RLTrading.tsx`: 활성화 버튼 ticker 전달, Walk-Forward UI 종목코드 입력으로 변경, 승격 결과 passed/failures 필드 정상 표시. Playwright로 전 탭 버튼 테스트 — 에러 0건 확인 | ✅ 완료 |
 | 2026-03-17 | **에이전트 레지스트리 PostgreSQL 중앙 관리 + agent_id 불일치 수정** — `agent_registry` 테이블 DDL 추가(init_db.py), 11개 에이전트 시드 데이터, `agents.py` 라우터 하드코딩→DB 조회 전환(`_load_agent_registry()`+폴백), agent_id 불일치 수정(orchestrator→orchestrator_agent, portfolio_manager_blend→portfolio_manager_agent, notifier_for_orchestrator→notifier_agent), 레지스트리 CRUD API 3개(`/registry/list`, `/registry/register`, `/registry/{id}` DELETE) | ✅ 완료 |
 | 2026-03-17 | **에이전트 연결 끊김/오류 진단** — Predictor 1~5 전체 실패(LLM 프로바이더 문제: Claude CLI만 가용, API key 미설정, GPT 미구성), Orchestrator/Collector/PM/Notifier "연결 끊김"(agent_id 불일치로 하트비트 매칭 실패), `ticker_master` 테이블+티커 정규화 유틸 구현(이전 세션) | 🔄 진행중 |
@@ -295,26 +295,17 @@ S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아
 
 ### 🟡 Warning — 데이터 저장 불일치/누락
 
-4. **Yahoo 일봉 수집 시 Redis/S3 저장 누락**
-   - 파일: `src/agents/collector.py` → `collect_yahoo_daily_bars()`
-   - 상태: PostgreSQL `market_data`에만 upsert. Redis 캐시(`latest_ticks`), S3 Parquet(`daily_bars/`) 저장 없음
-   - 비교: `collect_daily_bars()`는 PG + Redis + S3 + Pub/Sub 4곳 모두 저장
-   - 영향: Yahoo 수집 데이터가 실시간 대시보드(Redis 의존)에 표시 안 됨
+4. ~~**Yahoo 일봉 수집 시 Redis/S3 저장 누락**~~ ✅ **수정 완료** (2026-03-18)
+   - `collect_yahoo_daily_bars()`: S3(`store_daily_bars`) + Redis(`_cache_latest_tick`) + Pub/Sub 추가
 
-5. **실시간 틱 S3 미저장**
-   - 파일: `src/agents/collector.py` → `collect_realtime_ticks()`
-   - 상태: PostgreSQL + Redis만 사용. `datalake.store_tick_data()`가 아직 미구현 (DataType enum에 `TICK_DATA`는 있지만 `datalake.py`에 `store_tick_data()` 함수 없음)
-   - 영향: 틱 데이터의 장기 보관/분석 불가
+5. ~~**실시간 틱 S3 미저장**~~ ✅ **수정 완료** (2026-03-18)
+   - `_flush_tick_buffer()`: `store_tick_data()` 추가. `datalake.py`에 `TICK_DATA_SCHEMA` 및 `store_tick_data()` 함수 구현
 
-6. **Historical Bulk 수집 시 Redis/S3/Pub/Sub 미사용**
-   - 파일: `src/agents/collector.py` → `fetch_historical_ohlcv()`
-   - 상태: PostgreSQL `market_data`에만 저장. Redis 캐시 갱신 없고 S3 백업도 없음
-   - 영향: 벌크 시드 후 Redis 캐시가 빈 채로 남음
+6. ~~**Historical Bulk 수집 시 Redis 캐시 미갱신**~~ ✅ **수정 완료** (2026-03-18)
+   - `_fetch_historical_daily()`: 저장 후 `_cache_latest_tick(points[-1], source="historical_seed")` 추가
 
-7. **IndexCollector DB 미저장**
-   - 파일: `src/agents/index_collector.py`
-   - 상태: Redis `redis:cache:market_index` (TTL 120초)에만 캐시. PostgreSQL에 시계열 기록 없음
-   - 영향: 지수 이력 분석/백테스트 불가. 서버 재시작 시 지수 데이터 유실
+7. ~~**IndexCollector DB 미저장**~~ ✅ **수정 완료** (2026-03-18)
+   - `index_collector.py`: `upsert_macro_indicators()` 호출로 PostgreSQL `macro_indicators` 시계열 기록 추가
 
 8. ~~**debate_transcripts, rl_episodes S3 저장 미구현**~~ ✅ **부분 수정** — `store_debate_transcripts()` + `store_tick_data()` 추가. `rl_episodes` store 함수는 RL 파이프라인 완성 후 추가 예정
    - 파일: `src/services/datalake.py`
@@ -328,9 +319,8 @@ S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아
    - 상태: CollectorAgent 일봉 수집, MacroCollector, StockMasterCollector에 대한 스케줄러가 **없음**. 수동 CLI 실행에 의존
    - 영향: 서버만 띄워도 자동 데이터 수집은 지수(30초 간격)만 이뤄짐. 일봉/매크로/종목마스터는 별도 크론이나 수동 실행 필요
 
-10. **ticker_master 테이블 미생성 가능성**
-    - 파일: `src/api/main.py` lifespan에서 `SELECT raw_code, canonical FROM ticker_master`를 조회하는데, `init_db.py`에 `ticker_master` CREATE TABLE이 있는지 확인 필요 (최근 추가된 테이블)
-    - 영향: 앱 시작 시 `⚠️ 티커 마스터 캐시 로드 실패 (비필수)` 경고 발생 가능
+10. ~~**ticker_master 테이블 미생성 가능성**~~ ✅ **확인 완료** (2026-03-18)
+    - `init_db.py` 754번째 줄에 `CREATE TABLE IF NOT EXISTS ticker_master` DDL 존재 확인. 인덱스 3개 + 시드 INSERT 포함.
 
 11. **RLRunner 활성 정책 없으면 0건 반환 (정상이나 주의)**
     - 파일: `src/agents/rl_runner.py`

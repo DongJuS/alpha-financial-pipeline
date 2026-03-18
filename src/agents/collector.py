@@ -476,6 +476,11 @@ class CollectorAgent:
             from src.db.queries import upsert_market_data
             saved = await upsert_market_data(points)
             logger.info("Historical daily [%s] %s~%s: %d건 저장", ticker, start_date, end_date, saved)
+            # Redis 캐시 갱신 — 벌크 시드 후 대시보드에 최신값이 표시되도록
+            try:
+                await self._cache_latest_tick(points[-1], source="historical_seed")
+            except Exception as redis_err:
+                logger.debug("Historical Redis 캐시 갱신 스킵: %s", redis_err)
         return points
 
     async def _fetch_historical_intraday(
