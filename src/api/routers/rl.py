@@ -449,6 +449,13 @@ async def create_training_job(req: TrainingJobRequest) -> TrainingJobResponse:
     )
 
 
+@router.get("/training-jobs", summary="학습 작업 전체 목록 조회")
+async def list_training_jobs() -> dict:
+    """인메모리에 저장된 학습 작업 목록을 반환합니다."""
+    jobs = sorted(_training_jobs.values(), key=lambda j: j.get("created_at", ""), reverse=True)
+    return {"data": jobs, "total": len(jobs)}
+
+
 @router.get("/training-jobs/{job_id}", summary="학습 작업 상태 조회")
 async def get_training_job(job_id: str) -> dict:
     job = _training_jobs.get(job_id)
