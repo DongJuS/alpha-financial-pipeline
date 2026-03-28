@@ -396,7 +396,7 @@ class RLExperimentManager:
     def _generate_run_id(ticker: str, state_version: str) -> str:
         """run_id를 생성합니다.
 
-        형식: <YYYYMMDD>T<HHMMSS>Z-<ticker>-<state_version>
+        형식: <YYYYMMDD>T<HHMMSSffffff>Z-<ticker>-<state_version>
 
         Args:
             ticker: 종목 코드
@@ -406,7 +406,8 @@ class RLExperimentManager:
             run_id 문자열
         """
         now = datetime.now(timezone.utc)
-        timestamp = now.strftime("%Y%m%dT%H%M%SZ")
+        # 동일 초에 여러 후보 정책을 학습할 수 있으므로 마이크로초까지 포함합니다.
+        timestamp = now.strftime("%Y%m%dT%H%M%S%fZ")
         return f"{timestamp}-{ticker}-{state_version}"
 
     @staticmethod

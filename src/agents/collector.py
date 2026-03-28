@@ -28,8 +28,9 @@ load_dotenv(ROOT / ".env")
 from src.db.models import AgentHeartbeatRecord, MarketDataPoint
 from src.db.queries import insert_heartbeat, upsert_market_data
 from src.services.yahoo_finance import fetch_daily_bars
-from src.utils.config import get_settings, kis_app_key_for_scope, kis_app_secret_for_scope
+from src.utils.config import get_settings, has_kis_credentials, kis_app_key_for_scope, kis_app_secret_for_scope
 from src.utils.logging import get_logger, setup_logging
+from src.utils.market_data import compute_change_pct
 from src.utils.redis_client import (
     KEY_LATEST_TICKS,
     KEY_REALTIME_SERIES,
@@ -62,6 +63,13 @@ class CollectorAgent:
 
     def _account_scope(self) -> str:
         return "paper" if self.settings.kis_is_paper_trading else "real"
+
+    def _has_kis_market_credentials(self) -> bool:
+        return has_kis_credentials(
+            self.settings,
+            self._account_scope(),
+            require_account_number=False,
+        )
 
     @staticmethod
     def _load_fdr():
@@ -151,6 +159,7 @@ class CollectorAgent:
             return []
 
         points: list[MarketDataPoint] = []
+        previous_close: int | None = None
         for index, row in df.iterrows():
             trade_date = index.date() if hasattr(index, "date") else datetime.now(KST).date()
             ts = datetime(
@@ -161,8 +170,10 @@ class CollectorAgent:
                 30,
                 tzinfo=KST,
             )
-            change_raw = row.get("Change")
-            change_pct = float(change_raw * 100.0) if change_raw is not None else None
+            close_value = int(row.get("Close", 0))
+            if close_value <= 0:
+                continue
+            change_pct = compute_change_pct(close_value, previous_close)
             points.append(
                 MarketDataPoint(
                     ticker=ticker,
@@ -173,11 +184,12 @@ class CollectorAgent:
                     open=int(row.get("Open", 0)),
                     high=int(row.get("High", 0)),
                     low=int(row.get("Low", 0)),
-                    close=int(row.get("Close", 0)),
+                    close=close_value,
                     volume=int(row.get("Volume", 0)),
                     change_pct=change_pct,
                 )
             )
+            previous_close = close_value
         return points
 
     async def _flush_tick_buffer(self, force: bool = False) -> int:
@@ -267,7 +279,7 @@ class CollectorAgent:
         scope = self._account_scope()
         app_key = kis_app_key_for_scope(self.settings, scope)
         app_secret = kis_app_secret_for_scope(self.settings, scope)
-        if not app_key or not app_secret:
+        if not self._has_kis_market_credentials():
             raise RuntimeError(f"KIS {scope} app key/app secret 미설정")
 
         url = f"{self.settings.kis_base_url_for_scope(scope)}/oauth2/Approval"
@@ -446,14 +458,17 @@ class CollectorAgent:
             if df is None or df.empty:
                 return []
             points: list[MarketDataPoint] = []
+            previous_close: int | None = None
             for index, row in df.iterrows():
                 trade_date = index.date() if hasattr(index, "date") else datetime.now(KST).date()
                 ts = datetime(
                     trade_date.year, trade_date.month, trade_date.day,
                     15, 30, tzinfo=KST,
                 )
-                change_raw = row.get("Change")
-                change_pct = float(change_raw * 100.0) if change_raw is not None else None
+                close_value = int(row.get("Close", 0))
+                if close_value <= 0:
+                    continue
+                change_pct = compute_change_pct(close_value, previous_close)
                 points.append(
                     MarketDataPoint(
                         ticker=ticker,
@@ -464,11 +479,12 @@ class CollectorAgent:
                         open=int(row.get("Open", 0)),
                         high=int(row.get("High", 0)),
                         low=int(row.get("Low", 0)),
-                        close=int(row.get("Close", 0)),
+                        close=close_value,
                         volume=int(row.get("Volume", 0)),
                         change_pct=change_pct,
                     )
                 )
+                previous_close = close_value
             return points
 
         points = await asyncio.to_thread(_fetch)
@@ -790,6 +806,14 @@ class CollectorAgent:
         started = asyncio.get_running_loop().time()
         reconnects = 0
         received = 0
+
+        if not self._has_kis_market_credentials():
+            message = f"KIS {self._account_scope()} app key/app secret 미설정"
+            if fallback_on_error:
+                logger.warning("%s — 일봉 스냅샷 수집으로 폴백합니다.", message)
+                await self.collect_daily_bars(tickers=subscribed, lookback_days=2)
+                return 0
+            raise RuntimeError(message)
 
         while True:
             try:

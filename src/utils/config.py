@@ -11,6 +11,8 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.utils.secret_validation import is_placeholder_secret
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -36,6 +38,8 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     anthropic_cli_command: str = Field(default="", alias="ANTHROPIC_CLI_COMMAND")
     llm_cli_timeout_seconds: int = Field(default=90, ge=5, le=600, alias="LLM_CLI_TIMEOUT_SECONDS")
+    llm_daily_provider_limit: int = Field(default=30, ge=1, le=1000, alias="LLM_DAILY_PROVIDER_LIMIT")
+    llm_usage_timezone: str = Field(default="Asia/Seoul", alias="LLM_USAGE_TIMEZONE")
 
     kis_app_key: str = Field(default="", alias="KIS_APP_KEY")
     kis_app_secret: str = Field(default="", alias="KIS_APP_SECRET")
@@ -199,3 +203,22 @@ def kis_account_number_for_scope(settings: Settings | object, account_scope: str
     if account_scope == "real":
         return getattr(settings, "kis_real_account_number", "") or getattr(settings, "kis_account_number", "")
     return getattr(settings, "kis_paper_account_number", "") or getattr(settings, "kis_account_number", "")
+
+
+def has_kis_credentials(
+    settings: Settings | object,
+    account_scope: str,
+    *,
+    require_account_number: bool = False,
+) -> bool:
+    app_key = kis_app_key_for_scope(settings, account_scope)
+    app_secret = kis_app_secret_for_scope(settings, account_scope)
+    if is_placeholder_secret(app_key) or is_placeholder_secret(app_secret):
+        return False
+
+    if require_account_number:
+        account_number = kis_account_number_for_scope(settings, account_scope)
+        if is_placeholder_secret(account_number):
+            return False
+
+    return True
