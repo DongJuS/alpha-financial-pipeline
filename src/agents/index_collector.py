@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from src.brokers.kis import KISPaperApiClient
 from src.db.models import MacroIndicator
 from src.db.marketplace_queries import upsert_macro_indicators
+from src.utils.config import has_kis_credentials
 from src.utils.logging import get_logger
 from src.utils.redis_client import KEY_MARKET_INDEX, TTL_MARKET_INDEX, get_redis
 
@@ -30,6 +31,7 @@ class IndexCollector:
 
     def __init__(self) -> None:
         self.client = KISPaperApiClient()
+        self._missing_credentials_logged = False
 
     async def collect_once(self) -> dict:
         """KOSPI/KOSDAQ 지수를 한 번 수집하고 Redis/PostgreSQL에 저장합니다.
@@ -37,6 +39,17 @@ class IndexCollector:
         Returns:
             성공 여부 및 수집 데이터를 포함한 딕셔너리
         """
+        if not has_kis_credentials(self.client.settings, self.client.account_scope):
+            if not self._missing_credentials_logged:
+                logger.warning("KIS 자격증명이 없어 지수 수집을 건너뜁니다.")
+                self._missing_credentials_logged = True
+            return {
+                "success": True,
+                "skipped": True,
+                "reason": "missing_kis_credentials",
+                "timestamp_kst": datetime.now(KST).isoformat(),
+            }
+
         try:
             # KOSPI, KOSDAQ 동시 수집
             kospi_data = await self.client.fetch_index_quote(KOSPI_CODE)

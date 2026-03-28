@@ -23,6 +23,7 @@ load_dotenv(ROOT / ".env")
 from src.agents.collector import CollectorAgent
 from src.agents.portfolio_manager import PortfolioManagerAgent
 from src.agents.rl_trading import RLTradingAgent
+from src.utils.config import has_kis_credentials
 from src.utils.market_hours import market_session_status
 
 
@@ -56,6 +57,13 @@ async def _prime_kis_ticks(tickers: list[str], seconds: int) -> dict:
         return {"enabled": True, "status": "skipped", "market_status": market_status}
 
     collector = CollectorAgent()
+    if not has_kis_credentials(collector.settings, collector._account_scope()):
+        return {
+            "enabled": True,
+            "status": "skipped",
+            "market_status": market_status,
+            "reason": "missing_kis_credentials",
+        }
     try:
         received = await collector.collect_realtime_ticks(
             tickers,

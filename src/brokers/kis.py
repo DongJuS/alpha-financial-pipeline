@@ -25,6 +25,7 @@ from src.utils.account_scope import AccountScope, normalize_account_scope
 from src.utils.config import (
     Settings,
     get_settings,
+    has_kis_credentials,
     kis_account_number_for_scope,
     kis_app_key_for_scope,
     kis_app_secret_for_scope,
@@ -73,8 +74,11 @@ class KISApiClient:
 
     def is_configured(self) -> bool:
         return bool(
-            kis_app_key_for_scope(self.settings, self.account_scope)
-            and kis_app_secret_for_scope(self.settings, self.account_scope)
+            has_kis_credentials(
+                self.settings,
+                self.account_scope,
+                require_account_number=True,
+            )
             and kis_account_number_for_scope(self.settings, self.account_scope)
         )
 
@@ -87,9 +91,12 @@ class KISApiClient:
 
     async def _resolve_token(self) -> str:
         try:
-            token = await self._token_provider(self.account_scope)
+            token = await self._token_provider(account_scope=self.account_scope)
         except TypeError:
-            token = await self._token_provider()
+            try:
+                token = await self._token_provider(self.account_scope)
+            except TypeError:
+                token = await self._token_provider()
         if not token:
             raise KISAPIError(
                 "KIS 토큰이 없습니다. `python scripts/kis_auth.py --scope "

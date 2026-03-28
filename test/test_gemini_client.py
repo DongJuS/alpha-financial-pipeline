@@ -1,6 +1,6 @@
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from src.llm.gemini_client import GeminiClient, load_gemini_oauth_credentials
 
@@ -14,7 +14,7 @@ class GeminiClientCircuitBreakerTest(unittest.IsolatedAsyncioTestCase):
         client._auth_mode = "oauth"
         client._quota_exhausted = False
         client._model = types.SimpleNamespace(
-            generate_content=lambda prompt: (_ for _ in ()).throw(side_effect),
+            generate_content=lambda prompt, **kwargs: (_ for _ in ()).throw(side_effect),
         )
         return client
 
@@ -25,21 +25,24 @@ class GeminiClientCircuitBreakerTest(unittest.IsolatedAsyncioTestCase):
     async def test_quota_error_opens_circuit(self) -> None:
         client = self._build_client(RuntimeError("RESOURCE_EXHAUSTED: quota exceeded"))
 
-        with self.assertRaises(RuntimeError):
-            await client.ask("hello")
-        self.assertFalse(client.is_configured)
+        with patch("src.llm.gemini_client.reserve_provider_call", new=AsyncMock()):
+            with self.assertRaises(RuntimeError):
+                await client.ask("hello")
+            self.assertFalse(client.is_configured)
 
-        with self.assertRaises(RuntimeError):
-            await client.ask("hello again")
+        with patch("src.llm.gemini_client.reserve_provider_call", new=AsyncMock()):
+            with self.assertRaises(RuntimeError):
+                await client.ask("hello again")
 
     async def test_non_quota_error_keeps_client_available(self) -> None:
         client = self._build_client(RuntimeError("temporary backend error"))
 
-        with self.assertRaises(RuntimeError):
-            await client.ask("hello")
-        self.assertTrue(client.is_configured)
+        with patch("src.llm.gemini_client.reserve_provider_call", new=AsyncMock()):
+            with self.assertRaises(RuntimeError):
+                await client.ask("hello")
+            self.assertTrue(client.is_configured)
 
-    def test_prefers_oauth_over_api_key(self) -> None:
+    def test_prefers_api_key_over_oauth_when_key_exists(self) -> None:
         fake_credentials = object()
 
         class FakeModel:
@@ -55,8 +58,8 @@ class GeminiClientCircuitBreakerTest(unittest.IsolatedAsyncioTestCase):
             client = GeminiClient()
 
         self.assertTrue(client.is_configured)
-        self.assertEqual(client.auth_mode, "oauth")
-        configure.assert_called_once_with(credentials=fake_credentials)
+        self.assertEqual(client.auth_mode, "api_key")
+        configure.assert_called_once_with(api_key="api-key")
 
     def test_falls_back_to_api_key_when_oauth_is_unavailable(self) -> None:
         class FakeModel:

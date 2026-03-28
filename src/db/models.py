@@ -5,9 +5,10 @@ src/db/models.py — 코어 에이전트 공통 데이터 모델
 from datetime import date, datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.utils.account_scope import AccountScope
+from src.utils.market_data import sanitize_change_pct
 
 
 class MarketDataPoint(BaseModel):
@@ -24,6 +25,11 @@ class MarketDataPoint(BaseModel):
     change_pct: Optional[float] = None
     market_cap: Optional[int] = None
     foreigner_ratio: Optional[float] = None
+
+    @field_validator("change_pct", mode="before")
+    @classmethod
+    def _sanitize_change_pct(cls, value: object) -> Optional[float]:
+        return sanitize_change_pct(value)
 
 
 class PredictionSignal(BaseModel):
