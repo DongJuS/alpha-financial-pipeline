@@ -73,14 +73,14 @@ npm run lint
    - 코드 컨벤션: `.agent/conventions.md`
    - 재사용 프롬프트: `.agent/prompts.md`
    - 전체 로드맵: `.agent/roadmap.md`
-3. **장기 기억**이 필요하면 루트의 `MEMORY.md`를 읽는다.
+3. **장기 기억**이 필요하면 루트의 `MEMORY.md`(활성 규칙)를 읽는다. 과거 결정 이력이 필요하면 `MEMORY-archive.md`를 참조한다.
 4. **모든 작업 완료 후** 반드시 `progress.md`를 업데이트한다.
 5. **새로운 기술적 결정이나 문제 해결 경험**은 `MEMORY.md`에 기록한다.
 6. 멋대로 새 패키지를 설치하지 않는다. `.agent/tech_stack.md`에 명시된 것만 사용한다.
 7. **새 논의 문서**는 반드시 `.agent/templates/discussion.md`를 기반으로 생성한다.
 8. 논의 문서 파일명은 `YYYYMMDD-topic-slug.md` 규칙을 따른다.
 9. 논의 작업은 `.agent/discussions/` 폴더에 기록한다.
-10. 논의 문서는 결론 확정 후 필요한 영구 문서에 반영하고, 반영이 끝나면 삭제한다.
+10. 논의 문서는 결론 확정 후 필요한 영구 문서에 반영하고, 블로그에 포스팅(`/post-discussion`)한 뒤 삭제한다.
 11. **테스트에서 시스템 바이너리 경로를 하드코딩하지 않는다.** `/usr/bin/echo` 대신 `echo` 또는 `shutil.which("echo")`를 사용한다.
 12. **파일 경로는 `__file__` 기준 상대 경로를 사용한다.** 절대 경로 하드코딩 금지. 예: `Path(__file__).parent / "fixtures" / "sample.json"`
 13. **테스트는 `pip install -r requirements.txt` 후 `pytest`로 실행한다.** Docker 환경이 없는 경우에도 동일하게 패키지를 설치한 뒤 직접 테스트를 돌린다.
@@ -92,7 +92,8 @@ npm run lint
 # /agents-investing (Root)
 
 ├── CLAUDE.md             # 🚀 [Entry] 에이전트 행동 강령 (최우선 진입점)
-├── MEMORY.md             # 🧠 [Memory] 기술적 결정 및 문제 해결의 누적 기록
+├── MEMORY.md             # 🧠 [Memory] 활성 운영 규칙 및 미해결 이슈
+├── MEMORY-archive.md     # 🗄️ [Archive] 완료된 기술적 결정 이력 (원문 보존)
 ├── progress.md           # 📝 [State] 현재 세션의 할 일 목록 및 진척도
 ├── README.md             # 프로젝트 소개 문서
 ├── architecture.md       # 전체 아키텍처 설계 문서
@@ -124,7 +125,8 @@ npm run lint
 ├── packages/             # 공유 패키지
 ├── scripts/              # 빌드/배포 스크립트
 ├── skills/               # 에이전트 스킬 정의
-│   └── skills.md
+│   ├── skills.md
+│   └── post-discussion/  # 논의 문서 → Blogger 포스팅 슬래시 커맨드
 ├── src/                  # 💻 [Code] 실제 소스 코드
 ├── test/                 # 🧪 [Verification] 에이전트가 돌려야 할 테스트 코드
 ├── ui/                   # UI 관련 코드
@@ -139,7 +141,7 @@ npm run lint
 
 ---
 
-*Last updated: 2026-03-14*
+*Last updated: 2026-03-28*
 
 ---
 

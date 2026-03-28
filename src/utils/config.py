@@ -121,6 +121,12 @@ class Settings(BaseSettings):
     # ── Gen Data Server (테스트용 랜덤 데이터 생성) ────────────────────────────
     gen_api_url: str = Field(default="", alias="GEN_API_URL")
 
+    # ── Blog Auto-Posting (Google Blogger) ─────────────────────────────────
+    blogger_blog_id: str = Field(default="", alias="BLOGGER_BLOG_ID")
+    blogger_client_id: str = Field(default="", alias="BLOGGER_CLIENT_ID")
+    blogger_client_secret: str = Field(default="", alias="BLOGGER_CLIENT_SECRET")
+    blogger_refresh_token: str = Field(default="", alias="BLOGGER_REFRESH_TOKEN")
+
     # ── Logging ──────────────────────────────────────────────────────────────
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
