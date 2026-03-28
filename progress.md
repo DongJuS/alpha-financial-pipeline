@@ -1,357 +1,47 @@
 # 📝 progress.md — 현재 세션 진척도
 
 > 에이전트와 "현재 어디까지 했는지" 맞추는 단기 기억 파일입니다.
-> 모든 작업 완료 후 반드시 업데이트하세요.
+> 완료된 이력은 `progress-archive.md`를 참조하세요.
+> **정리 정책**: 150줄 초과 시 완료+코드 유추 가능 항목 삭제. 200줄 초과 시 오래된 완료 항목 강제 삭제.
 
 ---
 
-## 🏃 현재 스프린트 목표
-
-**Phase 11 — N-way 블렌딩 + StrategyRunner Registry**
-
-기존 elif 체인을 StrategyRunner Protocol + Registry 패턴으로 리팩토링하고, A/B/RL N-way 블렌딩을 구현했습니다.
-
----
-
-## ✅ 할 일 목록
-
-### 🔄 진행 중 (Phase 2 후속 — 독립 포트폴리오 인프라)
-
-- [x] `src/utils/account_scope.py` — virtual 계좌 범위 추가
-- [x] `src/utils/config.py` — 전략 모드, Virtual 시뮬레이션, 리스크 설정 11개 추가
-- [x] `src/brokers/virtual_broker.py` — VirtualBroker (슬리피지/부분체결/체결지연)
-- [x] `src/utils/strategy_promotion.py` — 전략 승격 파이프라인 (virtual→paper→real)
-- [x] `src/utils/aggregate_risk.py` — 합산 리스크 모니터링
-- [x] `src/agents/collector.py` — 과거 데이터 벌크 수집 메서드 추가
-- [x] `scripts/seed_historical_data.py` — Historical OHLCV 시드 CLI
-- [x] `scripts/promote_strategy.py` — 전략 승격 CLI
-- [x] `src/api/routers/strategy.py` — 승격 API 3개 엔드포인트
-- [x] `scripts/db/init_db.py` — strategy_promotions, aggregate_risk_snapshots 테이블
-- [x] 테스트 4개 파일 (14개 클래스) + AST 검증 스크립트 88/88 통과
-
-### 🔄 완료된 Phase 2 기존 항목
-
-- [x] `src/agents/collector.py` — CollectorAgent MVP (FinanceDataReader 일봉 수집)
-- [x] `src/agents/collector.py` — KIS WebSocket 실시간 틱 수집 본연동
-- [x] `src/db/models.py` + `src/db/queries.py` — Pydantic 모델 및 DB 쿼리 함수
-- [x] `src/llm/claude_client.py` — Claude CLI / SDK 래퍼
-- [x] `src/llm/gpt_client.py` — OpenAI GPT-4o 클라이언트
-- [x] `src/llm/gemini_client.py` — Google Gemini CLI 래퍼
-- [x] `src/agents/predictor.py` — PredictorAgent MVP (Claude 단일 인스턴스 + 규칙 필백)
-- [x] `src/agents/portfolio_manager.py` — PortfolioManagerAgent (페이퍼 주문 처리)
-- [x] `src/agents/notifier.py` — NotifierAgent (Telegram 기본 알림)
-- [x] `src/agents/orchestrator.py` — OrchestratorAgent (기본 수집→예측→주문 사이클)
-
-### ✅ 완료
-
-#### Phase 1 — 인프라 기반 구축 (2026-03-12)
-- [x] 프로젝트 초기 구조 세팅 (2026-03-10)
-- [x] CLAUDE.md, architecture.md 작성 (2026-03-12)
-- [x] `.agent/` 문서 작성 — tech_stack.md, roadmap.md, conventions.md, prompts.md (2026-03-12)
-- [x] `docs/` 전체 문서 작성 — AGENTS.md, BOOTSTRAP.md, HEARTBEAT.md, IDENTITY.md, MEMORY.md, SOUL.md, TOOLS.md, USER.md, api_spec.md (2026-03-12)
-- [x] README.md, MEMORY.md(루트), progress.md 작성 (2026-03-12)
-- [x] **디렉터리 구조 생성** — src/, scripts/, test/, ui/ 전체 폴더 (2026-03-12)
-- [x] **`scripts/db/init_db.py`** — PostgreSQL 11개 테이블 스키마 생성 스크립트 (2026-03-12)
-- [x] **`src/utils/config.py`** — Pydantic v2 Settings 기반 환경변수 관리 (2026-03-12)
-- [x] **`src/utils/logging.py`** — 공통 로거 설정 (2026-03-12)
-- [x] **`src/utils/redis_client.py`** — Redis 비동기 클라이언트, 채널/키 상수, TTL 상수 (2026-03-12)
-- [x] **`src/utils/db_client.py`** — asyncpg 연결 풀 싱글턴 (2026-03-12)
-- [x] **`src/api/main.py`** — FastAPI 앱 (lifespan, CORS, /health 엔드포인트) (2026-03-12)
-- [x] **`src/api/deps.py`** — JWT 의존성 주입 (2026-03-12)
-- [x] **`src/api/routers/auth.py`** — 로그인, /users/me (2026-03-12)
-- [x] **`src/api/routers/market.py`** — 종목 목록, OHLCV, 실시간 시세, 지수 (2026-03-12)
-- [x] **`src/api/routers/agents.py`** — 에이전트 상태, 로그, 재시작 (2026-03-12)
-- [x] **`src/api/routers/strategy.py`** — Strategy A/B 시그널, 토너먼트, 토론, 블렌드 (2026-03-12)
-- [x] **`src/api/routers/portfolio.py`** — 포지션, 거래이력, 성과, 설정 (2026-03-12)
-- [x] **`src/api/routers/notifications.py`** — 알림 이력, 테스트 발송, 설정 (2026-03-12)
-- [x] **`scripts/kis_auth.py`** — KIS OAuth2 토큰 발급/확인/폐기 (2026-03-12)
-- [x] **`scripts/fetch_krx_holidays.py`** — KRX 공휴일 수집·Redis 저장 (2026-03-12)
-- [x] **`scripts/health_check.py`** — 시스템 전체 상태 점검 (2026-03-12)
-- [x] **`scripts/smoke_test.py`** — 엔드-투-엔드 스모크 테스트 (2026-03-12)
-- [x] **`.env.example`** — 전체 환경변수 템플릿 (2026-03-12)
-- [x] **`requirements.txt`** — Python 의존성 목록 (2026-03-12)
-- [x] **`ui/`** — React + Vite + TypeScript + Tailwind 프론트엔드 스캐폴딩 (2026-03-12)
-  - package.json, vite.config.ts, tsconfig.json, tailwind.config.js
-  - App.tsx, Layout, Dashboard, Strategy, Portfolio, Market, Settings 페이지
-  - AgentStatusBar, SignalCard, TournamentTable 컴포넌트
-  - useAgentStatus, useSignals, usePortfolio 훅
-  - Zustand 상태, Axios 인스턴스
-
-### ⏸️ 보류 / 차후
-
-- [x] **Phase 3:** Strategy A Tournament (5개 인스턴스 병렬) — 100% 완료
-- [x] **Phase 4:** Strategy B Consensus/Debate — 100% 완료
-- [x] **Phase 5:** Toss 스타일 대시보드 완성 (차트/설정 연동 포함) — 100% 완료
-- [x] **Phase 6:** 30일 페이퍼 트레이딩 운용 자동 검증 — 100% 완료
-- [x] **Phase 7:** 실거래 준비 및 보안 감사 — 100% 완료
-
----
-
-## 📋 최근 작업 로그
-
-| 날짜 | 작업 내용 | 상태 |
-|------|-----------|------|
-| 2026-03-18 | **끊어진 파이프라인 전수 수정 완료** — 11건 진단 중 Critical 3건(Orchestrator Runner 등록, SearchAgent SearXNG 구현, datalake store 함수 추가) + Warning 4건(Yahoo Redis/S3, 실시간 틱 S3, Historical Bulk Redis 캐시, IndexCollector DB) + Notice 1건(ticker_master DDL 확인) 총 8건 처리. `_fetch_historical_daily()` → `_cache_latest_tick()` 추가로 마지막 남은 #6 수정 완료 | ✅ 완료 |
-| 2026-03-17 | **RL Trading UI 버그 6종 수정** — `useRL.ts`: `usePromoteShadowToPaper`/`usePromotePaperToReal`에 누락된 `ticker` 필드 추가(422 에러 해결), `useActivatePolicy` ticker 쿼리 파라미터 추가, `usePolicyMode` ticker 파라미터 추가, `useRunWalkForward` payload policy_id→ticker 기반으로 수정, `useCreateTrainingJob` ticker→tickers 배열 변환, `PromotionResult` 인터페이스 백엔드 `PromotionCheckResult` 구조에 맞게 수정(passed/failures 필드). `RLTrading.tsx`: 활성화 버튼 ticker 전달, Walk-Forward UI 종목코드 입력으로 변경, 승격 결과 passed/failures 필드 정상 표시. Playwright로 전 탭 버튼 테스트 — 에러 0건 확인 | ✅ 완료 |
-| 2026-03-17 | **에이전트 레지스트리 PostgreSQL 중앙 관리 + agent_id 불일치 수정** — `agent_registry` 테이블 DDL 추가(init_db.py), 11개 에이전트 시드 데이터, `agents.py` 라우터 하드코딩→DB 조회 전환(`_load_agent_registry()`+폴백), agent_id 불일치 수정(orchestrator→orchestrator_agent, portfolio_manager_blend→portfolio_manager_agent, notifier_for_orchestrator→notifier_agent), 레지스트리 CRUD API 3개(`/registry/list`, `/registry/register`, `/registry/{id}` DELETE) | ✅ 완료 |
-| 2026-03-17 | **에이전트 연결 끊김/오류 진단** — Predictor 1~5 전체 실패(LLM 프로바이더 문제: Claude CLI만 가용, API key 미설정, GPT 미구성), Orchestrator/Collector/PM/Notifier "연결 끊김"(agent_id 불일치로 하트비트 매칭 실패), `ticker_master` 테이블+티커 정규화 유틸 구현(이전 세션) | 🔄 진행중 |
-| 2026-03-16 | **N+1 쿼리 배치 최적화 (executemany)** — `src/utils/db_client.py`(`executemany()` 헬퍼 + chunk_size=5,000), `src/db/queries.py`(`upsert_market_data()` for→executemany), `src/db/marketplace_queries.py`(4개 함수 전환), `src/agents/collector.py`(실시간 틱 버퍼 100건/1초 flush). 2,400 RTT→1 RTT. 논의 문서 작성, Copilot/Claude Opus 합의. AST 0 에러 | ✅ 완료 |
-| 2026-03-15 | **S3 Data Lake (MinIO + Parquet) 구현** — `docker-compose.yml`(MinIO 서비스+S3 env), `src/utils/s3_client.py`(boto3 싱글턴, CRUD 유틸), `src/services/datalake.py`(7 DataType enum, PyArrow 스키마, Parquet 직렬화, Hive 파티셔닝), `collector.py`(틱 100건 배치 + 일봉 S3 저장), `predictor.py`(예측 시그널 S3 저장), `paper.py`(주문 기록 S3 저장), `main.py`(S3 버킷 자동 생성), `architecture.md`(Data Lake 아키텍처 문서화), `test/test_datalake.py`(10개 테스트), `.env.example`/`config.py`/`tech_stack.md`/`requirements.txt` 업데이트 | ✅ 완료 |
-| 2026-03-15 | **Phase 9 RL Trading Lane 완료** — `src/agents/rl_dataset_builder_v2.py`(기술지표+매크로 컨텍스트 확장), `src/agents/rl_environment.py`(Gymnasium 호환 TradingEnv 4-action), `src/agents/rl_walk_forward.py`(N-fold expanding/sliding 교차검증), `src/agents/rl_shadow_inference.py`(ShadowInferenceEngine + PaperPromotionCriteria/RealPromotionCriteria 승격 게이트), `src/api/routers/rl.py`(17개 REST 엔드포인트 — 정책/실험/평가/학습/walk-forward/shadow/promotion), `test/test_phase9_rl.py`(통합 테스트 5개 클래스), 전체 AST 구문 검증 통과 | ✅ 완료 |
-| 2026-03-15 | **Phase 2 후속 — 독립 포트폴리오 인프라** — VirtualBroker(슬리피지/부분체결/체결지연), StrategyPromoter(virtual→paper→real 승격), AggregateRiskMonitor(단일종목 노출/전략 중복도), Historical OHLCV 벌크 수집(FinanceDataReader+KIS API), promote_strategy CLI, 승격 API 3개, DB 스키마 확장(strategy_promotions, aggregate_risk_snapshots, 5개 테이블 virtual CHECK/strategy_id 추가), 테스트 88/88 통과 | ✅ 완료 |
-| 2026-03-15 | **RL 실험 관리 + SearXNG 파이프라인 구현** — `src/agents/rl_experiment_manager.py`(RLExperimentManager, profiles/experiments 디렉토리 기반 파일 관리), `artifacts/rl/profiles/`(V1/V2 baseline 프로파일), `src/utils/searxng_client.py`(SearXNG JSON API 클라이언트, rate limiting, URL 정규화), `src/utils/reasoning_client.py`(Claude CLI/SDK thin adapter), `src/agents/search_agent.py`(SearchAgent hybrid pipeline), `scripts/db/init_db.py`(search_queries/search_results/page_extractions/research_outputs 4-테이블 추가), `docs/research_contract.json`(Research Contract JSON 스키마), `docker/searxng/`(SearXNG Docker 설정), `test/test_rl_experiment_manager.py` + `test/test_search_pipeline.py` 테스트 추가 | ✅ 완료 |
-| 2026-03-15 | **N-way 블렌딩 + StrategyRunner Registry 구현** — `src/agents/strategy_runner.py`(StrategyRunner Protocol + StrategyRegistry), `src/agents/blending.py`(BlendInput + blend_signals() N-way 일반화), `src/agents/orchestrator.py`(Registry 기반 병렬 실행 + --strategies CLI), `src/agents/rl_trading_v2.py`(map_v2_action_to_signal + normalize_q_confidence), `src/db/models.py`(strategy S/L 추가, is_shadow, blend_meta), `scripts/db/init_db.py`(is_shadow, blend_meta JSONB, strategy CHECK 확장), `src/utils/config.py`(strategy_blend_weights), `test/test_blend_nway.py` 통합 테스트 전체 통과 | ✅ 완료 |
-| 2026-03-15 | 실험 메타데이터 관리 영구 문서화 및 후속 작업 완료 — `domain`별 필수 파라미터 규격화, `expected_impact` 연결 방식, UI 노출 파트 정의를 `docs/EXPERIMENT_TRACKING.md`로 정리하여 영구 문서로 편입 후 종결된 `.agent/discussions/20260314-cross-strategy-performance-management.md` 논의 문서 삭제 처리 | ✅ 완료 |
-| 2026-03-15 | 실험 메타데이터 공통 추적 구조 도입 — `.agent/discussions/20260314-cross-strategy-performance-management.md` 최종 결정에 따라 `config/experiments/`, `config/active/` 디렉터리 기반 GitOps 추적 구조 신설 및 `src/utils/experiment_tracker.py` 구현 | ✅ 완료 |
-| 2026-03-15 | RL 아티팩트 Git 추적 정책 정리 — `.gitignore`를 조정해 `artifacts/` 기본 ignore는 유지하면서 `artifacts/rl/models/README.md`, `artifacts/rl/models/registry.json`은 Git 추적 허용, tabular 정책 JSON/Q-table은 계속 ignore, 향후 DQN/PPO 샘플 가중치용 `artifacts/rl/models/{dqn,ppo}/samples/` 경로를 열고 `.gitkeep`/README 규칙까지 반영 | ✅ 완료 |
-| 2026-03-15 | RL Orchestrator registry 부팅 연동 — `src/agents/orchestrator.py`가 RL 모드에서 기본 `RLPolicyStoreV2`를 사용하도록 변경하고, 부팅 시 `registry.json` 스냅샷을 로드해 로그 및 cycle metrics(`rl_registry_state`)에 포함, `test/test_rl_trading.py`에 bootstrap/load 통합 테스트 추가 후 RL 관련 테스트 8개 통과 | ✅ 완료 |
-| 2026-03-15 | RL 모델 관리 논의 문서 마무리 보강 — `.agent/discussions/20260314-rl-model-management.md`의 상태를 재개방하고, 미완료 후속 작업으로 Orchestrator 부팅 시 `registry.json` 로드 연동 및 `.gitignore`/아티팩트 추적 정책 검토를 구체화, 현재 tabular Q-table 실측치(V2 약 70KB, 상태 415~420개)와 상한 추정(약 110KB) 근거 추가 | ✅ 완료 |
-| 2026-03-14 | RL 모델 관리 마이그레이션 — `rl_policy_registry.py`(PolicyRegistry Pydantic 모델), `rl_policy_store_v2.py`(RLPolicyStoreV2), `migrate_rl_policies.py`(14개 정책 마이그레이션), `cleanup_rl_policies.py`(자동 정리), 알고리즘 네임스페이스(`tabular/dqn/ppo/`) 도입, `registry.json` 통합 인덱스 생성, 승격 게이트·자동 정리 구현, `test_rl_policy_registry.py` 31개 테스트 통과 | ✅ 완료 |
-| 2026-03-14 | 신규 논의 주제 생성 — `RL 하이퍼파라미터/실험 추적 관리`와 `A/B/RL/Search 전반의 설정 변경·성능 영향 관리` 논의를 위해 `.agent/discussions/20260314-rl-experiment-management.md`, `.agent/discussions/20260314-cross-strategy-performance-management.md` 초안 작성 | ✅ 완료 |
-| 2026-03-14 | 논의 문서 리뷰 및 Codex 의견 보강 — `.agent/discussions/20260314-searxng-pipeline.md`, `.agent/discussions/20260314-strategy-ab-rl-extension.md`, `.agent/discussions/20260314-rl-model-management.md`에 현재 레포 구현과 운영 리스크 기준 의견 추가 | ✅ 완료 |
-| 2026-03-14 | RL V2 트레이너 구현 — V1 핵심 버그 수정(거래 0건 → 178건), `src/agents/rl_trading_v2.py`에 5-bucket 상태공간+기회비용 리워드+3-포지션(롱/숏/플랫)+멀티시드 학습 구현, 크래프톤 +47.84% 수익 달성(baseline -26.58% 대비 +74.41% 초과수익), `artifacts/rl/models/` 종목별 정책 저장 구조 추가, `test/test_rl_trading_v2.py` 8개 테스트 통과 | ✅ 완료 |
-| 2026-03-14 | RL trading runnable lane 추가 — `src/agents/rl_trading.py`에 tabular Q-learning 기반 학습/평가/정책 저장/추론 구현, `orchestrator --rl` 및 `scripts/run_rl_trading.py` 연결, `trade_history`/`broker_orders`에 `RL` signal source 허용, `test/test_rl_trading.py` + `scripts/validate_rl_trading.py`로 `train -> evaluate -> infer -> order route` 자동 검증 추가 | ✅ 완료 |
-| 2026-03-14 | RL/Search 확장 문서 정리 — `.agent/roadmap.md` 확장, `docs/RL_*`/`docs/SEARCH_*` 문서 추가, `docs/AGENTS.md`에 5-agent 의사결정 계층 및 planned extension agents 반영, `docs/api_spec.md` 확장 API 메모 추가 | ✅ 완료 |
-| 2026-03-13 | 인증 UX 보강 — `Login` 페이지 추가, `RequireAuth` 보호 라우트 적용, `Layout` 로그아웃 버튼 추가, 401 인터셉터에서 로그인 요청은 강제 리다이렉트 제외 처리(오류 메시지 표시 가능), Docker UI 빌드/스모크 테스트 통과 | ✅ 완료 |
-| 2026-03-12 | Phase 5~6~7 마감 배치 — 대시보드/포트폴리오/마켓/설정 UI를 API 연동+차트 기반으로 완성, `/portfolio/performance-series`/`/portfolio/config`/`/notifications/preferences` API 추가, `paper_trading_runs` 스키마 및 `run_phase6_paper_validation.py`(30일/고변동성/부하) 추가, `validate_all_phases.py` 도입 후 Docker 기준 Phase 1~7 모두 100% 검증 통과 | ✅ 완료 |
-| 2026-03-12 | readiness 감사 가시성 강화 — `/portfolio/readiness/audits` API 추가(운영 감사 + 모드 전환 감사 이력 통합 조회), `queries.py`에 감사 조회 헬퍼 추가, API 명세 업데이트 | ✅ 완료 |
-| 2026-03-12 | 실거래 준비 자동화 강화 — `operational_audits` 테이블 추가, `security_audit.py`(시크릿/`.env` 추적 감사) 및 `validate_risk_rules.py`(서킷브레이커/포지션 한도 검증) 추가, `preflight_real_trading.py`에서 운영 감사 자동 실행/기록, readiness에 `paper:track_record` + 감사 최신성 체크 반영, 관련 테스트/문서 업데이트 | ✅ 완료 |
-| 2026-03-12 | 실거래 전환 가드/감사 체계 추가 — readiness 유틸(`utils/readiness.py`), `/portfolio/readiness` API, `/portfolio/trading-mode` 전환 전 readiness+확인코드 강제 및 `real_trading_audit` 기록, `preflight_real_trading.py` 스크립트/테스트 반영 | ✅ 완료 |
-| 2026-03-12 | 페이퍼 운용 자동 리포트 추가 — 공통 성과 계산 유틸(`utils/performance.py`) 분리, Notifier `send_paper_daily_report`, worker 일일 스케줄(ORCH_ENABLE_DAILY_REPORT/시각 env) 연동, 관련 테스트 추가 | ✅ 완료 |
-| 2026-03-12 | Docker 실런타임 안정화 핫픽스 — `email-validator` 의존성 추가, `fetch_recent_ohlcv` interval 타입 버그 수정, `agent_heartbeats` status 제약식(error 포함) 및 스키마 실행기 주석 처리 보강, `smoke_test` Redis Pub/Sub/헬스체크 보강 후 Docker 기준 스모크/유닛/UI 빌드 통과 | ✅ 완료 |
-| 2026-03-12 | 포트폴리오 성과 계산 정밀화 — 실현손익 기반 `return_pct/win_rate/max_drawdown/sharpe` 계산 함수 도입, `/portfolio/performance`에 적용, 단위 테스트 추가 | ✅ 완료 |
-| 2026-03-12 | Strategy A 토너먼트 운영 고도화 — 롤링 윈도우 기준일 고정(score_date), 최소 샘플(min_samples) 가드, 동률 tie-break 규칙, Orchestrator/worker/설정 연동, `init_db` 컬럼 호환 패치(is_winner→is_current_winner) | ✅ 완료 |
-| 2026-03-12 | 테스트 자동화 기초 추가 — `unittest` 단위 테스트(블렌딩/합의 임계치 fallback/포트폴리오 리스크 가드), README 테스트 실행 섹션 반영 | ✅ 완료 |
-| 2026-03-12 | Docker worker 운용 경로 추가 — `scripts/run_orchestrator_worker.py`, `docker-compose.yml` worker 서비스, ORCH_* 환경변수(.env.example), README 실행 가이드 반영 | ✅ 완료 |
-| 2026-03-12 | Strategy 대시보드 토론 뷰 개선 — `/strategy/b/debates` 최근 토론 이력 API, Debate 목록 선택 UI, 라운드별(Proposer/Challenger/Synthesizer) 상세 렌더링 추가 | ✅ 완료 |
-| 2026-03-12 | Strategy B 다라운드 합의 고도화 — max_rounds/consensus_threshold 설정, 라운드별 토론 누적 저장, Orchestrator/CLI override, Debate API/UI 메타데이터 노출 | ✅ 완료 |
-| 2026-03-12 | PortfolioManager 리스크 가드 추가 — max_position_pct 제한, 일일 손실 서킷브레이커(daily_loss_limit_pct), BLEND 주문 소스 처리 | ✅ 완료 |
-| 2026-03-12 | Strategy A/B 블렌딩 실행 경로 추가 — 공통 블렌딩 함수, Orchestrator --blend 모드, BLEND 주문 소스 연동 | ✅ 완료 |
-| 2026-03-12 | Strategy 페이지 고도화 — Strategy B 시그널 목록/토론 전문 조회 UI 연동(useStrategyBSignals/useDebateTranscript) | ✅ 완료 |
-| 2026-03-12 | Strategy B Consensus MVP 구현 — proposer/challenger/synthesizer 흐름, debate_transcripts 저장, B 예측 기록, Orchestrator --consensus 연동 | ✅ 완료 |
-| 2026-03-12 | Strategy A 토너먼트 기본 구현 — 5개 Predictor 병렬 실행, 예측 정답 백필, 롤링 정확도 기반 우승자 선정, Orchestrator 연동(--tournament) | ✅ 완료 |
-| 2026-03-12 | CollectorAgent KIS WebSocket 본연동 — approval_key 발급, TR 구독, 틱 파싱/저장, 재연결/폴백 로직 추가 | ✅ 완료 |
-| 2026-03-12 | Phase 2 코어 에이전트 MVP 추가 — collector/predictor/portfolio_manager/notifier/orchestrator, db models/queries, llm clients(claude/gpt/gemini) 구현 | ✅ 완료 |
-| 2026-03-12 | Phase 1 코드 전체 구현 완료 — DB 스키마, FastAPI, KIS OAuth, KRX 휴장일, 헬스체크, 스모크테스트, 프론트엔드 스캐폴딩 | ✅ 완료 |
-| 2026-03-12 | 전체 시스템 문서 작성 완료 (docs/ 9개, .agent/ 2개, 루트 4개) | ✅ 완료 |
-| 2026-03-12 | README.md, architecture.md 프로젝트 내용으로 전면 재작성 | ✅ 완료 |
-| 2026-03-12 | 시스템 아키텍처 확정 (5 에이전트, 2 전략, 3종 LLM, Telegram 알림) | ✅ 완료 |
-| 2026-03-10 | 프로젝트 초기 구조 세팅 | ✅ 완료 |
-#### Phase 1 — 인프라 및 기본 LLM 서빙
-
-- [x] Project 초기화
-- [x] FastAPI 서버 기본 구조
-- [x] PostgreSQL 세팅
-- [x] Redis 세팅
-- [x] `.env.example` 및 `Dockerfile`
-- [x] DB 마이그레이션 (Alembic)
+## 📊 Phase 진행 현황
 
 ```
-Phase 1 인프라 구축        ██████████  100% ✅ (문서 + 코드 완료)
-Phase 2 코어 에이전트      ██████████  100% ✅
-Phase 3 Strategy A        ██████████  100% ✅
-Phase 4 Strategy B        ██████████  100% ✅
-Phase 5 대시보드           ██████████  100% ✅
-Phase 6 페이퍼 운용        ██████████  100% ✅
-Phase 7 실거래 준비        ██████████  100% ✅
-Phase 8 Search Foundation ██████████  100% ✅
-Phase 9 RL Trading Lane   ██████████  100% ✅ (전체 구현 완료)
-S3 Data Lake (MinIO)      ██████████  100% ✅ (구현 + 아키텍처 문서화)
+Phase 1  인프라 기반 구축        ██████████  100% ✅
+Phase 2  코어 에이전트           ██████████  100% ✅
+Phase 3  Strategy A Tournament  ██████████  100% ✅
+Phase 4  Strategy B Consensus   ██████████  100% ✅
+Phase 5  대시보드 + 운용 검증    ██████████  100% ✅
+Phase 6  독립 포트폴리오 인프라  ██████████  100% ✅
+Phase 7  S3 Data Lake (MinIO)   ██████████  100% ✅
+Phase 8  Search Foundation      ██████████  100% ✅
+Phase 9  RL Trading Lane        ██████████  100% ✅
+Phase 10 피드백 루프 파이프라인  ██████████  100% ✅
+Phase 11 N-way 블렌딩 + Registry ██████████  100% ✅
+Phase 12 블로그 자동 포스팅      ██████████  100% ✅
 ```
-#### Phase 2 — 데이터 수집, LLM 호출, 기본 에이전트
-
-- [x] CollectorAgent (KIS WebSocket + FinanceDataReader)
-- [x] LLM 클라이언트 (Claude/GPT-4o/Gemini)
-- [x] PredictorAgent (단일 인스턴스)
-- [x] PortfolioManagerAgent
-- [x] NotifierAgent
-- [x] OrchestratorAgent (기본 사이클)
-
-#### Phase 3 — 멀티 프레딕터 + 토너먼트
-
-- [x] StrategyRunner Protocol (run(tickers) → PredictionSignal[])
-- [x] StrategyRunnerRegistry
-- [x] Strategy A (Tournament): 5개 Predictor, rolling_accuracy
-- [x] Strategy B (Consensus Debate): Proposer/Challenger/Synthesizer
-
-#### Phase 4 — RL Trading & Search Strategy
-
-- [x] Strategy S (Search/Scraping) **← NEW in this session**
-  - [x] `SearchAgent` (Tavily + ScrapeGraphAI)
-  - [x] `ResearchPortfolioManager` (SearchAgent 래핑)
-  - [x] Sentiment → Signal 매핑
-  - [x] Redis 캐싱 (4시간 TTL)
-  - [x] `IndexCollector` (KOSPI/KOSDAQ 수집)
-  - [x] `index_scheduler.py` (APScheduler)
-- [ ] Strategy RL (Reinforcement Learning) — 다음 Phase
-
-#### Phase 5 — N-way 블렌딩 (진행 중)
-
-- [x] N-way Signal Blending 구조 (A:0.3, B:0.3, S:0.2, RL:0.2)
-- [x] Signal blending 로직
-- [x] Circuit Breaker & Rules 적용
-- [x] Strategy S (SearchRunner) Orchestrator 통합 **← COMPLETED in this session**
-- [ ] 성능 최적화 및 튜닝
 
 ---
 
-## 📊 파일 현황
+## 🔄 미완료 / 진행 중
 
-| 날짜 | 작업 내용 | 상태 |
-|------|-----------|------|
-| 2026-03-16 | **N+1 쿼리 배치 최적화 (executemany)** — `db_client.py`(executemany 헬퍼), `queries.py`(upsert_market_data 전환), `marketplace_queries.py`(4개 함수 전환), `collector.py`(틱 버퍼 100건/1초). 논의 문서 Copilot/Claude 합의. AST 0 에러 | ✅ 완료 |
-| 2026-03-16 | **Copilot 리뷰 코드 품질 수정** — `orchestrator.py`의 `risk_summary.get("violations")`→`risk_summary.warnings` (dict→dataclass 접근 수정), `evaluate_promotion_readiness()` 누락 파라미터(`from_mode`, `to_mode`) 추가, `readiness.is_ready`→`readiness.ready` 필드명 수정, `WalkForwardResult.overall_approved` 일관성 확인(이상 없음). AST 전체 통과 | ✅ 완료 |
-| 2026-03-16 | **피드백 루프 파이프라인 구현** — `src/services/datalake_reader.py`(S3 Parquet 읽기, predictions+outcomes 매칭, 전략별 정확도 통계), `src/services/llm_feedback.py`(오류 패턴 분석 5가지, 프롬프트 컨텍스트 자동 생성, Redis 캐시), `src/services/rl_retrain_pipeline.py`(S3 daily_bars→RL 재학습→walk-forward 검증→기존 정책 비교→자동 배포), `src/services/backtest_engine.py`(시그널 기반 가상 포트폴리오 시뮬레이션, 전략 간 비교), `src/services/feedback_orchestrator.py`(일일 배치 통합 실행), `src/api/routers/feedback.py`(REST API 7개 엔드포인트), `predictor.py`(피드백 컨텍스트 프롬프트 자동 주입), `test/test_feedback_pipeline.py`(7개 클래스 20+ 테스트), architecture.md 피드백 루프 섹션 추가, 전체 AST 9/9 통과 | ✅ 완료 |
-| 2026-03-15 | **S3 Data Lake (MinIO + Parquet) 구현** — `docker-compose.yml`(MinIO 서비스+S3 env), `src/utils/s3_client.py`(boto3 싱글턴, CRUD 유틸), `src/services/datalake.py`(7 DataType enum, PyArrow 스키마, Parquet 직렬화, Hive 파티셔닝), `collector.py`(틱 100건 배치 + 일봉 S3 저장), `predictor.py`(예측 시그널 S3 저장), `paper.py`(주문 기록 S3 저장), `main.py`(S3 버킷 자동 생성), `architecture.md`(Data Lake 아키텍처 문서화), `test/test_datalake.py`(10개 테스트), `.env.example`/`config.py`/`tech_stack.md`/`requirements.txt` 업데이트 | ✅ 완료 |
-| 2026-03-15 | **Phase 9 RL Trading Lane 완료** — `src/agents/rl_dataset_builder_v2.py`(기술지표+매크로 컨텍스트 확장), `src/agents/rl_environment.py`(Gymnasium 호환 TradingEnv 4-action), `src/agents/rl_walk_forward.py`(N-fold expanding/sliding 교차검증), `src/agents/rl_shadow_inference.py`(ShadowInferenceEngine + PaperPromotionCriteria/RealPromotionCriteria 승격 게이트), `src/api/routers/rl.py`(17개 REST 엔드포인트 — 정책/실험/평가/학습/walk-forward/shadow/promotion), `test/test_phase9_rl.py`(통합 테스트 5개 클래스), 전체 AST 구문 검증 통과 | ✅ 완료 |
-| 2026-03-15 | **Phase 2 후속 — 독립 포트폴리오 인프라** — VirtualBroker(슬리피지/부분체결/체결지연), StrategyPromoter(virtual→paper→real 승격), AggregateRiskMonitor(단일종목 노출/전략 중복도), Historical OHLCV 벌크 수집(FinanceDataReader+KIS API), promote_strategy CLI, 승격 API 3개, DB 스키마 확장(strategy_promotions, aggregate_risk_snapshots, 5개 테이블 virtual CHECK/strategy_id 추가), 테스트 88/88 통과 | ✅ 완료 |
-| 2026-03-15 | **RL 실험 관리 + SearXNG 파이프라인 구현** — `src/agents/rl_experiment_manager.py`(RLExperimentManager, profiles/experiments 디렉토리 기반 파일 관리), `artifacts/rl/profiles/`(V1/V2 baseline 프로파일), `src/utils/searxng_client.py`(SearXNG JSON API 클라이언트, rate limiting, URL 정규화), `src/utils/reasoning_client.py`(Claude CLI/SDK thin adapter), `src/agents/search_agent.py`(SearchAgent hybrid pipeline), `scripts/db/init_db.py`(search_queries/search_results/page_extractions/research_outputs 4-테이블 추가), `docs/research_contract.json`(Research Contract JSON 스키마), `docker/searxng/`(SearXNG Docker 설정), `test/test_rl_experiment_manager.py` + `test/test_search_pipeline.py` 테스트 추가 | ✅ 완료 |
-| 2026-03-15 | **N-way 블렌딩 + StrategyRunner Registry 구현** — `src/agents/strategy_runner.py`(StrategyRunner Protocol + StrategyRegistry), `src/agents/blending.py`(BlendInput + blend_signals() N-way 일반화), `src/agents/orchestrator.py`(Registry 기반 병렬 실행 + --strategies CLI), `src/agents/rl_trading_v2.py`(map_v2_action_to_signal + normalize_q_confidence), `src/db/models.py`(strategy S/L 추가, is_shadow, blend_meta), `scripts/db/init_db.py`(is_shadow, blend_meta JSONB, strategy CHECK 확장), `src/utils/config.py`(strategy_blend_weights), `test/test_blend_nway.py` 통합 테스트 전체 통과 | ✅ 완료 |
-| 2026-03-15 | 실험 메타데이터 관리 영구 문서화 및 후속 작업 완료 — `domain`별 필수 파라미터 규격화, `expected_impact` 연결 방식, UI 노출 파트 정의를 `docs/EXPERIMENT_TRACKING.md`로 정리하여 영구 문서로 편입 후 종결된 `.agent/discussions/20260314-cross-strategy-performance-management.md` 논의 문서 삭제 처리 | ✅ 완료 |
-| 2026-03-15 | 실험 메타데이터 공통 추적 구조 도입 — `.agent/discussions/20260314-cross-strategy-performance-management.md` 최종 결정에 따라 `config/experiments/`, `config/active/` 디렉터리 기반 GitOps 추적 구조 신설 및 `src/utils/experiment_tracker.py` 구현 | ✅ 완료 |
-| 2026-03-15 | RL 아티팩트 Git 추적 정책 정리 — `.gitignore`를 조정해 `artifacts/` 기본 ignore는 유지하면서 `artifacts/rl/models/README.md`, `artifacts/rl/models/registry.json`은 Git 추적 허용, tabular 정책 JSON/Q-table은 계속 ignore, 향후 DQN/PPO 샘플 가중치용 `artifacts/rl/models/{dqn,ppo}/samples/` 경로를 열고 `.gitkeep`/README 규칙까지 반영 | ✅ 완료 |
-| 2026-03-15 | RL Orchestrator registry 부팅 연동 — `src/agents/orchestrator.py`가 RL 모드에서 기본 `RLPolicyStoreV2`를 사용하도록 변경하고, 부팅 시 `registry.json` 스냅샷을 로드해 로그 및 cycle metrics(`rl_registry_state`)에 포함, `test/test_rl_trading.py`에 bootstrap/load 통합 테스트 추가 후 RL 관련 테스트 8개 통과 | ✅ 완료 |
-| 2026-03-15 | RL 모델 관리 논의 문서 마무리 보강 — `.agent/discussions/20260314-rl-model-management.md`의 상태를 재개방하고, 미완료 후속 작업으로 Orchestrator 부팅 시 `registry.json` 로드 연동 및 `.gitignore`/아티팩트 추적 정책 검토를 구체화, 현재 tabular Q-table 실측치(V2 약 70KB, 상태 415~420개)와 상한 추정(약 110KB) 근거 추가 | ✅ 완료 |
-| 2026-03-14 | RL 모델 관리 마이그레이션 — `rl_policy_registry.py`(PolicyRegistry Pydantic 모델), `rl_policy_store_v2.py`(RLPolicyStoreV2), `migrate_rl_policies.py`(14개 정책 마이그레이션), `cleanup_rl_policies.py`(자동 정리), 알고리즘 네임스페이스(`tabular/dqn/ppo/`) 도입, `registry.json` 통합 인덱스 생성, 승격 게이트·자동 정리 구현, `test_rl_policy_registry.py` 31개 테스트 통과 | ✅ 완료 |
-| 2026-03-14 | 신규 논의 주제 생성 — `RL 하이퍼파라미터/실험 추적 관리`와 `A/B/RL/Search 전반의 설정 변경·성능 영향 관리` 논의를 위해 `.agent/discussions/20260314-rl-experiment-management.md`, `.agent/discussions/20260314-cross-strategy-performance-management.md` 초안 작성 | ✅ 완료 |
-| 2026-03-14 | 논의 문서 리뷰 및 Codex 의견 보강 — `.agent/discussions/20260314-searxng-pipeline.md`, `.agent/discussions/20260314-strategy-ab-rl-extension.md`, `.agent/discussions/20260314-rl-model-management.md`에 현재 레포 구현과 운영 리스크 기준 의견 추가 | ✅ 완료 |
-| 2026-03-14 | RL V2 트레이너 구현 — V1 핵심 버그 수정(거래 0건 → 178건), `src/agents/rl_trading_v2.py`에 5-bucket 상태공간+기회비용 리워드+3-포지션(롱/숏/플랫)+멀티시드 학습 구현, 크래프톤 +47.84% 수익 달성(baseline -26.58% 대비 +74.41% 초과수익), `artifacts/rl/models/` 종목별 정책 저장 구조 추가, `test/test_rl_trading_v2.py` 8개 테스트 통과 | ✅ 완료 |
-| 2026-03-14 | RL trading runnable lane 추가 — `src/agents/rl_trading.py`에 tabular Q-learning 기반 학습/평가/정책 저장/추론 구현, `orchestrator --rl` 및 `scripts/run_rl_trading.py` 연결, `trade_history`/`broker_orders`에 `RL` signal source 허용, `test/test_rl_trading.py` + `scripts/validate_rl_trading.py`로 `train -> evaluate -> infer -> order route` 자동 검증 추가 | ✅ 완료 |
-| 2026-03-14 | RL/Search 확장 문서 정리 — `.agent/roadmap.md` 확장, `docs/RL_*`/`docs/SEARCH_*` 문서 추가, `docs/AGENTS.md`에 5-agent 의사결정 계층 및 planned extension agents 반영, `docs/api_spec.md` 확장 API 메모 추가 | ✅ 완료 |
-| 2026-03-13 | 인증 UX 보강 — `Login` 페이지 추가, `RequireAuth` 보호 라우트 적용, `Layout` 로그아웃 버튼 추가, 401 인터셉터에서 로그인 요청은 강제 리다이렉트 제외 처리(오류 메시지 표시 가능), Docker UI 빌드/스모크 테스트 통과 | ✅ 완료 |
-| 2026-03-12 | Phase 5~6~7 마감 배치 — 대시보드/포트폴리오/마켓/설정 UI를 API 연동+차트 기반으로 완성, `/portfolio/performance-series`/`/portfolio/config`/`/notifications/preferences` API 추가, `paper_trading_runs` 스키마 및 `run_phase6_paper_validation.py`(30일/고변동성/부하) 추가, `validate_all_phases.py` 도입 후 Docker 기준 Phase 1~7 모두 100% 검증 통과 | ✅ 완료 |
-| 2026-03-12 | readiness 감사 가시성 강화 — `/portfolio/readiness/audits` API 추가(운영 감사 + 모드 전환 감사 이력 통합 조회), `queries.py`에 감사 조회 헬퍼 추가, API 명세 업데이트 | ✅ 완료 |
-| 2026-03-12 | 실거래 준비 자동화 강화 — `operational_audits` 테이블 추가, `security_audit.py`(시크릿/`.env` 추적 감사) 및 `validate_risk_rules.py`(서킷브레이커/포지션 한도 검증) 추가, `preflight_real_trading.py`에서 운영 감사 자동 실행/기록, readiness에 `paper:track_record` + 감사 최신성 체크 반영, 관련 테스트/문서 업데이트 | ✅ 완료 |
-| 2026-03-12 | 실거래 전환 가드/감사 체계 추가 — readiness 유틸(`utils/readiness.py`), `/portfolio/readiness` API, `/portfolio/trading-mode` 전환 전 readiness+확인코드 강제 및 `real_trading_audit` 기록, `preflight_real_trading.py` 스크립트/테스트 반영 | ✅ 완료 |
-| 2026-03-12 | 페이퍼 운용 자동 리포트 추가 — 공통 성과 계산 유틸(`utils/performance.py`) 분리, Notifier `send_paper_daily_report`, worker 일일 스케줄(ORCH_ENABLE_DAILY_REPORT/시각 env) 연동, 관련 테스트 추가 | ✅ 완료 |
-| 2026-03-12 | Docker 실런타임 안정화 핫픽스 — `email-validator` 의존성 추가, `fetch_recent_ohlcv` interval 타입 버그 수정, `agent_heartbeats` status 제약식(error 포함) 및 스키마 실행기 주석 처리 보강, `smoke_test` Redis Pub/Sub/헬스체크 보강 후 Docker 기준 스모크/유닛/UI 빌드 통과 | ✅ 완료 |
-| 2026-03-12 | 포트폴리오 성과 계산 정밀화 — 실현손익 기반 `return_pct/win_rate/max_drawdown/sharpe` 계산 함수 도입, `/portfolio/performance`에 적용, 단위 테스트 추가 | ✅ 완료 |
-| 2026-03-12 | Strategy A 토너먼트 운영 고도화 — 롤링 윈도우 기준일 고정(score_date), 최소 샘플(min_samples) 가드, 동률 tie-break 규칙, Orchestrator/worker/설정 연동, `init_db` 컬럼 호환 패치(is_winner→is_current_winner) | ✅ 완료 |
-| 2026-03-12 | 테스트 자동화 기초 추가 — `unittest` 단위 테스트(블렌딩/합의 임계치 fallback/포트폴리오 리스크 가드), README 테스트 실행 섹션 반영 | ✅ 완료 |
-| 2026-03-12 | Docker worker 운용 경로 추가 — `scripts/run_orchestrator_worker.py`, `docker-compose.yml` worker 서비스, ORCH_* 환경변수(.env.example), README 실행 가이드 반영 | ✅ 완료 |
-| 2026-03-12 | Strategy 대시보드 토론 뷰 개선 — `/strategy/b/debates` 최근 토론 이력 API, Debate 목록 선택 UI, 라운드별(Proposer/Challenger/Synthesizer) 상세 렌더링 추가 | ✅ 완료 |
-| 2026-03-12 | Strategy B 다라운드 합의 고도화 — max_rounds/consensus_threshold 설정, 라운드별 토론 누적 저장, Orchestrator/CLI override, Debate API/UI 메타데이터 노출 | ✅ 완료 |
-| 2026-03-12 | PortfolioManager 리스크 가드 추가 — max_position_pct 제한, 일일 손실 서킷브레이커(daily_loss_limit_pct), BLEND 주문 소스 처리 | ✅ 완료 |
-| 2026-03-12 | Strategy A/B 블렌딩 실행 경로 추가 — 공통 블렌딩 함수, Orchestrator --blend 모드, BLEND 주문 소스 연동 | ✅ 완료 |
-| 2026-03-12 | Strategy 페이지 고도화 — Strategy B 시그널 목록/토론 전문 조회 UI 연동(useStrategyBSignals/useDebateTranscript) | ✅ 완료 |
-| 2026-03-12 | Strategy B Consensus MVP 구현 — proposer/challenger/synthesizer 흐름, debate_transcripts 저장, B 예측 기록, Orchestrator --consensus 연동 | ✅ 완료 |
-| 2026-03-12 | Strategy A 토너먼트 기본 구현 — 5개 Predictor 병렬 실행, 예측 정답 백필, 롤링 정확도 기반 우승자 선정, Orchestrator 연동(--tournament) | ✅ 완료 |
-| 2026-03-12 | CollectorAgent KIS WebSocket 본연동 — approval_key 발급, TR 구독, 틱 파싱/저장, 재연결/폴백 로직 추가 | ✅ 완료 |
-| 2026-03-12 | Phase 2 코어 에이전트 MVP 추가 — collector/predictor/portfolio_manager/notifier/orchestrator, db models/queries, llm clients(claude/gpt/gemini) 구현 | ✅ 완료 |
-| 2026-03-12 | Phase 1 코드 전체 구현 완료 — DB 스키마, FastAPI, KIS OAuth, KRX 휴장일, 헬스체크, 스모크테스트, 프론트엔드 스캐폴딩 | ✅ 완료 |
-| 2026-03-12 | 전체 시스템 문서 작성 완료 (docs/ 9개, .agent/ 2개, 루트 4개) | ✅ 완료 |
-| 2026-03-12 | README.md, architecture.md 프로젝트 내용으로 전면 재작성 | ✅ 완료 |
-| 2026-03-12 | 시스템 아키텍처 확정 (5 에이전트, 2 전략, 3종 LLM, Telegram 알림) | ✅ 완료 |
-| 2026-03-10 | 프로젝트 초기 구조 세팅 | ✅ 완료 |
-
-### 📂 최근 신규 파일
-| 파일 | 상태 | 비고 |
-|------|------|------|
-| `src/agents/search_agent.py` | ✅ 구현 | SearchAgent MVP |
-| `src/agents/research_portfolio_manager.py` | ✅ 구현 | ResearchPortfolioManager + sentiment→signal 매핑 |
-| `src/agents/search_runner.py` | ✅ 구현 | SearchRunner (Strategy S StrategyRunner 구현) |
-| `src/agents/index_collector.py` | ✅ 구현 | IndexCollector (KOSPI/KOSDAQ) |
-| `src/agents/orchestrator.py` | ✅ 수정 | TYPE_CHECKING 임포트 수정 + SearchRunner 통합 준비 |
-| `src/schedulers/index_scheduler.py` | ✅ 구현 | APScheduler로 지수 수집 자동화 |
-| `src/utils/config.py` | ✅ 확인 | strategy_blend_weights: S:0.20 이미 구성됨 |
-| `test/test_search_runner.py` | ✅ 수정 | SearchRunner 임포트 경로 수정 |
-| `test/test_search_runner_integration.py` | ✅ 구현 | Strategy S Orchestrator 통합 테스트 |
-| `MEMORY.md` | ✅ 업데이트 | 기술적 결정 기록 |
-| `docs/AGENTS.md` | ✅ 업데이트 | 멀티 에이전트 정의 |
+- [ ] **SearXNG 로컬 검색 엔진 통합** — SearchAgent가 외부 검색 API 없이 자체 SearXNG 인스턴스 사용
+- [ ] **SearchAgent 모델 호환성 테스트** — `model_used` 필드로 추적, 일부 LLM 모델에서 지원 안 될 수 있음
+- [ ] **LLM 프로바이더 Docker 내 실패 해결** — Claude CLI / Gemini OAuth가 Docker 내에서 동작하지 않음. `docker compose logs worker` 확인 필요
+- [ ] **프로덕션 환경 배포 및 모니터링** — 전략 실거래 전환 체크리스트 완료 후 배포
+- [ ] **블렌딩 가중치 최적화** — 현재 A:0.3/B:0.3/S:0.2/RL:0.2 고정, 성과 기반 동적 조정 검토
+- [ ] **QA 잔여 이슈 (C3, H1~H4, M1~M4)** — 코드 리뷰 체크리스트 미처리 항목
+- [ ] **RL 에피소드 S3 저장 구현** — `DataType.RL_EPISODES` enum만 존재, 저장 함수 미구현
 
 ---
 
-## ✅ Critical 파이프라인 수정 (2026-03-18)
+## ⚠️ 미해결 구조적 이슈
 
-| 항목 | 파일 | 처리 내용 |
-|---|---|---|
-| ✅ Orchestrator Runner 등록 | `orchestrator.py` `_main_async()` | A/B/S/RL 4개 Runner 자동 등록 + `--strategies` CLI 옵션 추가 |
-| ✅ SearchAgent stub 제거 | `search_agent.py` | SearXNG → Claude 감성 분석 파이프라인 구현. graceful degradation 포함 |
-| ✅ datalake store 함수 추가 | `datalake.py` | `store_tick_data()` + `store_debate_transcripts()` + PyArrow 스키마 2종 추가 |
+- **스케줄러가 IndexCollector만 가동** — `main.py` lifespan에서 `start_index_scheduler()`만 호출. 일봉/매크로/종목마스터 수집은 수동 CLI 실행에 의존
+- **RLRunner 활성 정책 없으면 0건 반환** — 학습→정책 활성화 파이프라인 미실행 시 Strategy RL은 항상 빈 시그널. 운영 시작 전 활성 정책 등록 필요
 
 ---
 
-## 🚨 끊어진 파이프라인 진단 (2026-03-18)
-
-> 코드 기반 감사 결과. 구현은 되어 있지만 실제로 연결이 안 되거나 데이터가 흐르지 않는 지점들.
-
-### 🔴 Critical — 데이터 수집/저장이 전혀 안 되는 항목
-
-1. ~~**SearchAgent 완전 stub 상태**~~ ✅ **수정 완료** (2026-03-18)
-   - 파일: `src/agents/search_agent.py`
-   - 상태: `run_research()` 내부에 `# TODO: Implement Tavily API call`, `# TODO: Implement ScrapeGraphAI`, `# TODO: Implement Claude/GPT sentiment analysis` 3개 TODO만 있고, 항상 `sentiment="neutral", confidence=0.5, sources=[], key_facts=[], risk_factors=[]` 반환
-   - 영향: **Strategy S 전체가 사실상 무기능.** SearchRunner → ResearchPortfolioManager → SearchAgent 호출 체인은 완성되어 있지만, 실제 검색/스크래핑이 이뤄지지 않아 모든 종목에 대해 `HOLD(confidence=0.3)` 고정 시그널만 생성. N-way 블렌딩 S:0.20 가중치가 의미 없음
-   - SearXNG 클라이언트(`src/utils/searxng_client.py`)는 완성되어 있으나 SearchAgent에서 **호출하지 않음**
-
-2. ~~**Orchestrator에 Runner 자동 등록 없음**~~ ✅ **수정 완료** (2026-03-18)
-   - 파일: `src/agents/orchestrator.py` — `__init__`에서 `self.registry = StrategyRegistry()` 빈 레지스트리 생성
-   - 상태: `register_strategy()`를 외부에서 호출해야 하는데, `_main_async()`(CLI 엔트리포인트)에서 **어떤 Runner도 등록하지 않음**. `orchestrator.run_cycle(tickers)` 실행해도 `registry.runner_count == 0` → 즉시 빈 dict 반환
-   - 영향: **CLI로 `python -m src.agents.orchestrator`를 실행해도 전략이 하나도 등록되지 않아 예측/주문 0건**
-   - `scripts/run_orchestrator_worker.py`에서 등록하는 코드가 있을 수 있으나, 기본 엔트리포인트에는 없음
-
-3. ~~**LLM 프로바이더 전원 장애 (2026-03-17 진단)**~~ ✅ **해결 확인** (2026-03-18)
-   - Dockerfile에 `npm install -g @anthropic-ai/claude-code`로 Claude CLI 설치, `claude_auth` named volume 마운트로 인증 토큰 공유, `${HOME}/.config/gcloud:/root/.config/gcloud` Gemini ADC 마운트 — 모두 이미 구성됨
-   - docker exec로 `claude` 로그인 완료 확인됨
-
-### 🟡 Warning — 데이터 저장 불일치/누락
-
-4. ~~**Yahoo 일봉 수집 시 Redis/S3 저장 누락**~~ ✅ **수정 완료** (2026-03-18)
-   - `collect_yahoo_daily_bars()`: S3(`store_daily_bars`) + Redis(`_cache_latest_tick`) + Pub/Sub 추가
-
-5. ~~**실시간 틱 S3 미저장**~~ ✅ **수정 완료** (2026-03-18)
-   - `_flush_tick_buffer()`: `store_tick_data()` 추가. `datalake.py`에 `TICK_DATA_SCHEMA` 및 `store_tick_data()` 함수 구현
-
-6. ~~**Historical Bulk 수집 시 Redis 캐시 미갱신**~~ ✅ **수정 완료** (2026-03-18)
-   - `_fetch_historical_daily()`: 저장 후 `_cache_latest_tick(points[-1], source="historical_seed")` 추가
-
-7. ~~**IndexCollector DB 미저장**~~ ✅ **수정 완료** (2026-03-18)
-   - `index_collector.py`: `upsert_macro_indicators()` 호출로 PostgreSQL `macro_indicators` 시계열 기록 추가
-
-8. ~~**debate_transcripts, rl_episodes S3 저장 미구현**~~ ✅ **부분 수정** — `store_debate_transcripts()` + `store_tick_data()` 추가. `rl_episodes` store 함수는 RL 파이프라인 완성 후 추가 예정
-   - 파일: `src/services/datalake.py`
-   - 상태: `DataType.DEBATE_TRANSCRIPTS`와 `DataType.RL_EPISODES`가 enum에만 존재. PyArrow 스키마/저장 함수 미구현
-   - 영향: 토론 전문과 RL 에피소드 S3 아카이빙 불가
-
-### 🟠 Notice — 구조적 비활성 상태
-
-9. **스케줄러가 IndexCollector만 가동**
-   - 파일: `src/api/main.py` lifespan → `start_index_scheduler()` 만 호출
-   - 상태: CollectorAgent 일봉 수집, MacroCollector, StockMasterCollector에 대한 스케줄러가 **없음**. 수동 CLI 실행에 의존
-   - 영향: 서버만 띄워도 자동 데이터 수집은 지수(30초 간격)만 이뤄짐. 일봉/매크로/종목마스터는 별도 크론이나 수동 실행 필요
-
-10. ~~**ticker_master 테이블 미생성 가능성**~~ ✅ **확인 완료** (2026-03-18)
-    - `init_db.py` 754번째 줄에 `CREATE TABLE IF NOT EXISTS ticker_master` DDL 존재 확인. 인덱스 3개 + 시드 INSERT 포함.
-
-11. **RLRunner 활성 정책 없으면 0건 반환 (정상이나 주의)**
-    - 파일: `src/agents/rl_runner.py`
-    - 상태: `registry.json`에 활성 정책이 없으면 `"활성 정책이 없습니다. 건너뜁니다."` 로그 후 빈 리스트 반환
-    - 영향: RL 학습 → 정책 활성화 → 추론 파이프라인이 순차적으로 실행되지 않으면 Strategy RL은 항상 빈 시그널
-
----
-
-## 🎯 Next Immediate Tasks
-
-1. [x] Orchestrator에 Strategy S 통합 (SearchRunner 등록) **← COMPLETED**
-2. [x] Strategy S 가중치를 블렌딩에 반영 (`strategy_blend_weights["S"] = 0.20`) **← CONFIRMED**
-3. [x] AST 검증 + 코드 품질 검증 통과
-4. [x] README 업데이트 (4전략 N-way 블렌딩 반영, 확장 상태 표 추가)
-5. [x] Copilot 리뷰 코드 품질 이슈 수정 (risk_summary, StrategyPromoter, PromotionCheckResult)
-6. [x] 마켓플레이스 논의 문서 Closure
-7. [x] 성능 최적화 및 튜닝 **← COMPLETED**
-   - [x] Predictor: 종목별 데이터 조회·LLM 호출 asyncio.gather 병렬화
-   - [x] Collector: Redis 4 round trip → 1 pipeline
-   - [x] Blending: 5개 루프 → 단일 패스 리팩토링
-   - [x] Combined signals: Redis 5분 캐싱 추가
-   - [x] Portfolio performance: trade+benchmark 쿼리 병렬 실행
-8. [x] **N+1 쿼리 배치 최적화 (executemany)** **← COMPLETED**
-   - [x] `db_client.py`에 `executemany()` 헬퍼 추가 (chunk_size=5,000)
-   - [x] `queries.py` — `upsert_market_data()` for→executemany 전환
-   - [x] `marketplace_queries.py` — 4개 함수(stock_master/theme/macro/rankings) 전환
-   - [x] `collector.py` — 실시간 틱 버퍼(100건/1초) 도입
-   - [x] AST 검증 통과 (py_compile 0 에러)
-   - [x] 논의 문서 작성 및 AI 의견(Copilot/Claude Opus) 합의 확인
-
----
-
-*Last updated: 2026-03-18*
-*Critical 3건 수정 완료 — Orchestrator Runner 등록, SearchAgent 구현, datalake store 함수 추가*
+*Last updated: 2026-03-28*
