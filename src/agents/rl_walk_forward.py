@@ -17,9 +17,10 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from inspect import signature
 from typing import Any, Callable, Protocol
 
-from src.agents.rl_trading import RLEvaluationMetrics, RLSplitMetadata
+from src.agents.rl_trading import RLDataset, RLEvaluationMetrics, RLSplitMetadata
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -31,12 +32,10 @@ logger = get_logger(__name__)
 class TrainerProtocol(Protocol):
     """학습기 프로토콜 (TabularQTrainer/V2 호환)."""
 
-    def train(self, closes: list[float]) -> dict[str, dict[str, float]]:
+    def train(self, data: Any) -> Any:
         ...
 
-    def evaluate(
-        self, q_table: dict[str, dict[str, float]], closes: list[float]
-    ) -> RLEvaluationMetrics:
+    def evaluate(self, arg1: Any, arg2: Any) -> RLEvaluationMetrics:
         ...
 
 
@@ -80,6 +79,11 @@ class WalkForwardResult:
 
     created_at: str = ""
 
+    @property
+    def approved(self) -> bool:
+        """기존 API/테스트 호환용 별칭."""
+        return self.overall_approved
+
     def to_dict(self) -> dict:
         result = {
             "n_folds": self.n_folds,
@@ -93,6 +97,7 @@ class WalkForwardResult:
             "avg_win_rate": self.avg_win_rate,
             "approved_folds": self.approved_folds,
             "consistency_score": self.consistency_score,
+            "approved": self.approved,
             "overall_approved": self.overall_approved,
             "created_at": self.created_at,
             "folds": [asdict(f) for f in self.folds],
@@ -174,9 +179,9 @@ class WalkForwardEvaluator:
 
             try:
                 # 학습
-                q_table = trainer.train(train_closes)
+                q_table = self._train_fold(trainer, train_closes, fold_idx=i)
                 # 평가
-                metrics = trainer.evaluate(q_table, test_closes)
+                metrics = self._evaluate_fold(trainer, q_table, test_closes)
 
                 fold_approved = (
                     metrics.total_return_pct >= self.approval_threshold_pct
@@ -203,6 +208,80 @@ class WalkForwardEvaluator:
         # 요약 통계 계산
         result = self._summarize(closes, folds)
         return result
+
+    def _train_fold(
+        self,
+        trainer: TrainerProtocol,
+        closes: list[float],
+        *,
+        fold_idx: int,
+    ) -> dict[str, dict[str, float]]:
+        """현재 RL trainer 인터페이스(V1/V2/legacy)를 모두 수용합니다."""
+        train_fn = trainer.train
+        dataset = self._build_dataset(closes, fold_idx=fold_idx)
+        primary_arg: Any = dataset if self._prefers_dataset(train_fn) else closes
+        fallback_arg: Any = closes if primary_arg is dataset else dataset
+
+        try:
+            trained = train_fn(primary_arg)
+        except TypeError:
+            trained = train_fn(fallback_arg)
+
+        return self._extract_q_table(trained)
+
+    def _evaluate_fold(
+        self,
+        trainer: TrainerProtocol,
+        q_table: dict[str, dict[str, float]],
+        closes: list[float],
+    ) -> RLEvaluationMetrics:
+        evaluate_fn = trainer.evaluate
+        first_param = self._first_param_name(evaluate_fn)
+
+        if first_param in {"q_table", "policy", "artifact"}:
+            primary_args = (q_table, closes)
+            fallback_args = (closes, q_table)
+        else:
+            primary_args = (closes, q_table)
+            fallback_args = (q_table, closes)
+
+        try:
+            return evaluate_fn(*primary_args)
+        except TypeError:
+            return evaluate_fn(*fallback_args)
+
+    @staticmethod
+    def _build_dataset(closes: list[float], *, fold_idx: int) -> RLDataset:
+        timestamps = [f"fold{fold_idx}_step{i}" for i in range(len(closes))]
+        return RLDataset(
+            ticker=f"WALK_FORWARD_FOLD_{fold_idx}",
+            closes=closes,
+            timestamps=timestamps,
+        )
+
+    @staticmethod
+    def _extract_q_table(trained: Any) -> dict[str, dict[str, float]]:
+        if isinstance(trained, dict):
+            return trained
+
+        q_table = getattr(trained, "q_table", None)
+        if isinstance(q_table, dict):
+            return q_table
+
+        raise TypeError(
+            "trainer.train() 결과에서 q_table을 추출할 수 없습니다"
+        )
+
+    @staticmethod
+    def _first_param_name(fn: Callable[..., Any]) -> str:
+        try:
+            params = list(signature(fn).parameters.values())
+        except (TypeError, ValueError):
+            return ""
+        return params[0].name if params else ""
+
+    def _prefers_dataset(self, train_fn: Callable[..., Any]) -> bool:
+        return self._first_param_name(train_fn) in {"dataset", "data", "rl_dataset"}
 
     def _summarize(
         self, closes: list[float], folds: list[FoldResult]

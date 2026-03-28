@@ -11,6 +11,7 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
+from typing import Optional, Tuple
 
 import asyncpg
 from dotenv import load_dotenv
@@ -20,6 +21,8 @@ import os
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
+
+from src.utils.auth import hash_password
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -999,6 +1002,55 @@ CASCADE;
 """
 
 
+def _is_enabled(raw: Optional[str]) -> bool:
+    return (raw or "true").strip().lower() not in {"0", "false", "no", "off"}
+
+
+def get_default_admin_seed() -> Optional[Tuple[str, str, str]]:
+    """환경 변수에서 기본 admin seed 설정을 읽어옵니다."""
+    if not _is_enabled(os.getenv("DEFAULT_ADMIN_SEED_ENABLED", "true")):
+        return None
+
+    email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@example.com").strip()
+    name = os.getenv("DEFAULT_ADMIN_NAME", "Admin").strip() or "Admin"
+    password = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin1234")
+
+    if not email or not password:
+        logger.warning("기본 admin seed 설정이 비어 있어 계정 생성을 건너뜁니다.")
+        return None
+
+    return email, name, password
+
+
+async def seed_default_admin(conn: asyncpg.Connection) -> bool:
+    """기본 admin 계정이 없으면 생성합니다."""
+    seed = get_default_admin_seed()
+    if seed is None:
+        logger.info("기본 admin seed 비활성화 또는 설정 누락으로 건너뜁니다.")
+        return False
+
+    email, name, password = seed
+    exists = await conn.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM users WHERE email = $1)",
+        email,
+    )
+    if exists:
+        logger.info("기본 admin 계정이 이미 존재합니다: %s", email)
+        return False
+
+    await conn.execute(
+        """
+        INSERT INTO users (email, name, password_hash, is_admin)
+        VALUES ($1, $2, $3, TRUE)
+        """,
+        email,
+        name,
+        hash_password(password),
+    )
+    logger.info("기본 admin 계정 시드 완료: %s", email)
+    return True
+
+
 async def create_schema(drop_first: bool = False) -> None:
     """PostgreSQL 스키마를 생성합니다."""
     logger.info("DB 연결 중: %s", DATABASE_URL.split("@")[-1])
@@ -1024,6 +1076,8 @@ async def create_schema(drop_first: bool = False) -> None:
                 if not cleaned_stmt:
                     continue
                 await conn.execute(cleaned_stmt)
+
+        await seed_default_admin(conn)
 
         # 생성된 테이블 목록 확인
         rows = await conn.fetch(

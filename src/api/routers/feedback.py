@@ -7,15 +7,33 @@ src/api/routers/feedback.py — 피드백 루프 API 라우터
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from src.agents.rl_continuous_improver import RLContinuousImprover
+from src.agents.rl_experiment_manager import RLExperimentManager
+from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
 from src.utils.logging import get_logger
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_ARTIFACTS = ROOT / "artifacts" / "rl"
+_rl_improver: RLContinuousImprover | None = None
+
+
+def _get_rl_improver() -> RLContinuousImprover:
+    global _rl_improver
+    if _rl_improver is None:
+        _rl_improver = RLContinuousImprover(
+            experiment_manager=RLExperimentManager(artifacts_dir=DEFAULT_ARTIFACTS),
+            policy_store=RLPolicyStoreV2(models_dir=DEFAULT_ARTIFACTS / "models"),
+        )
+    return _rl_improver
 
 
 # ── Response Models ──────────────────────────────────────────────────────
@@ -71,7 +89,7 @@ class StrategyComparison(BaseModel):
 class RetrainResultItem(BaseModel):
     ticker: str
     success: bool
-    new_policy_id: Optional[int] = None
+    new_policy_id: Optional[str] = None
     excess_return: Optional[float] = None
     walk_forward_passed: bool = False
     deployed: bool = False
@@ -282,14 +300,15 @@ async def compare_strategies(
 async def retrain_ticker(ticker: str) -> RetrainResultItem:
     """단일 종목 RL 모델을 재학습합니다."""
     logger.info("RL 재학습 요청: %s", ticker)
+    outcome = await _get_rl_improver().retrain_ticker(ticker)
     return RetrainResultItem(
-        ticker=ticker,
-        success=False,
-        new_policy_id=None,
-        excess_return=None,
-        walk_forward_passed=False,
-        deployed=False,
-        error="재학습 파이프라인이 아직 활성화되지 않았습니다.",
+        ticker=outcome.ticker,
+        success=outcome.success,
+        new_policy_id=outcome.new_policy_id,
+        excess_return=outcome.excess_return,
+        walk_forward_passed=outcome.walk_forward_passed,
+        deployed=outcome.deployed,
+        error=outcome.error,
     )
 
 
@@ -297,11 +316,25 @@ async def retrain_ticker(ticker: str) -> RetrainResultItem:
 async def retrain_all() -> RetrainBatchResponse:
     """전체 종목 RL 재학습을 실행합니다."""
     logger.info("전체 RL 재학습 요청")
+    outcomes = await _get_rl_improver().retrain_all()
+    results = [
+        RetrainResultItem(
+            ticker=outcome.ticker,
+            success=outcome.success,
+            new_policy_id=outcome.new_policy_id,
+            excess_return=outcome.excess_return,
+            walk_forward_passed=outcome.walk_forward_passed,
+            deployed=outcome.deployed,
+            error=outcome.error,
+        )
+        for outcome in outcomes
+    ]
+    successful = sum(1 for item in results if item.success)
     return RetrainBatchResponse(
-        total_tickers=0,
-        successful=0,
-        failed=0,
-        results=[],
+        total_tickers=len(results),
+        successful=successful,
+        failed=len(results) - successful,
+        results=results,
     )
 
 
@@ -313,20 +346,36 @@ async def run_feedback_cycle(
     payload: dict[str, Any] | None = None,
 ) -> FeedbackCycleResponse:
     """피드백 사이클을 실행합니다."""
+    started = datetime.now(timezone.utc)
     scope = (payload or {}).get("scope", "full")
     logger.info("피드백 사이클 실행: scope=%s", scope)
+
+    rl_summary: dict[str, Any] | None = None
+    if scope in ("full", "rl_only"):
+        improver = _get_rl_improver()
+        tickers = (payload or {}).get("tickers")
+        profile_ids = (payload or {}).get("profiles")
+        dataset_days = int((payload or {}).get("dataset_days", 180))
+        outcomes = await improver.retrain_all(
+            tickers=tickers,
+            profile_ids=profile_ids,
+            dataset_days=dataset_days,
+        )
+        rl_summary = {
+            "tickers_retrained": len(outcomes),
+            "successful": sum(1 for item in outcomes if item.success),
+            "deployed": sum(1 for item in outcomes if item.deployed),
+        }
 
     return FeedbackCycleResponse(
         scope=scope,
         llm_feedback={"strategies_processed": 0, "cached": False}
         if scope in ("full", "llm_only")
         else None,
-        rl_retrain={"tickers_retrained": 0, "successful": 0}
-        if scope in ("full", "rl_only")
-        else None,
+        rl_retrain=rl_summary,
         backtest={"strategies_compared": 0, "best_strategy": "N/A"}
         if scope in ("full", "backtest_only")
         else None,
-        duration_seconds=0.0,
+        duration_seconds=round((datetime.now(timezone.utc) - started).total_seconds(), 3),
         saved_to_s3=False,
     )
