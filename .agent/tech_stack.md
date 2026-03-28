@@ -19,6 +19,7 @@
 | `python-dotenv` | `.env` 로딩 |
 | `PyJWT` | 인증 토큰 |
 | `python-telegram-bot` | Telegram 알림 |
+| `markdown` | Discussion MD → 블로그 HTML 변환 |
 
 ## 코어 프런트엔드 스택
 
