@@ -17,7 +17,8 @@
 ```
 agents-investing/
 ├── CLAUDE.md              # 에이전트 행동 강령 (최우선 진입점)
-├── MEMORY.md              # 기술적 결정 및 문제 해결 누적 기록
+├── MEMORY.md              # 활성 운영 규칙 및 미해결 이슈
+├── MEMORY-archive.md      # 완료된 기술적 결정 이력 (원문 보존)
 ├── progress.md            # 현재 세션 진행 상황
 ├── README.md              # 프로젝트 소개 문서
 ├── architecture.md        # 전체 아키텍처 설계 (이 파일)
@@ -65,7 +66,9 @@ agents-investing/
 │   ├── fetch_krx_holidays.py
 │   ├── health_check.py
 │   ├── test_llm_connections.py
-│   └── smoke_test.py
+│   ├── smoke_test.py
+│   ├── post_discussion_to_blog.py   # 논의 문서 → Blogger 포스팅
+│   └── setup_blogger_oauth.py       # Blogger OAuth 초기 설정
 │
 └── test/                  # 테스트 코드
     ├── unit/
@@ -344,11 +347,26 @@ ui/src/
 - 권장 흐름은 `SearXNG -> 웹 페이지 접속 -> ScrapeGraphAI 파싱 -> Claude CLI 추론` 입니다.
 - 이 레이어는 정보 수집과 구조화만 담당하며 직접 주문 권한을 갖지 않습니다.
 
+### 블로그 자동 포스팅 파이프라인 (2026-03-28 추가)
+
+- `.agent/discussions/*.md` 논의 문서를 Google Blogger에 자동/수동 포스팅합니다.
+- **자동 훅**: Claude Code PostToolUse 훅이 Write/Edit 감지 → draft로 포스팅
+- **수동 트리거**: `/post-discussion` 슬래시 커맨드 또는 `scripts/post_discussion_to_blog.py`
+- **흐름**: 논의 MD → 프론트매터 파싱 → 프로젝트 컨텍스트 삽입 → HTML 변환 → Blogger API v3
+- **중복 방지**: 동일 제목의 글이 있으면 업데이트
+- **핵심 파일**: `src/utils/blog_client.py`, `src/utils/discussion_renderer.py`
+
+### 문서 아카이브 체계 (2026-03-28 추가)
+
+- `MEMORY.md`: 활성 운영 규칙 + 미해결 이슈만 유지 (200줄 이내)
+- `MEMORY-archive.md`: 완료된 기술적 결정의 원문 전체를 보존
+- 논의 문서는 결론 확정 → 영구 문서 반영 → 블로그 포스팅 → 삭제
+
 ### 확장 원칙
 
 1. 새 기능은 기존 시스템을 대체하지 않고 레이어로 추가합니다.
 2. 모든 전략 계열 기능은 `paper first` 원칙을 유지합니다.
 3. 주문 권한은 계속 `PortfolioManagerAgent`에 집중합니다.
 
-*Last updated: 2026-03-18*
+*Last updated: 2026-03-28*
 
