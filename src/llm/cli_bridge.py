@@ -5,8 +5,10 @@ src/llm/cli_bridge.py — LLM CLI 실행 브릿지
 from __future__ import annotations
 
 import asyncio
+import os
 import shlex
 import shutil
+import tempfile
 
 
 def _claude_known_paths() -> list[str]:
@@ -97,3 +99,57 @@ async def run_cli_prompt(command: list[str], prompt: str, timeout_seconds: int =
         )
 
     return stdout.decode("utf-8", errors="replace").strip()
+
+
+async def run_cli_prompt_with_output_file(
+    command: list[str],
+    prompt: str,
+    timeout_seconds: int = 90,
+) -> str:
+    """
+    CLI 명령을 실행해 마지막 메시지를 임시 파일로 받고, 그 내용을 반환합니다.
+    `codex exec -o <file> -` 같은 패턴에 사용합니다.
+    """
+    if not command:
+        raise RuntimeError("CLI command is empty.")
+
+    fd, output_path = tempfile.mkstemp(prefix="llm-cli-", suffix=".txt")
+    os.close(fd)
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        "-o",
+        output_path,
+        "-",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(input=prompt.encode("utf-8")),
+            timeout=max(1, int(timeout_seconds)),
+        )
+    except asyncio.TimeoutError as exc:
+        process.kill()
+        await process.wait()
+        raise RuntimeError(f"CLI timeout after {timeout_seconds}s: {' '.join(command)}") from exc
+    finally:
+        try:
+            with open(output_path, "r", encoding="utf-8") as handle:
+                content = handle.read().strip()
+        except FileNotFoundError:
+            content = ""
+        try:
+            os.unlink(output_path)
+        except FileNotFoundError:
+            pass
+
+    if process.returncode != 0:
+        err = stderr.decode("utf-8", errors="replace").strip()
+        out = stdout.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(
+            f"CLI command failed (exit={process.returncode}): {' '.join(command)}; stdout={out}; stderr={err}"
+        )
+
+    return content

@@ -102,7 +102,9 @@ async def debug_providers() -> dict:
 
     from src.llm.cli_bridge import _claude_known_paths, build_cli_command, is_cli_available
     from src.llm.gemini_client import load_gemini_oauth_credentials
+    from src.llm.gpt_client import GPTClient, load_codex_auth_status
     from src.utils.config import get_settings
+    from src.utils.secret_validation import is_placeholder_secret
 
     settings = get_settings()
 
@@ -125,6 +127,8 @@ async def debug_providers() -> dict:
         ]
     }
     gemini_creds, gemini_project = load_gemini_oauth_credentials()
+    gpt = GPTClient(model="gpt-4o-mini")
+    codex_auth = load_codex_auth_status()
 
     return {
         "claude": {
@@ -141,5 +145,16 @@ async def debug_providers() -> dict:
             "oauth_credentials_loaded": gemini_creds is not None,
             "oauth_project_id": gemini_project,
             "api_key_set": bool(settings.gemini_api_key and settings.gemini_api_key != "AI..."),
+        },
+        "gpt": {
+            "env_OPENAI_API_KEY": not is_placeholder_secret(settings.openai_api_key),
+            "codex_auth_file_exists": codex_auth["exists"],
+            "codex_auth_mode": codex_auth["auth_mode"],
+            "codex_has_access_token": codex_auth["has_access_token"],
+            "codex_has_refresh_token": codex_auth["has_refresh_token"],
+            "codex_has_stored_api_key": codex_auth["has_api_key"],
+            "configured": gpt.is_configured,
+            "auth_mode": gpt.auth_mode,
+            "effective_model": gpt.effective_model,
         },
     }

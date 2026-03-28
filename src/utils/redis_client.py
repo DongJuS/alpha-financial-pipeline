@@ -34,6 +34,7 @@ KEY_LATEST_TICKS = "redis:cache:latest_ticks:{ticker}"
 KEY_REALTIME_SERIES = "redis:cache:realtime_series:{ticker}"
 KEY_MACRO_CONTEXT = "memory:macro_context"
 KEY_MARKET_INDEX = "redis:cache:market_index"
+KEY_LLM_PROVIDER_DAILY_USAGE = "redis:usage:llm:{provider}:{date}"
 
 # ── 마켓플레이스 확장 키 패턴 ──────────────────────────────────────────────────
 KEY_STOCK_MASTER = "redis:cache:stock_master"                    # 전체 종목 마스터

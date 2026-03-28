@@ -1,6 +1,6 @@
 import types
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from src.llm.gpt_client import GPTClient
 
@@ -23,21 +23,42 @@ class GPTClientCircuitBreakerTest(unittest.IsolatedAsyncioTestCase):
     async def test_quota_error_opens_circuit(self) -> None:
         client, create_mock = self._build_client(RuntimeError("insufficient_quota"))
 
-        with self.assertRaises(RuntimeError):
-            await client.ask("hello")
-        self.assertFalse(client.is_configured)
+        with patch("src.llm.gpt_client.reserve_provider_call", new=AsyncMock()):
+            with self.assertRaises(RuntimeError):
+                await client.ask("hello")
+            self.assertFalse(client.is_configured)
 
-        with self.assertRaises(RuntimeError):
-            await client.ask("hello again")
+        with patch("src.llm.gpt_client.reserve_provider_call", new=AsyncMock()):
+            with self.assertRaises(RuntimeError):
+                await client.ask("hello again")
         self.assertEqual(create_mock.await_count, 1)
 
     async def test_non_quota_error_does_not_open_circuit(self) -> None:
         client, create_mock = self._build_client(RuntimeError("network timeout"))
 
-        with self.assertRaises(RuntimeError):
-            await client.ask("hello")
-        self.assertTrue(client.is_configured)
+        with patch("src.llm.gpt_client.reserve_provider_call", new=AsyncMock()):
+            with self.assertRaises(RuntimeError):
+                await client.ask("hello")
+            self.assertTrue(client.is_configured)
         self.assertEqual(create_mock.await_count, 1)
+
+    async def test_codex_cli_fallback_uses_mapped_model(self) -> None:
+        GPTClient._global_quota_exhausted = False
+        with patch("src.llm.gpt_client._build_codex_cli_command", return_value=["codex", "exec", "-m", "gpt-5.4-mini"]), patch(
+            "src.llm.gpt_client.run_cli_prompt_with_output_file",
+            new=AsyncMock(return_value="OK"),
+        ) as run_mock, patch("src.llm.gpt_client.reserve_provider_call", new=AsyncMock()) as reserve_mock:
+            client = GPTClient(model="gpt-4o-mini")
+
+            self.assertTrue(client.is_configured)
+            self.assertEqual(client.auth_mode, "codex_cli")
+            self.assertEqual(client.effective_model, "gpt-5.4-mini")
+
+            result = await client.ask("hello")
+
+            self.assertEqual(result, "OK")
+            run_mock.assert_awaited_once()
+            reserve_mock.assert_awaited_once_with("codex")
 
 
 if __name__ == "__main__":
