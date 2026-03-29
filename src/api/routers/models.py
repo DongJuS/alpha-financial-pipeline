@@ -144,7 +144,6 @@ async def debug_providers() -> dict:
             "adc_file_paths": adc_paths,
             "oauth_credentials_loaded": gemini_creds is not None,
             "oauth_project_id": gemini_project,
-            "api_key_set": bool(settings.gemini_api_key and settings.gemini_api_key != "AI..."),
         },
         "gpt": {
             "env_OPENAI_API_KEY": not is_placeholder_secret(settings.openai_api_key),

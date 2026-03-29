@@ -93,7 +93,6 @@ class GeminiAuthResilienceTest(unittest.IsolatedAsyncioTestCase):
     def _build_client(side_effect: Exception) -> GeminiClient:
         client = GeminiClient.__new__(GeminiClient)
         client.model = "gemini-1.5-pro"
-        client.api_key = ""
         client._auth_mode = "oauth"
         client._quota_exhausted = False
         client._model = types.SimpleNamespace(

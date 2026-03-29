@@ -10,7 +10,6 @@ class GeminiClientCircuitBreakerTest(unittest.IsolatedAsyncioTestCase):
         GeminiClient._global_quota_exhausted = False
         client = GeminiClient.__new__(GeminiClient)
         client.model = "gemini-1.5-pro"
-        client.api_key = "dummy"
         client._auth_mode = "oauth"
         client._quota_exhausted = False
         client._model = types.SimpleNamespace(
@@ -41,43 +40,6 @@ class GeminiClientCircuitBreakerTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(RuntimeError):
                 await client.ask("hello")
             self.assertTrue(client.is_configured)
-
-    def test_prefers_api_key_over_oauth_when_key_exists(self) -> None:
-        fake_credentials = object()
-
-        class FakeModel:
-            def __init__(self, model: str) -> None:
-                self.model = model
-
-        with (
-            patch("src.llm.gemini_client.get_settings", return_value=types.SimpleNamespace(gemini_api_key="api-key")),
-            patch("src.llm.gemini_client.load_gemini_oauth_credentials", return_value=(fake_credentials, "demo-project")),
-            patch("google.generativeai.configure") as configure,
-            patch("google.generativeai.GenerativeModel", side_effect=FakeModel),
-        ):
-            client = GeminiClient()
-
-        self.assertTrue(client.is_configured)
-        self.assertEqual(client.auth_mode, "api_key")
-        configure.assert_called_once_with(api_key="api-key")
-
-    def test_falls_back_to_api_key_when_oauth_is_unavailable(self) -> None:
-        class FakeModel:
-            def __init__(self, model: str) -> None:
-                self.model = model
-
-        with (
-            patch("src.llm.gemini_client.get_settings", return_value=types.SimpleNamespace(gemini_api_key="api-key")),
-            patch("src.llm.gemini_client.load_gemini_oauth_credentials", return_value=(None, None)),
-            patch("google.generativeai.configure") as configure,
-            patch("google.generativeai.GenerativeModel", side_effect=FakeModel),
-        ):
-            client = GeminiClient()
-
-        self.assertTrue(client.is_configured)
-        self.assertEqual(client.auth_mode, "api_key")
-        configure.assert_called_once_with(api_key="api-key")
-
 
 if __name__ == "__main__":
     unittest.main()

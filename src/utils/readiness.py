@@ -254,7 +254,7 @@ async def evaluate_real_trading_readiness() -> dict[str, Any]:
             )
 
     # 8) LLM 키 최소 1개
-    llm_values = [settings.anthropic_api_key, settings.openai_api_key, settings.gemini_api_key]
+    llm_values = [settings.anthropic_api_key, settings.openai_api_key]
     gemini_oauth_ok = gemini_oauth_available()
     llm_ok = any(v and not _is_placeholder(v) for v in llm_values) or gemini_oauth_ok
     checks.append(

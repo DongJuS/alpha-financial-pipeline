@@ -114,7 +114,6 @@ def check_env_vars() -> tuple[bool, str]:
         active_secret_label: kis_app_secret_for_scope(settings, active_scope),
         "ANTHROPIC_API_KEY": settings.anthropic_api_key,
         "OPENAI_API_KEY": settings.openai_api_key,
-        "GEMINI_API_KEY": settings.gemini_api_key,
         "TELEGRAM_BOT_TOKEN": settings.telegram_bot_token,
         "TELEGRAM_CHAT_ID": settings.telegram_chat_id,
     }

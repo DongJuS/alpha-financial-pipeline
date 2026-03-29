@@ -8,9 +8,7 @@ import json
 from typing import Any, Optional
 
 from src.services.llm_usage_limiter import reserve_provider_call
-from src.utils.config import get_settings
 from src.utils.logging import get_logger
-from src.utils.secret_validation import is_placeholder_secret
 
 logger = get_logger(__name__)
 # cloud-platform 스코프만 사용 (generative-language는 ADC에서 invalid_scope 에러 발생)
@@ -81,19 +79,10 @@ class GeminiClient:
 
     def __init__(self, model: str = "gemini-1.5-pro") -> None:
         self.model = model
-        settings = get_settings()
-        self.api_key = settings.gemini_api_key
         self._model: Optional[Any] = None
         self._auth_mode: Optional[str] = None
         self._quota_exhausted = self.__class__._global_quota_exhausted
-        # API Key가 설정되어 있으면 OAuth보다 우선 사용
-        # (google.generativeai는 AI Studio 엔드포인트를 사용하므로 OAuth ADC 불가)
-        if not is_placeholder_secret(self.api_key):
-            self._configure_api_key()
-            return
-        if self._configure_oauth():
-            return
-        self._configure_api_key()
+        self._configure_oauth()
 
     def _configure_oauth(self) -> bool:
         credentials, project_id = load_gemini_oauth_credentials()
@@ -109,21 +98,6 @@ class GeminiClient:
             return True
         except Exception as exc:
             logger.warning("Gemini OAuth 초기화 실패: %s", exc)
-            self._model = None
-            return False
-
-    def _configure_api_key(self) -> bool:
-        if is_placeholder_secret(self.api_key):
-            return False
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=self.api_key)
-            self._model = genai.GenerativeModel(self.model)
-            self._auth_mode = "api_key"
-            logger.info("Gemini API key 모드 활성화")
-            return True
-        except Exception as exc:
-            logger.warning("Gemini SDK 초기화 실패: %s", exc)
             self._model = None
             return False
 
