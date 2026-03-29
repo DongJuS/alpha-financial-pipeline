@@ -15,6 +15,7 @@ from src.db.models import MarketDataPoint
 from src.db.queries import upsert_market_data
 from src.utils.db_client import fetch, fetchrow
 from src.utils.logging import get_logger
+from src.utils.market_data import compute_change_pct
 from src.utils.redis_client import KEY_LATEST_TICKS, KEY_REALTIME_SERIES, get_redis
 
 logger = get_logger(__name__)
@@ -165,22 +166,26 @@ def _fetch_fdr_ohlcv_sync(ticker: str, days: int) -> tuple[str, list[dict]]:
     name = str(found.iloc[0]["Name"]) if not found.empty else ticker
 
     rows: list[dict] = []
-    for ts, row in df.tail(200).iloc[::-1].iterrows():
+    previous_close: int | None = None
+    for ts, row in df.tail(200).iterrows():
         date_value = ts.date() if hasattr(ts, "date") else datetime.now(KST).date()
         ts_kst = datetime.combine(date_value, time(15, 30), tzinfo=KST)
-        change = row.get("Change")
+        close_value = int(row.get("Close", 0))
+        if close_value <= 0:
+            continue
         rows.append(
             {
                 "timestamp_kst": ts_kst.isoformat(),
                 "open": int(row.get("Open", 0)),
                 "high": int(row.get("High", 0)),
                 "low": int(row.get("Low", 0)),
-                "close": int(row.get("Close", 0)),
+                "close": close_value,
                 "volume": int(row.get("Volume", 0)),
-                "change_pct": float(change * 100.0) if change is not None else 0.0,
+                "change_pct": compute_change_pct(close_value, previous_close),
             }
         )
-    return name, rows
+        previous_close = close_value
+    return name, list(reversed(rows))
 
 
 @router.get("/opensource/ohlcv/{ticker}", response_model=OHLCVResponse)
@@ -395,6 +400,7 @@ def _collect_fdr_to_db_sync(tickers: list[str], days: int) -> tuple[int, list[st
                 continue
 
             name, market = info.get(ticker, (ticker, "KOSPI"))
+            previous_close: int | None = None
 
             for idx, row in df.iterrows():
                 trade_date = idx.date() if hasattr(idx, "date") else datetime.now(KST).date()
@@ -405,7 +411,6 @@ def _collect_fdr_to_db_sync(tickers: list[str], days: int) -> tuple[int, list[st
                 close_val = int(row.get("Close", 0))
                 if close_val <= 0:
                     continue
-                change = row.get("Change")
                 points.append(
                     MarketDataPoint(
                         ticker=ticker,
@@ -418,9 +423,10 @@ def _collect_fdr_to_db_sync(tickers: list[str], days: int) -> tuple[int, list[st
                         low=int(row.get("Low", close_val)),
                         close=close_val,
                         volume=int(row.get("Volume", 0)),
-                        change_pct=float(change * 100.0) if change is not None else None,
+                        change_pct=compute_change_pct(close_val, previous_close),
                     )
                 )
+                previous_close = close_val
             collected.append(ticker)
         except Exception as e:
             logger.warning("FDR 수집 실패 [%s]: %s", ticker, e)

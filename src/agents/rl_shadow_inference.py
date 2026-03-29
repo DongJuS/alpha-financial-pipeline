@@ -426,15 +426,16 @@ class ShadowInferenceEngine:
         """
         store = self.policy_store
         registry = store.load_registry()
+        has_shadow_records = self._has_shadow_records(policy_id, ticker)
 
         # 레지스트리에서 정책 조회
         tp = registry.tickers.get(ticker)
         if not tp:
-            return "inactive"
+            return "shadow" if has_shadow_records else "inactive"
 
         entry = tp.get_policy(policy_id)
         if not entry:
-            return "inactive"
+            return "shadow" if has_shadow_records else "inactive"
 
         # 활성 정책이면 paper 또는 real
         if tp.active_policy_id == policy_id:
@@ -443,10 +444,14 @@ class ShadowInferenceEngine:
             return "real"
 
         # Shadow 기록이 있으면 shadow
-        if policy_id in self._shadow_records and self._shadow_records[policy_id]:
+        if has_shadow_records:
             return "shadow"
 
         return "inactive"
+
+    def _has_shadow_records(self, policy_id: str, ticker: str) -> bool:
+        records = self._shadow_records.get(policy_id, [])
+        return any(record.ticker == ticker for record in records)
 
     def list_shadow_policies(self) -> list[dict[str, Any]]:
         """현재 shadow 모드 중인 정책 목록을 반환합니다."""

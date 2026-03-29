@@ -153,11 +153,20 @@ class PredictorAgent:
                     "reasoning_summary": raw.get("reasoning_summary") or "LLM reasoning omitted",
                 }
             except Exception as e:
-                logger.error(
-                    "%s 신호 생성 실패 [%s]: %s",
-                    provider, ticker, e,
-                    exc_info=True,
-                )
+                message = str(e)
+                if "일일 사용 한도" in message:
+                    logger.warning("%s 신호 생성 스킵 [%s]: %s", provider, ticker, message)
+                elif provider == "gemini" and (
+                    "Gemini 인증이 불가해 비활성화합니다" in message
+                    or "Gemini quota exhausted." in message
+                ):
+                    logger.warning("%s 신호 생성 스킵 [%s]: %s", provider, ticker, message)
+                else:
+                    logger.error(
+                        "%s 신호 생성 실패 [%s]: %s",
+                        provider, ticker, e,
+                        exc_info=True,
+                    )
 
         raise RuntimeError(
             f"사용 가능한 LLM provider가 없어 예측을 생성하지 못했습니다. providers={attempted_providers}, ticker={ticker}"

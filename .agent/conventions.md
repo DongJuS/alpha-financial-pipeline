@@ -61,6 +61,9 @@ except:
 - 테스트 파일: `test/unit/test_*.py`, `test/integration/test_*.py`
 - 프레임워크: `pytest` + `pytest-asyncio`
 - 커버리지 목표: 80% 이상
+- 시스템 바이너리 경로를 하드코딩하지 않는다. `/usr/bin/echo` 대신 `echo` 또는 `shutil.which("echo")`를 사용한다.
+- 파일 경로는 `__file__` 기준 상대 경로를 사용한다. 절대 경로 하드코딩을 피한다.
+- 테스트는 `pip install -r requirements.txt` 후 `pytest`로 실행한다. Docker가 없어도 같은 흐름을 따른다.
 
 ---
 

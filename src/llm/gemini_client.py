@@ -7,9 +7,8 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
-from src.utils.config import get_settings
+from src.services.llm_usage_limiter import reserve_provider_call
 from src.utils.logging import get_logger
-from src.utils.secret_validation import is_placeholder_secret
 
 logger = get_logger(__name__)
 # cloud-platform 스코프만 사용 (generative-language는 ADC에서 invalid_scope 에러 발생)
@@ -20,6 +19,11 @@ GEMINI_OAUTH_SCOPES = (
 import re
 
 _cached_credentials: tuple[Any | None, str | None] | None = None
+
+
+def _clear_gemini_oauth_credentials_cache() -> None:
+    global _cached_credentials
+    _cached_credentials = None
 
 
 def _extract_json(text: str) -> dict:
@@ -61,6 +65,9 @@ def load_gemini_oauth_credentials() -> tuple[Any | None, str | None]:
         return _cached_credentials
 
 
+load_gemini_oauth_credentials.cache_clear = _clear_gemini_oauth_credentials_cache  # type: ignore[attr-defined]
+
+
 def gemini_oauth_available() -> bool:
     credentials, _ = load_gemini_oauth_credentials()
     return credentials is not None
@@ -68,17 +75,14 @@ def gemini_oauth_available() -> bool:
 
 class GeminiClient:
     _global_quota_exhausted = False
+    _global_disabled_reason: str | None = None
 
     def __init__(self, model: str = "gemini-1.5-pro") -> None:
         self.model = model
-        settings = get_settings()
-        self.api_key = settings.gemini_api_key
         self._model: Optional[Any] = None
         self._auth_mode: Optional[str] = None
         self._quota_exhausted = self.__class__._global_quota_exhausted
-        if self._configure_oauth():
-            return
-        self._configure_api_key()
+        self._configure_oauth()
 
     def _configure_oauth(self) -> bool:
         credentials, project_id = load_gemini_oauth_credentials()
@@ -97,38 +101,62 @@ class GeminiClient:
             self._model = None
             return False
 
-    def _configure_api_key(self) -> bool:
-        if is_placeholder_secret(self.api_key):
-            return False
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=self.api_key)
-            self._model = genai.GenerativeModel(self.model)
-            self._auth_mode = "api_key"
-            logger.info("Gemini API key 모드 활성화")
-            return True
-        except Exception as exc:
-            logger.warning("Gemini SDK 초기화 실패: %s", exc)
-            self._model = None
-            return False
-
     @property
     def is_configured(self) -> bool:
-        return self._model is not None and not self.__class__._global_quota_exhausted
+        return (
+            self._model is not None
+            and not self.__class__._global_quota_exhausted
+            and self.__class__._global_disabled_reason is None
+        )
 
     @property
     def auth_mode(self) -> Optional[str]:
         return self._auth_mode
 
+    @classmethod
+    def reset_global_state(cls) -> None:
+        cls._global_quota_exhausted = False
+        cls._global_disabled_reason = None
+
+    @classmethod
+    def disabled_reason(cls) -> str | None:
+        return cls._global_disabled_reason
+
     def _is_quota_error(self, error: Exception) -> bool:
         text = str(error).lower()
         return any(token in text for token in ("quota", "resource_exhausted", "resource exhausted", "429", "rate limit", "too many requests"))
 
+    def _is_auth_error(self, error: Exception) -> bool:
+        text = str(error).lower()
+        return any(
+            token in text
+            for token in (
+                "permission denied",
+                "insufficient authentication scopes",
+                "access_token_scope_insufficient",
+                "invalid_scope",
+                "authentication",
+                "unauthorized",
+                "credentials",
+            )
+        )
+
+    @classmethod
+    def _disable_globally(cls, reason: str) -> None:
+        if cls._global_disabled_reason is None:
+            logger.warning(reason)
+        cls._global_disabled_reason = reason
+
     async def ask(self, prompt: str, temperature: float = 0.4) -> str:
         if self.__class__._global_quota_exhausted:
             raise RuntimeError("Gemini quota exhausted.")
+        if self.__class__._global_disabled_reason is not None:
+            raise RuntimeError(self.__class__._global_disabled_reason)
         if not self._model:
             raise RuntimeError("Gemini client is not configured.")
+
+        await reserve_provider_call("gemini")
+
         import asyncio
         import google.generativeai as genai
         generation_config = genai.types.GenerationConfig(temperature=temperature)
@@ -142,6 +170,10 @@ class GeminiClient:
                 self._quota_exhausted = True
                 self.__class__._global_quota_exhausted = True
                 logger.warning("Gemini quota exhausted.")
+            elif self._is_auth_error(e):
+                reason = f"Gemini 인증이 불가해 비활성화합니다: {e}"
+                self._disable_globally(reason)
+                raise RuntimeError(reason) from e
             raise
 
     async def ask_json(self, prompt: str, temperature: float = 0.4) -> dict:
