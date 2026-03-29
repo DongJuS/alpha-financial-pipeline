@@ -1,4 +1,20 @@
 ---
+# RL 모델/실험 데이터 PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: worker-rl-data
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "alpha-trading.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: {{ .Values.worker.rlDataStorage | default "5Gi" }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,6 +49,13 @@ spec:
                 name: alpha-trading-config
             - secretRef:
                 name: alpha-trading-secrets
+          volumeMounts:
+            - name: rl-data
+              mountPath: /data/rl/models
+              subPath: models
+            - name: rl-data
+              mountPath: /data/rl/experiments
+              subPath: experiments
           livenessProbe:
             exec:
               command:
@@ -43,5 +66,19 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "from pathlib import Path; assert Path('/app/src').exists()"
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.worker.resources | nindent 12 }}
+      volumes:
+        - name: rl-data
+          persistentVolumeClaim:
+            claimName: worker-rl-data
