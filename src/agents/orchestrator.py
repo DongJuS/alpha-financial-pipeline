@@ -48,12 +48,11 @@ setup_logging()
 logger = get_logger(__name__)
 
 # N-way 블렌딩 가중치
-# A: 토너먼트 (30%), B: 토론 (30%), S: 검색 (20%), RL: 강화학습 (20%)
+# A: 토너먼트 (33%), B: 토론 (33%), RL: 강화학습 (34%)
 DEFAULT_BLEND_WEIGHTS: dict[str, float] = {
-    "A": 0.30,
-    "B": 0.30,
-    "S": 0.20,
-    "RL": 0.20,
+    "A": 0.33,
+    "B": 0.33,
+    "RL": 0.34,
 }
 
 
@@ -301,14 +300,27 @@ class OrchestratorAgent:
                         len(all_predictions),
                     )
                 all_orders = await self._execute_blended_signals(blended)
+
+                # 블렌딩 메타 정보 (활성 전략 기준 가중치 포함)
+                active_strats = {
+                    name for name, preds in all_predictions.items() if preds
+                }
+                effective_weights = self._normalize_active_weights(active_strats)
+                excluded_strats = set(all_predictions.keys()) - active_strats
                 mode_name = "blend_mode"
                 blend_meta = {
                     "strategies": list(all_predictions.keys()),
-                    "weights": {
+                    "active_strategies": sorted(active_strats),
+                    "excluded_strategies": sorted(excluded_strats),
+                    "original_weights": {
                         k: round(self.strategy_blend_weights.get(k, 0.0), 4)
                         for k in all_predictions.keys()
                     },
+                    "effective_weights": {
+                        k: round(v, 4) for k, v in effective_weights.items()
+                    },
                     "blended_signals": len(blended),
+                    "fallback": bool(excluded_strats),
                 }
 
             # S3 Data Lake에 블렌딩 결과 + 주문 기록 저장
@@ -320,7 +332,8 @@ class OrchestratorAgent:
                             "blended_signal": s.signal,
                             "blended_confidence": s.confidence,
                             "strategy_weights": json.dumps(
-                                self.strategy_blend_weights, ensure_ascii=False
+                                effective_weights if not self.independent_portfolio else self.strategy_blend_weights,
+                                ensure_ascii=False,
                             ),
                             "created_at": datetime.now(timezone.utc),
                         }
@@ -427,6 +440,33 @@ class OrchestratorAgent:
         )
         self.strategy_blend_weights = updated
 
+    # ── Weight Normalization ────────────────────────────────────────────────
+
+    def _normalize_active_weights(
+        self,
+        active_strategies: set[str],
+    ) -> dict[str, float]:
+        """활성 전략만으로 가중치를 재정규화합니다.
+
+        빈 시그널을 반환한 전략을 제외하고, 나머지 전략의 가중치 합이 1.0이 되도록
+        비례 재분배합니다.
+
+        예: A=0.30, B=0.30, RL=0.20 에서 RL 제외 시 → A=0.50, B=0.50
+        """
+        raw = {
+            k: v
+            for k, v in self.strategy_blend_weights.items()
+            if k in active_strategies and v > 0.0
+        }
+        total = sum(raw.values())
+        if total <= 0:
+            # 모든 가중치가 0이면 동일 분배
+            if not active_strategies:
+                return {}
+            equal = 1.0 / len(active_strategies)
+            return {k: equal for k in active_strategies}
+        return {k: v / total for k, v in raw.items()}
+
     # ── N-way Blending ─────────────────────────────────────────────────────
 
     def _blend_nway_predictions(
@@ -437,13 +477,35 @@ class OrchestratorAgent:
 
         각 전략의 confidence에 가중치를 곱한 뒤, 티커별로 BUY/SELL/HOLD 스코어를
         합산하여 가장 높은 스코어의 signal을 최종 신호로 채택합니다.
+
+        빈 시그널을 반환한 전략은 제외하고 나머지 전략의 가중치를 재정규화합니다.
+        예: RL이 빈 시그널이면 A(0.30)+B(0.30) → A(0.50)+B(0.50)으로 자동 전환.
         """
+        # ── 빈 시그널 전략 제외 + 가중치 재정규화 ──
+        active_predictions = {
+            name: preds
+            for name, preds in all_predictions.items()
+            if preds  # 빈 리스트 제외
+        }
+        excluded = set(all_predictions.keys()) - set(active_predictions.keys())
+        if excluded:
+            logger.info(
+                "블렌딩 fallback: %s 전략이 빈 시그널 → %d전략 블렌딩으로 전환",
+                sorted(excluded),
+                len(active_predictions),
+            )
+
+        # 활성 전략만으로 가중치 재정규화
+        effective_weights = self._normalize_active_weights(
+            set(active_predictions.keys())
+        )
+
         # 티커별로 (signal, weighted_confidence) 누적
         ticker_scores: dict[str, dict[str, float]] = {}
         ticker_best_signal: dict[str, PredictionSignal] = {}
 
-        for strategy_name, predictions in all_predictions.items():
-            weight = self.strategy_blend_weights.get(strategy_name, 0.0)
+        for strategy_name, predictions in active_predictions.items():
+            weight = effective_weights.get(strategy_name, 0.0)
             if weight <= 0.0:
                 continue
 
@@ -540,8 +602,8 @@ async def _main_async(args: argparse.Namespace) -> None:
     )
 
     # ── Strategy Runner 등록 ──────────────────────────────────────────────
-    # 활성화할 전략을 결정합니다. --strategies 미지정 시 A/B/S/RL 모두 등록.
-    active = set(s.strip().upper() for s in args.strategies.split(",") if s.strip()) if args.strategies else {"A", "B", "S", "RL"}
+    # 활성화할 전략을 결정합니다. --strategies 미지정 시 A/B/RL 3전략 등록.
+    active = set(s.strip().upper() for s in args.strategies.split(",") if s.strip()) if args.strategies else {"A", "B", "RL"}
 
     if "A" in active:
         try:
