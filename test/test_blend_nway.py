@@ -210,7 +210,7 @@ class TestStrategyRegistry(unittest.TestCase):
         reg.register(MockRunner("A", "BUY", 0.8))
         reg.register(MockRunner("B", "SELL", 0.7))
 
-        results = asyncio.get_event_loop().run_until_complete(
+        results = asyncio.run(
             reg.run_all(["005930", "035720"])
         )
         self.assertIn("A", results)
@@ -226,7 +226,7 @@ class TestStrategyRegistry(unittest.TestCase):
         reg.register(MockRunner("B"))
         reg.register(MockRunner("RL", "HOLD", 0.5))
 
-        results = asyncio.get_event_loop().run_until_complete(
+        results = asyncio.run(
             reg.run_selected(["005930"], ["A", "RL"])
         )
         self.assertIn("A", results)
@@ -238,7 +238,7 @@ class TestStrategyRegistry(unittest.TestCase):
         reg.register(MockRunner("A", "BUY", 0.8))
         reg.register(FailingRunner("B"))
 
-        results = asyncio.get_event_loop().run_until_complete(
+        results = asyncio.run(
             reg.run_all(["005930"])
         )
         self.assertEqual(len(results["A"]), 1)
@@ -246,7 +246,7 @@ class TestStrategyRegistry(unittest.TestCase):
 
     def test_empty_registry_returns_empty(self):
         reg = StrategyRegistry()
-        results = asyncio.get_event_loop().run_until_complete(
+        results = asyncio.run(
             reg.run_all(["005930"])
         )
         self.assertEqual(results, {})
@@ -255,7 +255,7 @@ class TestStrategyRegistry(unittest.TestCase):
         reg = StrategyRegistry()
         reg.register(MockRunner("A"))
 
-        results = asyncio.get_event_loop().run_until_complete(
+        results = asyncio.run(
             reg.run_selected(["005930"], ["A", "NONEXISTENT"])
         )
         self.assertIn("A", results)
