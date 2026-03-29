@@ -1,0 +1,7 @@
+# prod: API만 2 replica (worker는 단일 유지)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 2
