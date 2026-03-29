@@ -1,9 +1,12 @@
 import unittest
 
+import pytest
+
 from src.utils.risk_validation import run_risk_rule_validation
 
 
 class RiskValidationTest(unittest.IsolatedAsyncioTestCase):
+    @pytest.mark.integration
     async def test_run_risk_rule_validation_passes(self) -> None:
         result = await run_risk_rule_validation()
 
