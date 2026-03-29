@@ -188,7 +188,7 @@ class TestBlendStrategySignalsCompat(unittest.TestCase):
 # ────────────────────────── StrategyRegistry 테스트 ──────────────────────────
 
 
-class TestStrategyRegistry(unittest.TestCase):
+class TestStrategyRegistry(unittest.IsolatedAsyncioTestCase):
     """StrategyRegistry 테스트."""
 
     def test_register_and_list(self):
@@ -205,14 +205,12 @@ class TestStrategyRegistry(unittest.TestCase):
         reg.unregister("A")
         self.assertEqual(reg.active_names, ["B"])
 
-    def test_run_all(self):
+    async def test_run_all(self):
         reg = StrategyRegistry()
         reg.register(MockRunner("A", "BUY", 0.8))
         reg.register(MockRunner("B", "SELL", 0.7))
 
-        results = asyncio.run(
-            reg.run_all(["005930", "035720"])
-        )
+        results = await reg.run_all(["005930", "035720"])
         self.assertIn("A", results)
         self.assertIn("B", results)
         self.assertEqual(len(results["A"]), 2)
@@ -220,44 +218,36 @@ class TestStrategyRegistry(unittest.TestCase):
         self.assertEqual(results["A"][0].signal, "BUY")
         self.assertEqual(results["B"][0].signal, "SELL")
 
-    def test_run_selected(self):
+    async def test_run_selected(self):
         reg = StrategyRegistry()
         reg.register(MockRunner("A"))
         reg.register(MockRunner("B"))
         reg.register(MockRunner("RL", "HOLD", 0.5))
 
-        results = asyncio.run(
-            reg.run_selected(["005930"], ["A", "RL"])
-        )
+        results = await reg.run_selected(["005930"], ["A", "RL"])
         self.assertIn("A", results)
         self.assertIn("RL", results)
         self.assertNotIn("B", results)
 
-    def test_failing_runner_returns_empty(self):
+    async def test_failing_runner_returns_empty(self):
         reg = StrategyRegistry()
         reg.register(MockRunner("A", "BUY", 0.8))
         reg.register(FailingRunner("B"))
 
-        results = asyncio.run(
-            reg.run_all(["005930"])
-        )
+        results = await reg.run_all(["005930"])
         self.assertEqual(len(results["A"]), 1)
         self.assertEqual(len(results["B"]), 0)  # 실패한 Runner는 빈 리스트
 
-    def test_empty_registry_returns_empty(self):
+    async def test_empty_registry_returns_empty(self):
         reg = StrategyRegistry()
-        results = asyncio.run(
-            reg.run_all(["005930"])
-        )
+        results = await reg.run_all(["005930"])
         self.assertEqual(results, {})
 
-    def test_run_selected_missing_strategy(self):
+    async def test_run_selected_missing_strategy(self):
         reg = StrategyRegistry()
         reg.register(MockRunner("A"))
 
-        results = asyncio.run(
-            reg.run_selected(["005930"], ["A", "NONEXISTENT"])
-        )
+        results = await reg.run_selected(["005930"], ["A", "NONEXISTENT"])
         self.assertIn("A", results)
         self.assertNotIn("NONEXISTENT", results)
 
