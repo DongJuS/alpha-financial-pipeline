@@ -6,6 +6,17 @@
 
 ---
 
+## 2026-03-29 — 문서 정비 + smoke test 통과 (PR #53)
+
+- **작업:** README 정량 지표 섹션 추가, Airflow 비교 문서 신규 작성, README 빠른 시작 minio 누락 수정
+- **의사결정:**
+  - Airflow 전면 마이그레이션 대신 "비교 스파이크" 접근 — Alpha의 실시간 요구사항(30초 인터벌, 이벤트 드리븐)에는 APScheduler+Redis가 적합. Airflow의 실행 이력 UI/backfill CLI/DAG 시각화만 선별 도입 검토.
+  - README 빠른 시작에 minio 서비스 필수 — docker-compose.yml에서 api/worker가 `minio: service_healthy`에 의존하므로 누락 시 시작 불가.
+- **산출물:** `docs/airflow-comparison.md` (15항목 비교표, 9개 구현체↔Airflow 매핑, 9개 잡 DAG 매핑), README.md 정량 지표
+- **검증:** smoke test 전체 통과 (DB/Redis/FastAPI/FDR)
+
+---
+
 ## 2026-03-18 — 데이터 수집/저장 경로 전수 감사 (상세)
 
 - **작업:** 코드 기반으로 전체 데이터 수집 소스 9개, 저장소 4종(PG 20테이블, Redis 13키+5 Pub/Sub, S3 4 DataType, 로컬 파일 2경로)을 매핑.
