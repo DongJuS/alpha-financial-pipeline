@@ -1002,21 +1002,39 @@ CASCADE;
 """
 
 
+_PLACEHOLDER_VALUES = {
+    "admin@example.com",
+    "CHANGE_ME_ADMIN@example.com",
+    "CHANGE_ME",
+    "admin1234",
+    "CHANGE_ME_STRONG_PASSWORD",
+    "",
+}
+
+
 def _is_enabled(raw: Optional[str]) -> bool:
-    return (raw or "true").strip().lower() not in {"0", "false", "no", "off"}
+    # 기본값 false — 명시적으로 활성화해야만 시딩 동작
+    return (raw or "false").strip().lower() not in {"0", "false", "no", "off"}
 
 
 def get_default_admin_seed() -> Optional[Tuple[str, str, str]]:
     """환경 변수에서 기본 admin seed 설정을 읽어옵니다."""
-    if not _is_enabled(os.getenv("DEFAULT_ADMIN_SEED_ENABLED", "true")):
+    if not _is_enabled(os.getenv("DEFAULT_ADMIN_SEED_ENABLED", "false")):
         return None
 
-    email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@example.com").strip()
+    email = os.getenv("DEFAULT_ADMIN_EMAIL", "").strip()
     name = os.getenv("DEFAULT_ADMIN_NAME", "Admin").strip() or "Admin"
-    password = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin1234")
+    password = os.getenv("DEFAULT_ADMIN_PASSWORD", "")
 
     if not email or not password:
         logger.warning("기본 admin seed 설정이 비어 있어 계정 생성을 건너뜁니다.")
+        return None
+
+    if email in _PLACEHOLDER_VALUES or password in _PLACEHOLDER_VALUES:
+        logger.warning(
+            "기본 admin seed에 placeholder 값이 감지되어 계정 생성을 건너뜁니다. "
+            "DEFAULT_ADMIN_EMAIL 및 DEFAULT_ADMIN_PASSWORD를 실제 값으로 변경하세요."
+        )
         return None
 
     return email, name, password
