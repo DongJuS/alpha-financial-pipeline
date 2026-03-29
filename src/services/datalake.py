@@ -109,6 +109,21 @@ DEBATE_TRANSCRIPTS_SCHEMA = pa.schema([
     ("created_at", pa.timestamp("ms")),
 ])
 
+RL_EPISODES_SCHEMA = pa.schema([
+    ("ticker", pa.string()),
+    ("policy_id", pa.string()),
+    ("profile_id", pa.string()),
+    ("dataset_days", pa.int64()),
+    ("train_return_pct", pa.float64()),
+    ("holdout_return_pct", pa.float64()),
+    ("excess_return_pct", pa.float64()),
+    ("max_drawdown_pct", pa.float64()),
+    ("walk_forward_passed", pa.bool_()),
+    ("walk_forward_consistency", pa.float64()),
+    ("deployed", pa.bool_()),
+    ("created_at", pa.timestamp("ms")),
+])
+
 SCHEMAS: dict[DataType, pa.Schema] = {
     DataType.DAILY_BARS: DAILY_BARS_SCHEMA,
     DataType.PREDICTIONS: PREDICTIONS_SCHEMA,
@@ -116,6 +131,7 @@ SCHEMAS: dict[DataType, pa.Schema] = {
     DataType.BLEND_RESULTS: BLEND_RESULTS_SCHEMA,
     DataType.TICK_DATA: TICK_DATA_SCHEMA,
     DataType.DEBATE_TRANSCRIPTS: DEBATE_TRANSCRIPTS_SCHEMA,
+    DataType.RL_EPISODES: RL_EPISODES_SCHEMA,
 }
 
 
@@ -278,4 +294,26 @@ async def store_debate_transcripts(records: list[dict[str, Any]], partition_date
         return s3_uri
     except Exception as e:
         logger.error("S3 토론 전문 저장 최종 실패 (%d회 재시도 후): %s", _MAX_RETRIES, e, exc_info=True)
+        return None
+
+
+async def store_rl_episodes(records: list[dict[str, Any]], partition_date: date | None = None) -> str | None:
+    """RL 학습 에피소드(학습/검증 결과)를 Parquet으로 S3에 저장합니다.
+
+    RLContinuousImprover의 retrain_ticker() 완료 후 호출합니다.
+    필드: ticker, policy_id, profile_id, dataset_days,
+          train_return_pct, holdout_return_pct, excess_return_pct,
+          max_drawdown_pct, walk_forward_passed, walk_forward_consistency,
+          deployed, created_at
+    """
+    if not records:
+        return None
+    try:
+        data = _to_parquet_bytes(records, RL_EPISODES_SCHEMA)
+        key = _make_s3_key(DataType.RL_EPISODES, partition_date)
+        s3_uri = await _upload_with_retry(data, key)
+        logger.info("S3 RL 에피소드 저장 완료: %s (%d건)", s3_uri, len(records))
+        return s3_uri
+    except Exception as e:
+        logger.error("S3 RL 에피소드 저장 최종 실패 (%d회 재시도 후): %s", _MAX_RETRIES, e, exc_info=True)
         return None
