@@ -22,26 +22,33 @@ Phase 10 피드백 루프 파이프라인  ██████████  100% 
 Phase 11 N-way 블렌딩 + Registry ██████████  100% ✅
 Phase 12 블로그 자동 포스팅      ██████████  100% ✅
 Step 3   RL 부트스트랩 + 블렌딩  ██████████  100% ✅
-Step 4   K3s 프로덕션 배포       ████████░░   80% 🔧
-테스트   스위트 정비             ██████████  100% ✅
+Step 4   K3s 프로덕션 배포       ██████████  100% ✅
+Step 5   Alpha 안정화            ██████████  100% ✅
+Step 6   테스트 스위트 정비      ██████████  100% ✅
+Step 7   Airflow 비교 스파이크   ░░░░░░░░░░    0% 🔧
 ```
 
 ---
 
 ## 🔄 미완료 / 진행 중
 
-### 제출 (🔴 3/30 마감)
-- [ ] 이력서 DE 언어 전환 (Obsidian Phase4-합격전략.md 번역 매핑표 참조)
-- [ ] 제출
+### Step 7: Airflow 비교 스파이크 (브랜치: `feature/airflow-workflow-spike`)
 
-### Step 4 잔여: K3s 프로덕션 배포
-- [x] Kustomize base 인프라 분리 + overlays dev/prod 보강 — PR #64
-- [ ] Bitnami 인프라 설치 스크립트 + deploy.sh 수정
-- [ ] K3s 클러스터 실배포 검증
+> main에서 분기. main은 건드리지 않음. Alpha와 Airflow를 동시에 띄워서 비교.
+
+- [ ] `docker-compose.airflow.yml` 작성 (Airflow webserver + scheduler + 자체 postgres)
+- [ ] `dags/pre_market_collection.py` — 장 전 수집 DAG 1개 (5 태스크)
+- [ ] Airflow UI 접속 확인 (localhost:8080)
+- [ ] DAG 실행 + Graph View / Gantt Chart 스크린샷
+- [ ] Obsidian `work/` 비교 기록 + 면접 답변 작성
+
+### 제출 (🔴 3/30 마감)
+- [ ] 이력서 DE 언어 전환
+- [ ] 제출
 
 ### 보류
 - [ ] SearchAgent — Step 4 완료 후 재개
 
 ---
 
-*Last updated: 2026-03-29*
+*Last updated: 2026-03-30*
