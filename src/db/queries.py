@@ -20,38 +20,35 @@ from src.utils.db_client import execute, executemany, fetch, fetchrow, fetchval
 
 
 async def upsert_market_data(points: list[MarketDataPoint]) -> int:
-    """market_data를 upsert하고 반영 건수를 반환합니다."""
+    """ohlcv_daily를 upsert하고 반영 건수를 반환합니다."""
     if not points:
         return 0
 
     query = """
-        INSERT INTO market_data (
-            ticker, name, market, timestamp_kst, interval,
+        INSERT INTO ohlcv_daily (
+            instrument_id, traded_at,
             open, high, low, close, volume,
-            change_pct, market_cap, foreigner_ratio
+            change_pct, adj_close
         ) VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7, $8, $9, $10,
-            $11, $12, $13
+            $1, $2,
+            $3, $4, $5, $6, $7,
+            $8, $9
         )
-        ON CONFLICT (ticker, timestamp_kst, interval)
+        ON CONFLICT (instrument_id, traded_at)
         DO UPDATE SET
-            name = EXCLUDED.name,
-            market = EXCLUDED.market,
             open = EXCLUDED.open,
             high = EXCLUDED.high,
             low = EXCLUDED.low,
             close = EXCLUDED.close,
             volume = EXCLUDED.volume,
             change_pct = EXCLUDED.change_pct,
-            market_cap = EXCLUDED.market_cap,
-            foreigner_ratio = EXCLUDED.foreigner_ratio
+            adj_close = EXCLUDED.adj_close
     """
     await executemany(query, [
         (
-            p.ticker, p.name, p.market, p.timestamp_kst, p.interval,
+            p.instrument_id, p.traded_at,
             p.open, p.high, p.low, p.close, p.volume,
-            p.change_pct, p.market_cap, p.foreigner_ratio,
+            p.change_pct, p.adj_close,
         )
         for p in points
     ])
@@ -61,9 +58,10 @@ async def upsert_market_data(points: list[MarketDataPoint]) -> int:
 async def list_tickers(limit: int = 30) -> list[dict]:
     rows = await fetch(
         """
-        SELECT DISTINCT ON (ticker) ticker, name, market
-        FROM market_data
-        ORDER BY ticker, timestamp_kst DESC
+        SELECT instrument_id, raw_code AS ticker, name, market_id AS market
+        FROM instruments
+        WHERE is_active = TRUE
+        ORDER BY instrument_id
         LIMIT $1
         """,
         limit,
@@ -72,36 +70,33 @@ async def list_tickers(limit: int = 30) -> list[dict]:
 
 
 async def fetch_recent_ohlcv(ticker: str, days: int = 30) -> list[dict]:
-    return await fetch_recent_market_data(ticker, interval="daily", days=days)
+    """최근 N일 OHLCV를 반환합니다.
+
+    ticker는 instrument_id(005930.KS) 또는 raw_code(005930) 모두 허용합니다.
+    """
+    return await fetch_recent_market_data(ticker, days=days)
 
 
 async def fetch_recent_market_data(
     ticker: str,
     *,
-    interval: str = "daily",
     days: int | None = None,
-    seconds: int | None = None,
     limit: int | None = None,
+    # interval/seconds 인자는 하위 호환을 위해 유지하되 무시합니다
+    interval: str = "daily",
+    seconds: int | None = None,
 ) -> list[dict]:
-    if interval not in {"daily", "tick"}:
-        raise ValueError(f"지원하지 않는 interval입니다: {interval}")
+    if days is None:
+        days = 30
 
-    if days is None and seconds is None:
-        days = 30 if interval == "daily" else None
-        seconds = 86_400 if interval == "tick" else None
-
+    # instrument_id 또는 raw_code 모두 허용
     conditions = [
-        "ticker = $1",
-        "interval = $2",
+        "(o.instrument_id = $1 OR i.raw_code = $1)",
     ]
-    params: list[Any] = [ticker, interval]
+    params: list[Any] = [ticker]
 
-    if days is not None:
-        params.append(days)
-        conditions.append(f"timestamp_kst >= NOW() - (${len(params)} * INTERVAL '1 day')")
-    if seconds is not None:
-        params.append(seconds)
-        conditions.append(f"timestamp_kst >= NOW() - (${len(params)} * INTERVAL '1 second')")
+    params.append(days)
+    conditions.append(f"o.traded_at >= CURRENT_DATE - ${len(params)}")
 
     limit_sql = ""
     if limit is not None:
@@ -111,10 +106,13 @@ async def fetch_recent_market_data(
     rows = await fetch(
         f"""
         SELECT
-            ticker, name, timestamp_kst, open, high, low, close, volume, change_pct
-        FROM market_data
+            o.instrument_id, i.raw_code AS ticker, i.name,
+            o.traded_at, o.open, o.high, o.low, o.close, o.volume,
+            o.change_pct, o.adj_close
+        FROM ohlcv_daily o
+        JOIN instruments i ON o.instrument_id = i.instrument_id
         WHERE {' AND '.join(conditions)}
-        ORDER BY timestamp_kst DESC
+        ORDER BY o.traded_at DESC
         {limit_sql}
         """,
         *params,
@@ -122,13 +120,18 @@ async def fetch_recent_market_data(
     return [dict(r) for r in rows]
 
 
-async def latest_close_price(ticker: str) -> Optional[int]:
+async def latest_close_price(ticker: str) -> Optional[float]:
+    """최근 종가를 반환합니다.
+
+    ticker는 instrument_id(005930.KS) 또는 raw_code(005930) 모두 허용합니다.
+    """
     return await fetchval(
         """
-        SELECT close
-        FROM market_data
-        WHERE ticker = $1
-        ORDER BY timestamp_kst DESC
+        SELECT o.close
+        FROM ohlcv_daily o
+        JOIN instruments i ON o.instrument_id = i.instrument_id
+        WHERE o.instrument_id = $1 OR i.raw_code = $1
+        ORDER BY o.traded_at DESC
         LIMIT 1
         """,
         ticker,

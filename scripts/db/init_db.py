@@ -74,6 +74,80 @@ CREATE_TABLES: list[str] = [
         ON market_data (timestamp_kst DESC);
     """,
 
+    # 2-b. markets (신규 시장 메타 테이블)
+    """
+    CREATE TABLE IF NOT EXISTS markets (
+        market_id      VARCHAR(10) PRIMARY KEY,
+        name           TEXT        NOT NULL,
+        country        VARCHAR(3)  NOT NULL,
+        timezone       VARCHAR(30) NOT NULL,
+        currency       VARCHAR(5)  NOT NULL,
+        open_time      TIME,
+        close_time     TIME,
+        data_source    VARCHAR(20) NOT NULL,
+        is_active      BOOLEAN DEFAULT true,
+        created_at     TIMESTAMPTZ DEFAULT now()
+    );
+    INSERT INTO markets (market_id, name, country, timezone, currency, open_time, close_time, data_source)
+    VALUES
+        ('KOSPI',  '코스피',           'KR', 'Asia/Seoul',       'KRW', '09:00', '15:30', 'fdr'),
+        ('KOSDAQ', '코스닥',           'KR', 'Asia/Seoul',       'KRW', '09:00', '15:30', 'fdr'),
+        ('NYSE',   '뉴욕증권거래소',    'US', 'America/New_York', 'USD', '09:30', '16:00', 'fdr'),
+        ('NASDAQ', '나스닥',           'US', 'America/New_York', 'USD', '09:30', '16:00', 'fdr')
+    ON CONFLICT (market_id) DO NOTHING;
+    """,
+
+    # 2-c. instruments (신규 종목 마스터 테이블)
+    """
+    CREATE TABLE IF NOT EXISTS instruments (
+        instrument_id  VARCHAR(20)  PRIMARY KEY,
+        raw_code       VARCHAR(15)  NOT NULL,
+        name           TEXT         NOT NULL,
+        name_en        TEXT,
+        market_id      VARCHAR(10)  NOT NULL REFERENCES markets(market_id),
+        sector         TEXT,
+        industry       TEXT,
+        asset_type     VARCHAR(10)  NOT NULL DEFAULT 'stock',
+        isin           VARCHAR(15),
+        listed_at      DATE,
+        delisted_at    DATE,
+        market_cap     BIGINT,
+        total_shares   BIGINT,
+        is_active      BOOLEAN      NOT NULL DEFAULT true,
+        created_at     TIMESTAMPTZ  DEFAULT now(),
+        updated_at     TIMESTAMPTZ  DEFAULT now(),
+
+        CONSTRAINT uq_instruments_market_code UNIQUE (market_id, raw_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_instruments_market    ON instruments(market_id, is_active);
+    CREATE INDEX IF NOT EXISTS idx_instruments_sector    ON instruments(market_id, sector) WHERE is_active = true;
+    CREATE INDEX IF NOT EXISTS idx_instruments_asset     ON instruments(asset_type, is_active);
+    CREATE INDEX IF NOT EXISTS idx_instruments_raw_code  ON instruments(raw_code);
+    """,
+
+    # 2-d. ohlcv_daily (신규 일봉 파티셔닝 테이블)
+    """
+    CREATE TABLE IF NOT EXISTS ohlcv_daily (
+        instrument_id  VARCHAR(20)   NOT NULL,
+        traded_at      DATE          NOT NULL,
+        open           NUMERIC(15,4) NOT NULL,
+        high           NUMERIC(15,4) NOT NULL,
+        low            NUMERIC(15,4) NOT NULL,
+        close          NUMERIC(15,4) NOT NULL,
+        volume         BIGINT        NOT NULL,
+        amount         BIGINT,
+        change_pct     NUMERIC(8,4),
+        market_cap     BIGINT,
+        turnover_ratio NUMERIC(8,4),
+        foreign_ratio  NUMERIC(5,2),
+        adj_close      NUMERIC(15,4),
+
+        PRIMARY KEY (instrument_id, traded_at)
+    ) PARTITION BY RANGE (traded_at);
+    CREATE INDEX IF NOT EXISTS idx_ohlcv_daily_instrument
+        ON ohlcv_daily (instrument_id, traded_at DESC);
+    """,
+
     # 3. 예측 시그널 (PredictorAgent 출력)
     """
     CREATE TABLE IF NOT EXISTS predictions (
@@ -996,6 +1070,9 @@ DROP TABLE IF EXISTS
     debate_transcripts,
     predictor_tournament_scores,
     predictions,
+    ohlcv_daily,
+    instruments,
+    markets,
     market_data,
     users
 CASCADE;
@@ -1094,6 +1171,20 @@ async def create_schema(drop_first: bool = False) -> None:
                 if not cleaned_stmt:
                     continue
                 await conn.execute(cleaned_stmt)
+
+        # ohlcv_daily 연도별 파티션 생성 (2010~2027 + default)
+        for year in range(2010, 2028):
+            partition_ddl = (
+                f"CREATE TABLE IF NOT EXISTS ohlcv_daily_{year} "
+                f"PARTITION OF ohlcv_daily "
+                f"FOR VALUES FROM ('{year}-01-01') TO ('{year + 1}-01-01')"
+            )
+            await conn.execute(partition_ddl)
+        await conn.execute(
+            "CREATE TABLE IF NOT EXISTS ohlcv_daily_default "
+            "PARTITION OF ohlcv_daily DEFAULT"
+        )
+        logger.info("ohlcv_daily 파티션 생성 완료 (2010~2027 + default)")
 
         await seed_default_admin(conn)
 

@@ -209,36 +209,26 @@ class RLDatasetBuilderV2:
         """확장 데이터셋 구축.
 
         Args:
-            ticker: 종목 코드
+            ticker: 종목 코드 (instrument_id 또는 raw_code)
             days: 수집 기간 (일)
-            interval: "daily" | "tick"
-            seconds: tick 간격 시 초 단위 범위
+            interval: 하위 호환용 (무시됨, ohlcv_daily 전용)
+            seconds: 하위 호환용 (무시됨)
             limit: 최대 row 수
             enrich: True면 기술 지표 + 매크로 컨텍스트 추가
         """
-        resolved_interval = interval or self.default_interval
-        query_days = days if resolved_interval == "daily" else None
-        query_seconds = seconds
-        if resolved_interval == "tick" and query_seconds is None and days is not None and limit is None:
-            query_seconds = max(1, days * 24 * 60 * 60)
-        if resolved_interval == "tick" and query_seconds is None and limit is None:
-            limit = 5_000
-
         rows = await fetch_recent_market_data(
             ticker,
-            interval=resolved_interval,
-            days=query_days,
-            seconds=query_seconds,
+            days=days,
             limit=limit,
         )
-        ordered_rows = sorted(rows, key=lambda row: row["timestamp_kst"])
+        ordered_rows = sorted(rows, key=lambda row: row["traded_at"])
         closes = [float(row["close"]) for row in ordered_rows if row.get("close")]
         volumes = [float(row.get("volume", 0)) for row in ordered_rows if row.get("close")]
-        timestamps = [str(row["timestamp_kst"]) for row in ordered_rows if row.get("close")]
+        timestamps = [str(row["traded_at"]) for row in ordered_rows if row.get("close")]
 
         if len(closes) < self.min_history_points:
             raise ValueError(
-                f"RL 학습 이력 부족: ticker={ticker}, interval={resolved_interval}, "
+                f"RL 학습 이력 부족: ticker={ticker}, "
                 f"history={len(closes)}, required={self.min_history_points}"
             )
 
