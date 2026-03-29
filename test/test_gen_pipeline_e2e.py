@@ -299,25 +299,28 @@ class TestDataIntegrity(unittest.TestCase):
         from src.db.models import MarketDataPoint
         bars = self.gen.generate_daily_history("005930", days=10)
         for bar in bars:
-            ts = datetime.fromisoformat(bar.date + "T15:30:00").replace(tzinfo=KST)
+            traded = datetime.fromisoformat(bar.date).date() if isinstance(bar.date, str) else bar.date
+            suffix = ".KS" if bar.market == "KOSPI" else ".KQ"
             point = MarketDataPoint(
-                ticker=bar.ticker, name=bar.name, market=bar.market,
-                timestamp_kst=ts, interval="daily",
-                open=bar.open, high=bar.high, low=bar.low,
-                close=bar.close, volume=bar.volume, change_pct=bar.change_pct,
+                instrument_id=f"{bar.ticker}{suffix}", name=bar.name, market=bar.market,
+                traded_at=traded,
+                open=float(bar.open), high=float(bar.high), low=float(bar.low),
+                close=float(bar.close), volume=bar.volume, change_pct=bar.change_pct,
             )
-            self.assertEqual(point.interval, "daily")
+            self.assertEqual(point.traded_at, traded)
 
     def test_quote_to_market_data_point(self):
         from src.db.models import MarketDataPoint
+        from datetime import date
         quote = self.gen.get_quote("005930")
+        suffix = ".KS" if quote.market == "KOSPI" else ".KQ"
         point = MarketDataPoint(
-            ticker=quote.ticker, name=quote.name, market=quote.market,
-            timestamp_kst=datetime.now(KST), interval="tick",
-            open=quote.open, high=quote.high, low=quote.low,
-            close=quote.current_price, volume=quote.volume, change_pct=quote.change_pct,
+            instrument_id=f"{quote.ticker}{suffix}", name=quote.name, market=quote.market,
+            traded_at=date.today(),
+            open=float(quote.open), high=float(quote.high), low=float(quote.low),
+            close=float(quote.current_price), volume=quote.volume, change_pct=quote.change_pct,
         )
-        self.assertEqual(point.interval, "tick")
+        self.assertEqual(point.interval, "daily")
 
 
 if __name__ == "__main__":

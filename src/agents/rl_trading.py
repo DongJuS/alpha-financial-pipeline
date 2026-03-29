@@ -118,24 +118,14 @@ class RLDatasetBuilder:
         seconds: int | None = None,
         limit: int | None = None,
     ) -> RLDataset:
-        resolved_interval = interval or self.default_interval
-        query_days = days if resolved_interval == "daily" else None
-        query_seconds = seconds
-        if resolved_interval == "tick" and query_seconds is None and days is not None and limit is None:
-            query_seconds = max(1, days * 24 * 60 * 60)
-        if resolved_interval == "tick" and query_seconds is None and limit is None:
-            limit = 5_000
-
         rows = await fetch_recent_market_data(
             ticker,
-            interval=resolved_interval,
-            days=query_days,
-            seconds=query_seconds,
+            days=days,
             limit=limit,
         )
-        ordered_rows = sorted(rows, key=lambda row: row["timestamp_kst"])
+        ordered_rows = sorted(rows, key=lambda row: row["traded_at"])
         closes = [float(row["close"]) for row in ordered_rows if row.get("close")]
-        timestamps = [str(row["timestamp_kst"]) for row in ordered_rows if row.get("close")]
+        timestamps = [str(row["traded_at"]) for row in ordered_rows if row.get("close")]
 
         # DB 데이터 부족 시 FinanceDataReader 폴백 + DB 자동 저장
         if len(closes) < self.min_history_points:
@@ -163,7 +153,7 @@ class RLDatasetBuilder:
                             "FinanceDataReader 폴백 성공: ticker=%s, rows=%d",
                             ticker, len(closes),
                         )
-                        # 수집한 데이터를 DB에 백그라운드로 저장 (다음 요청부터 DB에서 제공)
+                        # 수집한 데이터를 DB(ohlcv_daily)에 저장 (다음 요청부터 DB에서 제공)
                         try:
                             from src.db.models import MarketDataPoint
                             from src.db.queries import upsert_market_data
@@ -176,26 +166,25 @@ class RLDatasetBuilder:
                             if market_str not in {"KOSPI", "KOSDAQ"}:
                                 market_str = "KOSPI"
 
+                            # instrument_id 생성: CODE.KS (KOSPI) / CODE.KQ (KOSDAQ)
+                            suffix = "KS" if market_str == "KOSPI" else "KQ"
+                            instrument_id = f"{ticker}.{suffix}"
+
                             points = []
                             previous_close = None
                             for idx_row, row_data in df.iterrows():
                                 trade_date = idx_row.date() if hasattr(idx_row, "date") else date.today()
-                                ts = datetime(
-                                    trade_date.year, trade_date.month, trade_date.day,
-                                    15, 30, 0, tzinfo=KST,
-                                )
-                                close_val = int(row_data.get("Close", 0))
+                                close_val = float(row_data.get("Close", 0))
                                 if close_val <= 0:
                                     continue
                                 points.append(MarketDataPoint(
-                                    ticker=ticker,
+                                    instrument_id=instrument_id,
                                     name=name,
                                     market=market_str,  # type: ignore[arg-type]
-                                    timestamp_kst=ts,
-                                    interval="daily",
-                                    open=int(row_data.get("Open", close_val)),
-                                    high=int(row_data.get("High", close_val)),
-                                    low=int(row_data.get("Low", close_val)),
+                                    traded_at=trade_date,
+                                    open=float(row_data.get("Open", close_val)),
+                                    high=float(row_data.get("High", close_val)),
+                                    low=float(row_data.get("Low", close_val)),
                                     close=close_val,
                                     volume=int(row_data.get("Volume", 0)),
                                     change_pct=compute_change_pct(close_val, previous_close),
@@ -218,7 +207,7 @@ class RLDatasetBuilder:
 
         if len(closes) < self.min_history_points:
             raise ValueError(
-                f"RL 학습 이력 부족: ticker={ticker}, interval={resolved_interval}, "
+                f"RL 학습 이력 부족: ticker={ticker}, "
                 f"history={len(closes)}, required={self.min_history_points}"
             )
         return RLDataset(ticker=ticker, closes=closes, timestamps=timestamps)
@@ -659,13 +648,14 @@ class RLTradingAgent:
         if not self.use_latest_tick_for_inference:
             return dataset.closes, None
 
-        latest_ticks = await fetch_recent_market_data(ticker, interval="tick", limit=1)
-        if not latest_ticks:
+        # ohlcv_daily에서 최신 1건 조회 (이전 tick 인터벌 대체)
+        latest_rows = await fetch_recent_market_data(ticker, limit=1)
+        if not latest_rows:
             return dataset.closes, None
 
-        latest_tick = latest_ticks[0]
-        latest_close = latest_tick.get("close")
-        latest_ts = str(latest_tick.get("timestamp_kst"))
+        latest_row = latest_rows[0]
+        latest_close = latest_row.get("close")
+        latest_ts = str(latest_row.get("traded_at"))
         if latest_close in {None, ""}:
             return dataset.closes, latest_ts
 

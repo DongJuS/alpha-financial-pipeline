@@ -157,9 +157,9 @@ def normalize_list(tickers: list[str], market: Optional[str] = None) -> list[str
 
 
 async def normalize_with_db(ticker: str) -> str:
-    """DB의 ticker_master 테이블을 조회하여 정규화합니다.
+    """DB의 instruments 테이블을 조회하여 정규화합니다.
 
-    ticker_master에 없으면 stock_master를 폴백으로 조회합니다.
+    instruments에 없으면 stock_master를 폴백으로 조회합니다.
     """
     ticker = ticker.strip()
 
@@ -172,13 +172,13 @@ async def normalize_with_db(ticker: str) -> str:
     try:
         from src.utils.db_client import fetchrow
 
-        # ticker_master 우선 조회
+        # instruments 테이블 우선 조회 (raw_code → instrument_id)
         row = await fetchrow(
-            "SELECT canonical FROM ticker_master WHERE raw_code = $1 AND is_active = TRUE",
+            "SELECT instrument_id FROM instruments WHERE raw_code = $1 AND is_active = TRUE",
             ticker,
         )
         if row:
-            canonical = row["canonical"]
+            canonical = row["instrument_id"]
             _cache[ticker] = canonical
             return canonical
 
@@ -200,7 +200,7 @@ async def normalize_with_db(ticker: str) -> str:
 def build_cache(mappings: list[tuple[str, str]]) -> None:
     """(raw_code, canonical) 쌍 목록으로 캐시를 구축합니다.
 
-    서버 시작 시 ticker_master 전체를 로드하여 캐시를 워밍업합니다.
+    서버 시작 시 instruments 전체를 로드하여 캐시를 워밍업합니다.
     """
     for raw_code, canonical in mappings:
         _cache[raw_code] = canonical
