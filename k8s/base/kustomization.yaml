@@ -12,6 +12,7 @@ resources:
   - api.yaml
   - worker.yaml
   - ui.yaml
+  - gen.yaml
   - ingress.yaml
 
 labels:
