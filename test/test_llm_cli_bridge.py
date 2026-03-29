@@ -1,3 +1,4 @@
+import shutil
 import unittest
 
 from src.llm.cli_bridge import build_cli_command, is_cli_available, run_cli_prompt
@@ -6,7 +7,8 @@ from src.llm.cli_bridge import build_cli_command, is_cli_available, run_cli_prom
 class LlmCliBridgeTest(unittest.IsolatedAsyncioTestCase):
     def test_build_cli_command_replaces_model_placeholder(self) -> None:
         command = build_cli_command("echo {model}", model="gemini-1.5-pro")
-        self.assertEqual(command, ["echo", "gemini-1.5-pro"])
+        resolved_echo = shutil.which("echo") or "echo"
+        self.assertEqual(command, [resolved_echo, "gemini-1.5-pro"])
 
     def test_is_cli_available_for_existing_binary(self) -> None:
         self.assertTrue(is_cli_available(["cat"]))
