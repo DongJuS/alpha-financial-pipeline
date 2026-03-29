@@ -41,8 +41,8 @@ _scheduler: AsyncIOScheduler | None = None
 # 분산 락 TTL (초) — 잡 최대 실행 예상 시간보다 넉넉하게
 _LOCK_TTL: dict[str, int] = {
     # 장 전
-    "rl_bootstrap": 1800,         # 30분 (시딩+학습 포함 가능)
-    "predictor_warmup": 180,     # 3분 (LLM API 호출 포함)
+    "rl_bootstrap": 3600,         # 60분 (멀티 티커 학습 포함 가능)
+    "predictor_warmup": 60,      # 1분 (모듈 캐싱 + 가용성 확인)
     "stock_master_daily": 300,   # 5분
     "macro_daily": 300,          # 5분
     "collector_daily": 600,      # 10분
@@ -170,25 +170,47 @@ async def start_unified_scheduler() -> None:
 
     # -- 장 전: A/B Predictor 워밍업 (08:05 KST) --
     async def _run_predictor_warmup() -> None:
-        """A/B 전략 Predictor의 LLM 클라이언트를 사전 초기화한다."""
-        from src.agents.predictor import PredictorAgent
-        from src.agents.strategy_a_tournament import PROFILES
+        """A/B 전략 LLM 클라이언트를 사전 초기화한다.
 
-        warmup_count = 0
-        for profile in PROFILES:
-            try:
-                agent = PredictorAgent(
-                    agent_id=profile.agent_id,
-                    strategy="A",
-                    llm_model=profile.model,
-                    persona=profile.persona,
-                )
-                # LLM 클라이언트 초기화는 __init__에서 완료됨.
-                # 실제 API 연결 검증을 위해 가볍게 인스턴스 생성만 수행.
-                warmup_count += 1
-            except Exception as exc:
-                logger.warning("Predictor 워밍업 실패 [%s]: %s", profile.agent_id, exc)
-        logger.info("Predictor 워밍업 완료: %d/%d 에이전트", warmup_count, len(PROFILES))
+        목적:
+        - Gemini OAuth 자격증명 캐싱 (모듈 레벨, 이후 재사용)
+        - Claude SDK/CLI 가용성 확인
+        - 무거운 import 선행 로드 (google.generativeai 등)
+        인스턴스 자체는 버려지지만, 위 모듈 레벨 상태가 캐싱됨.
+        """
+        providers_ok: dict[str, bool] = {}
+
+        # Gemini OAuth 캐싱
+        try:
+            from src.llm.gemini_client import load_gemini_oauth_credentials
+
+            creds, _ = load_gemini_oauth_credentials()
+            providers_ok["gemini"] = creds is not None
+        except Exception as exc:
+            providers_ok["gemini"] = False
+            logger.warning("Predictor 워밍업: Gemini OAuth 실패 — %s", exc)
+
+        # Claude SDK 가용성
+        try:
+            from src.llm.claude_client import ClaudeClient
+
+            client = ClaudeClient()
+            providers_ok["claude"] = client.is_configured
+        except Exception as exc:
+            providers_ok["claude"] = False
+            logger.warning("Predictor 워밍업: Claude 초기화 실패 — %s", exc)
+
+        # GPT 가용성
+        try:
+            from src.llm.gpt_client import GPTClient
+
+            gpt = GPTClient()
+            providers_ok["gpt"] = gpt.is_configured
+        except Exception as exc:
+            providers_ok["gpt"] = False
+
+        available = [k for k, v in providers_ok.items() if v]
+        logger.info("Predictor 워밍업 완료: %s 사용 가능", available or "없음")
 
     # -- 기존 데이터 수집 잡 --
     async def _run_stock_master() -> None:
