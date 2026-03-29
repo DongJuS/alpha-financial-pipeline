@@ -271,6 +271,10 @@ async def evaluate_real_trading_readiness() -> dict[str, Any]:
         }
     )
 
+    # 9) K8s 환경 체크 (K8s에서 실행 중일 때만)
+    k8s_checks = await _evaluate_k8s_readiness()
+    checks.extend(k8s_checks)
+
     critical_ok = all(c["ok"] for c in checks if c["severity"] == "critical")
     high_ok = all(c["ok"] for c in checks if c["severity"] in {"critical", "high"})
     return {
@@ -279,3 +283,68 @@ async def evaluate_real_trading_readiness() -> dict[str, Any]:
         "high_ok": high_ok,
         "checks": checks,
     }
+
+
+async def _evaluate_k8s_readiness() -> list[dict[str, Any]]:
+    """K8s 환경에서 실행 중일 때 추가 체크를 수행합니다.
+
+    K8s 밖에서 실행 중이면 빈 리스트를 반환합니다.
+    """
+    import os
+    import shutil
+
+    if not os.environ.get("KUBERNETES_SERVICE_HOST"):
+        return []
+
+    checks: list[dict[str, Any]] = []
+
+    # 9a) K8s API 서버 접근 가능 여부
+    sa_token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    sa_ok = os.path.isfile(sa_token_path)
+    checks.append({
+        "key": "k8s:service_account",
+        "ok": sa_ok,
+        "message": "K8s ServiceAccount 토큰 " + ("마운트 정상" if sa_ok else "누락"),
+        "severity": "critical",
+    })
+
+    # 9b) 필수 볼륨 마운트 확인
+    required_mounts = [
+        ("/data/rl/models", "RL 모델 저장소"),
+        ("/data/rl/experiments", "RL 실험 저장소"),
+    ]
+    for mount_path, label in required_mounts:
+        exists = os.path.isdir(mount_path)
+        checks.append({
+            "key": f"k8s:volume:{mount_path}",
+            "ok": exists,
+            "message": f"{label} ({mount_path}) " + ("마운트 정상" if exists else "누락"),
+            "severity": "high",
+        })
+
+    # 9c) DNS 해석 가능 여부 (클러스터 내부 서비스)
+    import socket
+
+    for svc, label in [("postgres", "PostgreSQL"), ("redis", "Redis")]:
+        try:
+            socket.getaddrinfo(svc, None)
+            dns_ok = True
+        except socket.gaierror:
+            dns_ok = False
+        checks.append({
+            "key": f"k8s:dns:{svc}",
+            "ok": dns_ok,
+            "message": f"{label} DNS 해석 " + ("정상" if dns_ok else "실패"),
+            "severity": "critical",
+        })
+
+    # 9d) kubectl 사용 가능 여부
+    kubectl_ok = shutil.which("kubectl") is not None
+    checks.append({
+        "key": "k8s:kubectl",
+        "ok": kubectl_ok,
+        "message": "kubectl " + ("사용 가능" if kubectl_ok else "미설치 (디버깅 제한)"),
+        "severity": "low",
+    })
+
+    return checks
