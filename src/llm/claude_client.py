@@ -37,7 +37,6 @@ class ClaudeClient:
         self._cli_command = build_cli_command(settings.anthropic_cli_command, model=self.model)
         self._client: Optional[Any] = None
 
-        # 1) CLI 모드 시도
         if self._cli_command:
             if is_cli_available(self._cli_command):
                 logger.info("Claude CLI 모드 활성화: %s", self._cli_command[0])
@@ -45,22 +44,13 @@ class ClaudeClient:
             logger.warning("Claude CLI 명령을 찾을 수 없어 SDK 모드로 폴백: %s", self._cli_command[0])
             self._cli_command = []
 
-        # 2) API key로 SDK 모드 시도
-        #    Docker/K8s에서는 CLI가 없으므로 SDK가 유일한 경로.
-        #    ANTHROPIC_API_KEY 환경변수를 fallback으로 확인.
-        import os
+        # Docker/K8s 환경에서는 CLI가 없을 수 있으므로 API key SDK 모드가 필수
+        if is_placeholder_secret(self.api_key):
+            import os
 
-        effective_key = self.api_key
-        if is_placeholder_secret(effective_key):
-            env_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            if env_key and not is_placeholder_secret(env_key):
-                effective_key = env_key
-                logger.info("ANTHROPIC_API_KEY 환경변수에서 API key 로드 (settings 대신)")
-
-        if is_placeholder_secret(effective_key):
             if os.path.isfile("/.dockerenv") or os.environ.get("KUBERNETES_SERVICE_HOST"):
                 logger.warning(
-                    "Docker/K8s 환경에서 ANTHROPIC_API_KEY 미설정. "
+                    "Docker/K8s 환경에서 ANTHROPIC_API_KEY가 미설정. "
                     "Secret 마운트 또는 환경변수를 확인하세요."
                 )
             return
@@ -68,7 +58,7 @@ class ClaudeClient:
         try:
             from anthropic import AsyncAnthropic
 
-            self._client = AsyncAnthropic(api_key=effective_key)
+            self._client = AsyncAnthropic(api_key=self.api_key)
         except Exception as e:
             logger.warning("Claude SDK 초기화 실패: %s", e)
             self._client = None
