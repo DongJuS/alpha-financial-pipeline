@@ -76,6 +76,7 @@ api:
 # ── Worker (오케스트레이터) ────────────────────────────────────────────
 worker:
   replicas: 1
+  rlDataStorage: 5Gi
   resources:
     requests:
       cpu: 500m
