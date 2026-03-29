@@ -66,7 +66,7 @@ class TestPromotionCriteria(unittest.TestCase):
         self.assertEqual(criteria, {})
 
 
-class TestPromotionReadiness(unittest.TestCase):
+class TestPromotionReadiness(unittest.IsolatedAsyncioTestCase):
     """승격 준비 상태 평가 테스트."""
 
     def setUp(self):
@@ -78,45 +78,36 @@ class TestPromotionReadiness(unittest.TestCase):
     @patch.dict("os.environ", ENV_PATCH)
     @patch("src.utils.strategy_promotion.StrategyPromoter._count_trading_days", new_callable=AsyncMock, return_value=45)
     @patch("src.utils.strategy_promotion.StrategyPromoter._fetch_strategy_trades", new_callable=AsyncMock)
-    def test_promotion_ready(self, mock_trades, mock_days):
+    async def test_promotion_ready(self, mock_trades, mock_days):
         """모든 기준 충족 시 ready=True를 반환하는지 확인합니다."""
-        import asyncio
         from src.utils.strategy_promotion import StrategyPromoter
 
         mock_trades.return_value = self._build_good_trades()
 
         promoter = StrategyPromoter()
-        result = asyncio.run(
-            promoter.evaluate_promotion_readiness("A", "virtual", "paper")
-        )
+        result = await promoter.evaluate_promotion_readiness("A", "virtual", "paper")
         self.assertTrue(result.ready)
         self.assertEqual(len(result.failures), 0)
 
     @patch.dict("os.environ", ENV_PATCH)
     @patch("src.utils.strategy_promotion.StrategyPromoter._count_trading_days", new_callable=AsyncMock, return_value=5)
     @patch("src.utils.strategy_promotion.StrategyPromoter._fetch_strategy_trades", new_callable=AsyncMock, return_value=[])
-    def test_promotion_not_ready_insufficient_days(self, mock_trades, mock_days):
+    async def test_promotion_not_ready_insufficient_days(self, mock_trades, mock_days):
         """운용 일수 미달 시 ready=False를 반환하는지 확인합니다."""
-        import asyncio
         from src.utils.strategy_promotion import StrategyPromoter
 
         promoter = StrategyPromoter()
-        result = asyncio.run(
-            promoter.evaluate_promotion_readiness("A", "virtual", "paper")
-        )
+        result = await promoter.evaluate_promotion_readiness("A", "virtual", "paper")
         self.assertFalse(result.ready)
         self.assertTrue(any("운용 일수" in f for f in result.failures))
 
     @patch.dict("os.environ", ENV_PATCH)
-    def test_invalid_promotion_path_returns_not_ready(self):
+    async def test_invalid_promotion_path_returns_not_ready(self):
         """유효하지 않은 승격 경로는 ready=False를 반환합니다."""
-        import asyncio
         from src.utils.strategy_promotion import StrategyPromoter
 
         promoter = StrategyPromoter()
-        result = asyncio.run(
-            promoter.evaluate_promotion_readiness("A", "real", "virtual")
-        )
+        result = await promoter.evaluate_promotion_readiness("A", "real", "virtual")
         self.assertFalse(result.ready)
         self.assertIn("유효하지 않은", result.message)
 
@@ -146,7 +137,7 @@ class TestPromotionReadiness(unittest.TestCase):
         return trades
 
 
-class TestPromoteStrategy(unittest.TestCase):
+class TestPromoteStrategy(unittest.IsolatedAsyncioTestCase):
     """전략 승격 실행 테스트."""
 
     def setUp(self):
@@ -159,15 +150,12 @@ class TestPromoteStrategy(unittest.TestCase):
     @patch("src.utils.strategy_promotion.StrategyPromoter._record_promotion", new_callable=AsyncMock)
     @patch("src.utils.strategy_promotion.StrategyPromoter._count_trading_days", new_callable=AsyncMock, return_value=5)
     @patch("src.utils.strategy_promotion.StrategyPromoter._fetch_strategy_trades", new_callable=AsyncMock, return_value=[])
-    def test_promote_fails_without_force(self, mock_trades, mock_days, mock_record):
+    async def test_promote_fails_without_force(self, mock_trades, mock_days, mock_record):
         """기준 미충족 + force=False면 승격 실패."""
-        import asyncio
         from src.utils.strategy_promotion import StrategyPromoter
 
         promoter = StrategyPromoter()
-        result = asyncio.run(
-            promoter.promote_strategy("A", "virtual", "paper", force=False)
-        )
+        result = await promoter.promote_strategy("A", "virtual", "paper", force=False)
         self.assertFalse(result.success)
         mock_record.assert_not_called()
 
@@ -175,15 +163,12 @@ class TestPromoteStrategy(unittest.TestCase):
     @patch("src.utils.strategy_promotion.StrategyPromoter._record_promotion", new_callable=AsyncMock)
     @patch("src.utils.strategy_promotion.StrategyPromoter._count_trading_days", new_callable=AsyncMock, return_value=5)
     @patch("src.utils.strategy_promotion.StrategyPromoter._fetch_strategy_trades", new_callable=AsyncMock, return_value=[])
-    def test_promote_succeeds_with_force(self, mock_trades, mock_days, mock_record):
+    async def test_promote_succeeds_with_force(self, mock_trades, mock_days, mock_record):
         """기준 미충족이라도 force=True면 승격 성공."""
-        import asyncio
         from src.utils.strategy_promotion import StrategyPromoter
 
         promoter = StrategyPromoter()
-        result = asyncio.run(
-            promoter.promote_strategy("A", "virtual", "paper", force=True)
-        )
+        result = await promoter.promote_strategy("A", "virtual", "paper", force=True)
         self.assertTrue(result.success)
         mock_record.assert_called_once()
 
