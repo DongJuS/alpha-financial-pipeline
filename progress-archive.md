@@ -5,6 +5,13 @@
 
 ---
 
+## Kustomize 인프라 분리 + overlays 보강 (2026-03-29)
+
+PR #64. base에서 postgres/redis/minio yaml 삭제 → Bitnami Helm으로 이관. configmap/secrets 서비스명 Bitnami 기준 변경. overlays/dev: Colima storage 패치. overlays/prod: TLS ingress, 리소스 패치.
+- **왜**: Stateful 인프라(DB/캐시/스토리지)는 커뮤니티 검증된 Bitnami chart가 직접 작성 YAML보다 안전. 앱(Stateless)과 인프라(Stateful) 관심사 분리.
+
+---
+
 ## Step 3 — RL 부트스트랩 + 3전략 동시 블렌딩 (2026-03-29)
 
 PR #32/#33/#34. 장 전(RL 학습) → 장 중(A/B/RL 블렌딩) → 장 후(재학습+가중치 조정) 운영 흐름 완성.
