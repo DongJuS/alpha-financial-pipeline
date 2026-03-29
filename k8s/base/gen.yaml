@@ -1,0 +1,91 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gen
+  labels:
+    app: gen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gen
+  template:
+    metadata:
+      labels:
+        app: gen
+    spec:
+      containers:
+        - name: gen
+          image: alpha-trading:latest
+          imagePullPolicy: IfNotPresent
+          command: ["uvicorn", "src.gen.server:app", "--host", "0.0.0.0", "--port", "9999"]
+          ports:
+            - containerPort: 9999
+          livenessProbe:
+            httpGet:
+              path: /gen/status
+              port: 9999
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /gen/status
+              port: 9999
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gen
+spec:
+  ports:
+    - port: 9999
+      targetPort: 9999
+  selector:
+    app: gen
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gen-collector
+  labels:
+    app: gen-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gen-collector
+  template:
+    metadata:
+      labels:
+        app: gen-collector
+    spec:
+      containers:
+        - name: gen-collector
+          image: alpha-trading:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "src.agents.gen_collector", "--gen-url", "http://gen:9999", "--mode", "continuous", "--tick-cycles", "60"]
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secret
+          env:
+            - name: GEN_API_URL
+              value: "http://gen:9999"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
