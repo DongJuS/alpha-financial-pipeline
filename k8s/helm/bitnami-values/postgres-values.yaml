@@ -1,0 +1,24 @@
+# Bitnami PostgreSQL Helm chart values
+# 설치: helm install postgresql bitnami/postgresql -n alpha-trading -f postgres-values.yaml
+
+auth:
+  database: alpha_db
+  username: alpha_user
+  password: alpha_pass
+
+primary:
+  persistence:
+    size: 10Gi
+    storageClass: local-path
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false  # Prometheus Operator 없으면 false
