@@ -45,7 +45,7 @@ class TestAggregateRiskMonitorConfig(unittest.TestCase):
         self.assertAlmostEqual(monitor.max_single_stock_pct, 50.0)
 
 
-class TestExposureCheck(unittest.TestCase):
+class TestExposureCheck(unittest.IsolatedAsyncioTestCase):
     """종목별 노출 조회 테스트."""
 
     def setUp(self):
@@ -57,10 +57,8 @@ class TestExposureCheck(unittest.TestCase):
     @patch.dict("os.environ", ENV_PATCH)
     @patch("src.utils.aggregate_risk.AggregateRiskMonitor._total_aum", new_callable=AsyncMock, return_value=10_000_000)
     @patch("src.utils.aggregate_risk.fetch")
-    def test_check_total_exposure_within_limit(self, mock_fetch, mock_aum):
+    async def test_check_total_exposure_within_limit(self, mock_fetch, mock_aum):
         """노출 한도 이내인 경우 over_limit=False."""
-        import asyncio
-
         mock_fetch.return_value = [
             {"ticker": "005930", "strategy_id": "A", "account_scope": "virtual",
              "quantity": 10, "current_price": 70000, "market_value": 700000},
@@ -70,9 +68,7 @@ class TestExposureCheck(unittest.TestCase):
 
         from src.utils.aggregate_risk import AggregateRiskMonitor
         monitor = AggregateRiskMonitor()
-        result = asyncio.run(
-            monitor.check_total_exposure("005930")
-        )
+        result = await monitor.check_total_exposure("005930")
 
         self.assertEqual(result.total_quantity, 15)
         self.assertEqual(result.total_market_value, 1_050_000)
@@ -82,10 +78,8 @@ class TestExposureCheck(unittest.TestCase):
     @patch.dict("os.environ", ENV_PATCH)
     @patch("src.utils.aggregate_risk.AggregateRiskMonitor._total_aum", new_callable=AsyncMock, return_value=1_000_000)
     @patch("src.utils.aggregate_risk.fetch")
-    def test_check_total_exposure_over_limit(self, mock_fetch, mock_aum):
+    async def test_check_total_exposure_over_limit(self, mock_fetch, mock_aum):
         """노출 한도 초과 시 over_limit=True."""
-        import asyncio
-
         mock_fetch.return_value = [
             {"ticker": "005930", "strategy_id": "A", "account_scope": "virtual",
              "quantity": 100, "current_price": 70000, "market_value": 7_000_000},
@@ -93,15 +87,13 @@ class TestExposureCheck(unittest.TestCase):
 
         from src.utils.aggregate_risk import AggregateRiskMonitor
         monitor = AggregateRiskMonitor()
-        result = asyncio.run(
-            monitor.check_total_exposure("005930")
-        )
+        result = await monitor.check_total_exposure("005930")
 
         self.assertTrue(result.over_limit)
         self.assertGreater(result.exposure_pct, 30.0)
 
 
-class TestStrategyCorrelation(unittest.TestCase):
+class TestStrategyCorrelation(unittest.IsolatedAsyncioTestCase):
     """전략 간 종목 중복도 분석 테스트."""
 
     def setUp(self):
@@ -112,27 +104,21 @@ class TestStrategyCorrelation(unittest.TestCase):
 
     @patch.dict("os.environ", ENV_PATCH)
     @patch("src.utils.aggregate_risk.fetch")
-    def test_no_overlaps(self, mock_fetch):
+    async def test_no_overlaps(self, mock_fetch):
         """중복 종목이 없을 때 빈 결과를 반환합니다."""
-        import asyncio
-
         mock_fetch.return_value = []
 
         from src.utils.aggregate_risk import AggregateRiskMonitor
         monitor = AggregateRiskMonitor()
-        result = asyncio.run(
-            monitor.check_strategy_correlation()
-        )
+        result = await monitor.check_strategy_correlation()
 
         self.assertEqual(result["overlap_tickers"], 0)
         self.assertEqual(len(result["details"]), 0)
 
     @patch.dict("os.environ", ENV_PATCH)
     @patch("src.utils.aggregate_risk.fetch")
-    def test_with_overlaps(self, mock_fetch):
+    async def test_with_overlaps(self, mock_fetch):
         """중복 종목이 있을 때 정확한 결과를 반환합니다."""
-        import asyncio
-
         mock_fetch.return_value = [
             {"ticker": "005930", "strategy_count": 3, "strategies": ["A", "B", "RL"]},
             {"ticker": "035420", "strategy_count": 2, "strategies": ["A", "B"]},
@@ -140,9 +126,7 @@ class TestStrategyCorrelation(unittest.TestCase):
 
         from src.utils.aggregate_risk import AggregateRiskMonitor
         monitor = AggregateRiskMonitor()
-        result = asyncio.run(
-            monitor.check_strategy_correlation()
-        )
+        result = await monitor.check_strategy_correlation()
 
         self.assertEqual(result["overlap_tickers"], 2)
         self.assertEqual(result["max_overlap"]["ticker"], "005930")
