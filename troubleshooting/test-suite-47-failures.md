@@ -136,19 +136,36 @@
 
 ---
 
-## 해결 현황 (2026-03-29 PR #45)
+## 해결 현황
+
+### PR #45 (2026-03-29): 1차 정비 — 462→512 passed
 
 | 카테고리 | 원래 건수 | 해결 | 잔여 |
 |---|---|---|---|
 | Python 3.9 문법 | 8 | **8** ✅ | 0 |
-| pytest-asyncio event loop | 14 | **일부** | 32건 event loop 오염 잔존 (별도 문서) |
 | API/모델 인터페이스 불일치 | 17 | **17** ✅ | 0 |
-| DB 미연결 | 3 | 0 | 3 (환경 의존) |
-| 수집 오류 | 5 | **4** | 1 (test_search_pipeline import) |
+| 수집 오류 | 5 | **4** | 1 |
 
-**전체: 462 passed → 512 passed (+50 개선)**
+### PR #50 (2026-03-29): 완전 정비 — 512→557 passed, **0 failed**
 
-잔여 38건 상세는 `test-suite-event-loop-pollution.md` 참조.
+| 카테고리 | 잔여 | 해결 | 방법 |
+|---|---|---|---|
+| pytest-asyncio event loop 오염 | 32건 | **32** ✅ | conftest.py deprecated `event_loop` fixture 제거 + `IsolatedAsyncioTestCase` 전환 |
+| test_search_pipeline import 오류 | 1건 | **1** ✅ | SearchAgent 현재 인터페이스에 맞게 전면 재작성 |
+| DB 미연결 | 3건 | **3** ✅ | `@pytest.mark.integration` 마킹 (deselected) |
+
+**최종: 557 passed, 0 failed, 2 skipped, 5 deselected (integration)**
+
+### 근본 원인과 해결
+
+**event loop 오염 (가장 큰 문제):**
+- **원인:** `conftest.py`의 session-scoped `event_loop` fixture가 pytest-asyncio 0.26에서 deprecated됨. `IsolatedAsyncioTestCase`가 자체 loop를 만드는데, session loop와 충돌하여 "no current event loop" 에러 cascade 발생.
+- **해결:** `event_loop` fixture 제거 + `asyncio.run()` 직접 호출을 `IsolatedAsyncioTestCase` + `await`로 전환.
+- **영향 파일:** conftest.py, test_blend_nway.py, test_aggregate_risk.py, test_strategy_promotion.py, test_data_pipeline.py, test_rl_bootstrap.py
+
+**SearchAgent 인터페이스 변경 (test_search_pipeline.py):**
+- **원인:** `FetchResult`, `ExtractionResult` 클래스가 src에서 제거됨. `SearchAgent.__init__`에서 `searxng_client=` 인자 제거됨. `_extract_structured()`, `_fetch_pages()` 메서드 제거됨.
+- **해결:** 삭제된 모델을 테스트 내 로컬 dataclass로 정의. SearchAgent 테스트를 `patch.object(agent, "_searxng")` 방식으로 재작성.
 
 ---
 
