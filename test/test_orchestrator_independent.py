@@ -47,15 +47,15 @@ def find_class_in_ast(tree: ast.Module, class_name: str) -> ast.ClassDef | None:
 def find_method_in_class(
     class_def: ast.ClassDef,
     method_name: str,
-) -> ast.FunctionDef | None:
-    """클래스 내에서 메서드를 찾습니다."""
+) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    """클래스 내에서 메서드를 찾습니다 (sync/async 모두 지원)."""
     for node in class_def.body:
-        if isinstance(node, ast.FunctionDef) and node.name == method_name:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == method_name:
             return node
     return None
 
 
-def get_function_args(func_def: ast.FunctionDef) -> list[str]:
+def get_function_args(func_def: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
     """함수의 인자 목록을 반환합니다."""
     return [arg.arg for arg in func_def.args.args]
 
@@ -326,10 +326,10 @@ class TestOrchestratorCLI:
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # --independent-portfolio 플래그 근처 코드 검사
+        # --independent-portfolio 플래그 근처 코드 검사 (argparse 정의 부분)
         if "--independent-portfolio" in content:
-            # store_true가 그 근처에 있는지 확인
-            idx = content.find("--independent-portfolio")
+            # argparse add_argument 근처에서 store_true 확인 (docstring이 아닌 실제 코드)
+            idx = content.rfind("--independent-portfolio")  # 마지막 출현 = argparse 정의
             context = content[max(0, idx - 200) : idx + 200]
             assert (
                 "action=" in context and "store_true" in context

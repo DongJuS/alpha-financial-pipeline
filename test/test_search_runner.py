@@ -13,7 +13,7 @@ import unittest
 from datetime import date
 from pathlib import Path
 from typing import Optional
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -208,9 +208,19 @@ class TestResearchPortfolioManager(unittest.IsolatedAsyncioTestCase):
             search_agent=self.mock_search,
             max_concurrent_searches=2,
         )
+        # Redis/DB 의존성 mock
+        self._patches = [
+            patch("src.agents.research_portfolio_manager.get_redis", new_callable=AsyncMock),
+            patch("src.agents.research_portfolio_manager.set_heartbeat", new_callable=AsyncMock),
+            patch("src.agents.research_portfolio_manager.insert_heartbeat", new_callable=AsyncMock),
+        ]
+        for p in self._patches:
+            p.start()
 
     async def asyncTearDown(self):
         """각 테스트 후 정리."""
+        for p in self._patches:
+            p.stop()
         await self.rpm.close()
 
     async def test_run_research_cycle_empty_tickers(self):
@@ -239,10 +249,12 @@ class TestResearchPortfolioManager(unittest.IsolatedAsyncioTestCase):
         """다중 티커 병렬 리서치."""
         self.mock_search.outputs = {
             "005930": ResearchOutput(
-                query="test", sentiment="bullish", confidence=0.9, sources=[{"url": "test", "title": "test"}]
+                query="test", sentiment="bullish", confidence=0.9, sources=[{"url": "test", "title": "test"}],
+                key_facts=[], risk_factors=[],
             ),
             "000660": ResearchOutput(
-                query="test", sentiment="bearish", confidence=0.8, sources=[{"url": "test", "title": "test"}]
+                query="test", sentiment="bearish", confidence=0.8, sources=[{"url": "test", "title": "test"}],
+                key_facts=[], risk_factors=[],
             ),
         }
         signals = await self.rpm.run_research_cycle(["005930", "000660"])
@@ -252,17 +264,19 @@ class TestResearchPortfolioManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by_ticker["000660"].signal, "SELL")
 
     async def test_run_research_cycle_with_ticker_names(self):
-        """ticker_names 파라미터 전달."""
+        """ticker_names 파라미터 전달 → 쿼리에 종목명 포함."""
         ticker_names = {"005930": "삼성전자"}
         self.mock_search.outputs = {
             "005930": ResearchOutput(
-                query="test", sentiment="bullish", confidence=0.9, sources=[{"url": "test", "title": "test"}]
+                query="test", sentiment="bullish", confidence=0.9, sources=[{"url": "test", "title": "test"}],
+                key_facts=[], risk_factors=[],
             )
         }
         signals = await self.rpm.run_research_cycle(["005930"], ticker_names=ticker_names)
         self.assertEqual(len(signals), 1)
-        # query 생성에 ticker_name이 사용되는지 확인
-        self.assertIn("삼성전자", self.mock_search.outputs["005930"].query)
+        # _build_query에 ticker_name이 전달되어 쿼리에 종목명 포함되는지 확인
+        query = self.rpm._build_query("005930", "삼성전자")
+        self.assertIn("삼성전자", query)
 
     async def test_build_query_with_name(self):
         """쿼리 생성 with ticker name."""
@@ -299,7 +313,8 @@ class TestResearchPortfolioManager(unittest.IsolatedAsyncioTestCase):
             if call_count[0] == 2:
                 raise RuntimeError("검색 실패!")
             return ResearchOutput(
-                query="test", sentiment="bullish", confidence=0.9, sources=[{"url": "test", "title": "test"}]
+                query="test", sentiment="bullish", confidence=0.9, sources=[{"url": "test", "title": "test"}],
+                key_facts=[], risk_factors=[],
             )
 
         self.mock_search.run_research = partial_failing_research
@@ -346,7 +361,8 @@ class TestResearchPortfolioManager(unittest.IsolatedAsyncioTestCase):
 
         self.mock_search.outputs = {
             "005930": ResearchOutput(
-                query="test", sentiment="bullish", confidence=0.9, sources=[{"url": "test", "title": "test"}]
+                query="test", sentiment="bullish", confidence=0.9, sources=[{"url": "test", "title": "test"}],
+                key_facts=[], risk_factors=[],
             )
         }
 
@@ -373,9 +389,19 @@ class TestSearchRunnerProtocol(unittest.IsolatedAsyncioTestCase):
             search_agent=self.mock_search_agent,
         )
         self.runner = SearchRunner(self.rpm)
+        # Redis/DB 의존성 mock
+        self._patches = [
+            patch("src.agents.research_portfolio_manager.get_redis", new_callable=AsyncMock),
+            patch("src.agents.research_portfolio_manager.set_heartbeat", new_callable=AsyncMock),
+            patch("src.agents.research_portfolio_manager.insert_heartbeat", new_callable=AsyncMock),
+        ]
+        for p in self._patches:
+            p.start()
 
     async def asyncTearDown(self):
         """각 테스트 후 정리."""
+        for p in self._patches:
+            p.stop()
         await self.rpm.close()
 
     async def test_runner_has_name(self):
@@ -391,7 +417,8 @@ class TestSearchRunnerProtocol(unittest.IsolatedAsyncioTestCase):
         """run()이 PredictionSignal 리스트를 반환."""
         self.mock_search_agent.outputs = {
             "005930": ResearchOutput(
-                query="test", sentiment="bullish", confidence=0.9, sources=[{"url": "test", "title": "test"}]
+                query="test", sentiment="bullish", confidence=0.9, sources=[{"url": "test", "title": "test"}],
+                key_facts=[], risk_factors=[],
             )
         }
         tickers = ["005930"]
@@ -403,10 +430,12 @@ class TestSearchRunnerProtocol(unittest.IsolatedAsyncioTestCase):
         """run()이 다중 티커를 처리."""
         self.mock_search_agent.outputs = {
             "005930": ResearchOutput(
-                query="test", sentiment="bullish", confidence=0.9, sources=[{"url": "test", "title": "test"}]
+                query="test", sentiment="bullish", confidence=0.9, sources=[{"url": "test", "title": "test"}],
+                key_facts=[], risk_factors=[],
             ),
             "000660": ResearchOutput(
-                query="test", sentiment="bearish", confidence=0.8, sources=[{"url": "test", "title": "test"}]
+                query="test", sentiment="bearish", confidence=0.8, sources=[{"url": "test", "title": "test"}],
+                key_facts=[], risk_factors=[],
             ),
         }
         signals = await self.runner.run(["005930", "000660"])
