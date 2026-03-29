@@ -1,0 +1,92 @@
+# ================================================================
+# Deploy Pipeline — K3s 배포 자동화
+#
+# 트리거: CI 완료 후 main push, 수동 dispatch
+# 전제: K3s 호스트에 self-hosted runner 또는 SSH 접근 설정
+# ================================================================
+
+name: Deploy to K3s
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "배포할 이미지 태그 (기본: latest)"
+        required: false
+        default: "latest"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy to K3s via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.K3S_HOST }}
+          username: ${{ secrets.K3S_USER }}
+          key: ${{ secrets.K3S_SSH_KEY }}
+          script: |
+            set -e
+
+            IMAGE_TAG="${{ steps.tag.outputs.tag }}"
+            REGISTRY="${{ env.REGISTRY }}"
+            IMAGE="${{ env.IMAGE_NAME }}"
+
+            echo "=== Deploying ${IMAGE}:${IMAGE_TAG} ==="
+
+            # Helm이 설치되어 있으면 Helm으로, 아니면 kubectl로 배포
+            if command -v helm &> /dev/null && [ -d ~/agents-investing/k8s/helm/alpha-trading ]; then
+              echo "--- Helm upgrade ---"
+              helm upgrade --install alpha-trading ~/agents-investing/k8s/helm/alpha-trading \
+                --set image.repository="${REGISTRY}/${IMAGE}" \
+                --set image.tag="${IMAGE_TAG}" \
+                --namespace alpha-trading \
+                --create-namespace \
+                --wait --timeout 5m
+            else
+              echo "--- kubectl rolling update ---"
+              kubectl set image deployment/alpha-api \
+                api="${REGISTRY}/${IMAGE}:${IMAGE_TAG}" \
+                -n alpha-trading
+              kubectl set image deployment/alpha-worker \
+                worker="${REGISTRY}/${IMAGE}:${IMAGE_TAG}" \
+                -n alpha-trading
+              kubectl rollout status deployment/alpha-api -n alpha-trading --timeout=5m
+              kubectl rollout status deployment/alpha-worker -n alpha-trading --timeout=5m
+            fi
+
+            echo "=== Deploy complete ==="
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.K3S_HOST }}
+          username: ${{ secrets.K3S_USER }}
+          key: ${{ secrets.K3S_SSH_KEY }}
+          script: |
+            echo "=== Pod status ==="
+            kubectl get pods -n alpha-trading -o wide
+            echo ""
+            echo "=== Recent events ==="
+            kubectl get events -n alpha-trading --sort-by='.lastTimestamp' | tail -10
