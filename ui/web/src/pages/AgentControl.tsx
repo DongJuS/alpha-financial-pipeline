@@ -168,9 +168,18 @@ export default function AgentControl() {
             <div key={i} className="h-28 skeleton" />
           ))}
         </div>
+      ) : !agents || agents.length === 0 ? (
+        <div className="card py-10 text-center">
+          <p className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>
+            등록된 에이전트가 없습니다.
+          </p>
+          <p className="mt-1 text-xs" style={{ color: "var(--text-tertiary)" }}>
+            Orchestrator Worker를 실행하면 에이전트가 자동 등록됩니다.
+          </p>
+        </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-3">
-          {agents?.map((agent) => (
+          {agents.map((agent) => (
             <AgentCard
               key={agent.agent_id}
               agent={agent}
