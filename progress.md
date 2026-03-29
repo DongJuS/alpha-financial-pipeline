@@ -30,37 +30,15 @@ Step 4   K3s 프로덕션 배포       ████████░░   80% 🔧
 
 ## 🔄 미완료 / 진행 중
 
-### Step 5: Alpha 안정화 + 제출 준비 (🔴 3/30 마감)
-- [x] `docker compose up -d --build` 전체 서비스 기동 확인 (PR #48)
-- [x] API / UI / worker 기본 헬스체크 통과 — 8개 서비스 전부 healthy (PR #54)
-- [x] Collector → Orchestrator 1사이클 재현 — gen 모드 주말 완주 (PR #49) + LLM 미설정 graceful degradation 검증 (수집 24건→3전략 병렬→블렌딩 fallback→S3 저장, 16초)
-- [x] smoke test 통과 — DB/Redis/API/FDR 전체 ✅ (PR #48, 로컬 재검증 완료)
-- [x] README 정량 지표 추가 (PR #53)
-- [x] Airflow 비교 문서 작성 (PR #53)
+### 제출 (🔴 3/30 마감)
 - [ ] 이력서 DE 언어 전환 (Obsidian Phase4-합격전략.md 번역 매핑표 참조)
 - [ ] 제출
 
-### Step 4: K3s 프로덕션 배포 (잔여)
-- [x] Helm chart 기본 구조 (PR #38)
-- [x] CI/CD 파이프라인 (PR #51) — lint → test → helm lint → build
-- [x] Dockerfile multi-stage 프로덕션 빌드 (PR #39)
-- [x] 모니터링 Prometheus + Grafana (PR #36)
-- [x] Helm chart lint/template 검증 + readiness 정합 (PR #42)
-- [ ] Helm chart 실배포 검증 (K3s 클러스터 필요)
-
-### Step 6: 테스트 스위트 완전 정비 ✅
-- [x] Python 3.9 문법 호환 (PR #45)
-- [x] 인터페이스 불일치 17건 수정 (PR #45)
-- [x] conftest.py 환경변수 자동 주입 (PR #45)
-- [x] strategy_promotion deepcopy 버그 수정 (PR #45)
-- [x] event loop 오염 32건 해결 (PR #50)
-- [x] DB 미연결 3건 `@pytest.mark.integration` 마킹 (PR #50)
-- [x] test_search_pipeline import 에러 수정 (PR #50)
-- **최종: 557 passed, 0 failed, 2 skipped, 5 deselected**
+### Step 4 잔여: K3s 프로덕션 배포
+- [ ] K3s 클러스터 실배포 검증
 
 ### 보류
 - [ ] SearchAgent — Step 4 완료 후 재개
-- [ ] K3s 실배포 검증
 
 ---
 
