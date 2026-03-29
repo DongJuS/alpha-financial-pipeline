@@ -12,7 +12,7 @@
 - **코어 트레이딩**: Phase 1~13 구현 완료, 유지보수 단계
 - **Step 3 완료**: RL 부트스트랩 + 3전략 동시 블렌딩
 - **Step 4 대부분 완료**: Helm chart + CI/CD + Dockerfile. 모니터링/실배포만 잔여
-- **Step 5 완료**: Alpha 안정화 (e2e 검증, smoke test, 1사이클 재현, README, Airflow 비교 문서)
+- **Step 5 완료**: Alpha 안정화 (e2e 검증, smoke test, Collector→Orchestrator 1사이클 재현, README, Airflow 비교 문서)
 - **Step 6 완료**: 테스트 557 passed, 0 failed
 - **다음 목표**: 제출(3/30) → 모니터링 → K3s 실배포
 
