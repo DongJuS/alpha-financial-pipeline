@@ -63,6 +63,22 @@ class Settings(BaseSettings):
         default='{"A": 0.30, "B": 0.30, "RL": 0.20, "S": 0.20}',
         alias="STRATEGY_BLEND_WEIGHTS",
     )
+    dynamic_blend_weights_enabled: bool = Field(
+        default=False,
+        alias="DYNAMIC_BLEND_WEIGHTS_ENABLED",
+    )
+    dynamic_blend_lookback_days: int = Field(
+        default=30,
+        ge=1,
+        le=365,
+        alias="DYNAMIC_BLEND_LOOKBACK_DAYS",
+    )
+    dynamic_blend_min_weight: float = Field(
+        default=0.05,
+        ge=0.0,
+        le=0.5,
+        alias="DYNAMIC_BLEND_MIN_WEIGHT",
+    )
     strategy_a_rolling_days: int = Field(default=5, ge=1, le=30, alias="STRATEGY_A_ROLLING_DAYS")
     strategy_a_min_samples: int = Field(default=3, ge=1, le=50, alias="STRATEGY_A_MIN_SAMPLES")
     strategy_b_max_rounds: int = Field(default=2, ge=1, le=5, alias="STRATEGY_B_MAX_ROUNDS")
