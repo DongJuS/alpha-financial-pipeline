@@ -12,6 +12,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from src.utils.config import get_settings
+
 ENV_PATCH = {
     "DATABASE_URL": "postgresql://test:test@localhost:5432/test",
     "JWT_SECRET": "test-secret",
@@ -24,6 +26,12 @@ ENV_PATCH = {
 
 class TestVirtualBrokerSlippage(unittest.TestCase):
     """VirtualBroker 슬리피지 적용 테스트."""
+
+    def setUp(self):
+        get_settings.cache_clear()
+
+    def tearDown(self):
+        get_settings.cache_clear()
 
     @patch.dict("os.environ", ENV_PATCH)
     def test_buy_slippage_increases_price(self):
@@ -69,6 +77,12 @@ class TestVirtualBrokerSlippage(unittest.TestCase):
 class TestVirtualBrokerPartialFill(unittest.TestCase):
     """VirtualBroker 부분 체결 테스트."""
 
+    def setUp(self):
+        get_settings.cache_clear()
+
+    def tearDown(self):
+        get_settings.cache_clear()
+
     @patch.dict("os.environ", ENV_PATCH)
     def test_partial_fill_disabled_returns_full_qty(self):
         """부분 체결 비활성화 시 전량 반환."""
@@ -112,6 +126,12 @@ class TestVirtualBrokerPartialFill(unittest.TestCase):
 
 class TestVirtualBrokerConfig(unittest.TestCase):
     """VirtualBroker 설정 로딩 테스트."""
+
+    def setUp(self):
+        get_settings.cache_clear()
+
+    def tearDown(self):
+        get_settings.cache_clear()
 
     @patch.dict("os.environ", ENV_PATCH)
     def test_default_config(self):
@@ -174,6 +194,12 @@ class TestAccountScopeVirtual(unittest.TestCase):
 
 class TestBuildBrokerForScope(unittest.TestCase):
     """build_broker_for_scope virtual 분기 테스트."""
+
+    def setUp(self):
+        get_settings.cache_clear()
+
+    def tearDown(self):
+        get_settings.cache_clear()
 
     @patch.dict("os.environ", ENV_PATCH)
     def test_build_virtual_broker(self):
