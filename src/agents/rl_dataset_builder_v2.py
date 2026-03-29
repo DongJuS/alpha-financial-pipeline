@@ -10,17 +10,15 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from src.db.models import PredictionSignal
 from src.db.queries import fetch_recent_market_data
 from src.utils.logging import get_logger
 from src.utils.redis_client import (
     KEY_MACRO_CONTEXT,
     KEY_MARKET_INDEX,
     KEY_SECTOR_MAP,
-    TTL_MACRO_CONTEXT,
     get_redis,
 )
 

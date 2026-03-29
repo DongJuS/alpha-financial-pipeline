@@ -8,12 +8,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 from src.utils.account_scope import AccountScope
 from src.utils.config import get_settings
-from src.utils.db_client import execute, fetch, fetchrow, fetchval
+from src.utils.db_client import execute, fetch, fetchval
 from src.utils.logging import get_logger
 from src.utils.performance import compute_trade_performance
 

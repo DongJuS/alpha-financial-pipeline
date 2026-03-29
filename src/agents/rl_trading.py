@@ -14,6 +14,8 @@ from pathlib import Path
 import random
 from typing import Literal, Optional
 
+from src.utils.market_data import compute_change_pct
+
 from src.db.models import PredictionSignal
 from src.db.queries import fetch_recent_market_data, get_position
 from src.utils.logging import get_logger
@@ -143,7 +145,7 @@ class RLDatasetBuilder:
             )
             try:
                 import FinanceDataReader as fdr
-                from datetime import date, timedelta, timezone as tz
+                from datetime import date, timedelta
                 from zoneinfo import ZoneInfo
 
                 KST = ZoneInfo("Asia/Seoul")

@@ -12,7 +12,6 @@ SearXNG → 스니펫 구조화 → Claude CLI 감성 분석 파이프라인.
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Optional
 from zoneinfo import ZoneInfo

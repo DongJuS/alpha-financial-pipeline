@@ -15,12 +15,12 @@ Usage:
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from inspect import signature
 from typing import Any, Callable, Protocol
 
-from src.agents.rl_trading import RLDataset, RLEvaluationMetrics, RLSplitMetadata
+from src.agents.rl_trading import RLDataset, RLEvaluationMetrics
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)

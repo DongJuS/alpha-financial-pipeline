@@ -7,7 +7,6 @@ APScheduler를 사용하여 시장 시간 중(09:00~15:30 KST, 월~금) 30초마
 
 from __future__ import annotations
 
-from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler

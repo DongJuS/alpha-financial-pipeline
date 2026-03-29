@@ -12,7 +12,6 @@ from src.utils.config import (
     Settings,
     get_settings,
     has_kis_credentials,
-    kis_account_number_for_scope,
     kis_app_key_for_scope,
     kis_app_secret_for_scope,
 )

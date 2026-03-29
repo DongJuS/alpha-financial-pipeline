@@ -413,11 +413,6 @@ class OrchestratorAgent:
 
         from src.utils.blend_weight_optimizer import BlendWeightOptimizer
 
-        optimizer = BlendWeightOptimizer(
-            base_weights=self.strategy_blend_weights,
-            lookback_days=settings.dynamic_blend_lookback_days,
-            min_weight=settings.dynamic_blend_min_weight,
-        )
         # 활성 전략만 대상으로 최적화 (등록되지 않은 전략은 base_weight 유지)
         base_for_active = {
             k: v for k, v in self.strategy_blend_weights.items() if k in active_strategies

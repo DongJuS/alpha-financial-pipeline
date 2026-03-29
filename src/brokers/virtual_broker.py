@@ -10,13 +10,12 @@ from __future__ import annotations
 import asyncio
 import random
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from src.utils.config import get_settings
-from src.utils.db_client import execute, fetch, fetchrow, fetchval
+from src.utils.db_client import execute, fetch, fetchrow
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -6,16 +6,13 @@ URL canonicalization, and error handling.
 """
 
 import asyncio
-import hashlib
 import logging
 import time
-from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Optional
 from urllib.parse import urlencode, urlparse, parse_qs
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 

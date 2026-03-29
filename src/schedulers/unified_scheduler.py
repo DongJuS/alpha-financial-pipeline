@@ -206,7 +206,7 @@ async def start_unified_scheduler() -> None:
 
             gpt = GPTClient()
             providers_ok["gpt"] = gpt.is_configured
-        except Exception as exc:
+        except Exception:
             providers_ok["gpt"] = False
 
         available = [k for k, v in providers_ok.items() if v]
@@ -248,7 +248,6 @@ async def start_unified_scheduler() -> None:
         """성과 기반으로 A/B/RL 블렌딩 가중치를 재계산·기록한다."""
         from src.utils.blend_weight_optimizer import (
             BlendWeightOptimizer,
-            fetch_strategy_performance,
         )
         from src.utils.config import get_settings
 
