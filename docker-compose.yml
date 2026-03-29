@@ -103,7 +103,7 @@ services:
       # Gemini OAuth: 호스트의 gcloud ADC 인증 파일을 컨테이너에 마운트
       - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
       # Claude CLI: 호스트 인증 정보를 읽기 전용으로 마운트
-      - ${HOME}/.claude:/root/.claude:ro
+      - ${HOME}/.claude:/root/.claude:rw
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 
   worker:
@@ -141,7 +141,7 @@ services:
       - ./:/app
       - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
       # Claude CLI: 호스트 인증 정보를 읽기 전용으로 마운트
-      - ${HOME}/.claude:/root/.claude:ro
+      - ${HOME}/.claude:/root/.claude:rw
     command: python scripts/run_orchestrator_worker.py
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
