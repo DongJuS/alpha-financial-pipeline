@@ -1,0 +1,10 @@
+# dev: Colima K3s에서 RL 데이터 PVC를 local-path로 설정
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rl-data-pvc
+spec:
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 2Gi
