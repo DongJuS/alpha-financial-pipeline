@@ -8,7 +8,6 @@ RLPolicyStoreV2 + TabularQTrainerV2를 래핑하여 StrategyRunner 프로토콜�
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
 
 from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
 from src.agents.rl_trading_v2 import TabularQTrainerV2
@@ -107,7 +106,7 @@ class RLRunner:
         if not candles or len(candles) < _MIN_CLOSES_FOR_INFERENCE:
             logger.warning(
                 "RLRunner: %s 캔들 데이터 부족 (%d건, 최소 %d건 필요)",
-                ticker,
+                db_ticker,
                 len(candles) if candles else 0,
                 _MIN_CLOSES_FOR_INFERENCE,
             )

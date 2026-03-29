@@ -30,7 +30,7 @@ def print_stats(store: RLPolicyStoreV2) -> None:
     """레지스트리 통계를 출력합니다."""
     registry = store.load_registry()
     print(f"\n{'='*50}")
-    print(f"  RL 정책 레지스트리 통계")
+    print("  RL 정책 레지스트리 통계")
     print(f"{'='*50}\n")
     print(f"  레지스트리 버전: {registry.version}")
     print(f"  마지막 업데이트: {registry.last_updated}")
@@ -77,7 +77,7 @@ def run_cleanup(*, execute: bool = False) -> None:
         print("정리 대상 없음")
 
     if not execute and removed:
-        print(f"\n실제 삭제하려면 --execute 플래그를 추가하세요.")
+        print("\n실제 삭제하려면 --execute 플래그를 추가하세요.")
     print()
 
 
