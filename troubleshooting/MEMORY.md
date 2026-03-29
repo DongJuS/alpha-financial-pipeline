@@ -18,4 +18,9 @@
 
 ---
 
-*아직 기록된 트러블슈팅이 없습니다.*
+### 2026-03-29 — 테스트 스위트 47건 실패 → 0건 (PR #44/#45/#50)
+- **증상:** 전체 테스트 실행 시 47건 실패 (event loop 오염 32건, Python 3.9 문법 8건, 인터페이스 불일치 17건 등)
+- **원인:** (1) conftest.py의 session-scoped `event_loop` fixture가 pytest-asyncio 0.26에서 deprecated → `IsolatedAsyncioTestCase`와 충돌하여 cascade 실패. (2) `asyncio.run()` 직접 호출이 event loop를 파괴. (3) SearchAgent 리팩토링 후 테스트 미업데이트.
+- **해결:** (1) deprecated `event_loop` fixture 제거. (2) `asyncio.run()` → `IsolatedAsyncioTestCase` + `await` 전환. (3) test_search_pipeline.py 현재 인터페이스에 맞게 재작성. (4) DB 의존 테스트 `@pytest.mark.integration` 마킹.
+- **영향:** conftest.py, test_blend_nway.py, test_aggregate_risk.py, test_strategy_promotion.py, test_data_pipeline.py, test_rl_bootstrap.py, test_search_pipeline.py, test_portfolio_manager.py, test_risk_validation.py
+- **결과:** 462 passed → **557 passed, 0 failed**
