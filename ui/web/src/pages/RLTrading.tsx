@@ -190,9 +190,22 @@ function ExperimentsTab() {
   const runWF = useRunWalkForward();
   const [ticker, setTicker] = useState("");
   const [episodes, setEpisodes] = useState(500);
+  const [formError, setFormError] = useState("");
 
   function handleTrain() {
-    if (!ticker) return;
+    setFormError("");
+    if (!ticker.trim()) {
+      setFormError("종목 코드를 입력하세요.");
+      return;
+    }
+    if (!/^\d{6}$/.test(ticker.trim())) {
+      setFormError("종목 코드는 6자리 숫자여야 합니다 (예: 005930).");
+      return;
+    }
+    if (episodes < 10 || episodes > 10000) {
+      setFormError("에피소드는 10 ~ 10,000 사이여야 합니다.");
+      return;
+    }
     const payload: TrainingJobRequest = { ticker: ticker.trim(), episodes };
     createJob.mutate(payload);
     setTicker("");
@@ -218,10 +231,14 @@ function ExperimentsTab() {
             />
           </div>
           <div>
-            <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>에피소드</label>
+            <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+              에피소드 <span style={{ color: "var(--text-tertiary)" }}>(10 ~ 10,000)</span>
+            </label>
             <input
               type="number"
               value={episodes}
+              min={10}
+              max={10000}
               onChange={(e) => setEpisodes(Number(e.target.value))}
               className="mt-1 block w-24 rounded-xl border px-3 py-2 text-sm"
               style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
@@ -231,6 +248,11 @@ function ExperimentsTab() {
             {createJob.isPending ? "실행 중..." : "학습 시작"}
           </button>
         </div>
+        {formError && (
+          <p className="mt-2 text-xs font-semibold" style={{ color: "var(--red)" }}>
+            {formError}
+          </p>
+        )}
         {createJob.isSuccess && (
           <p className="mt-2 text-xs font-semibold" style={{ color: "var(--green)" }}>
             트레이닝 잡 생성 완료: {createJob.data?.job_id}

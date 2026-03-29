@@ -134,7 +134,8 @@ class GPTClient:
         if not (cli_command or self._client):
             raise RuntimeError("GPT client is not configured.")
 
-        await reserve_provider_call("codex")
+        provider_name = "codex" if cli_command else "gpt"
+        await reserve_provider_call(provider_name)
 
         if cli_command:
             try:
