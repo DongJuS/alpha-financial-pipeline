@@ -180,22 +180,16 @@ class RLDatasetBuilderTest(unittest.IsolatedAsyncioTestCase):
 
 
 class RLTradingAgentRunCycleTest(unittest.IsolatedAsyncioTestCase):
-    @unittest.skip("OrchestratorAgent no longer accepts use_rl/rl_policy_store — RL mode removed from orchestrator")
-    def test_orchestrator_bootstrap_loads_rl_registry_snapshot(self) -> None:
+    def test_rl_policy_store_v2_save_and_activate(self) -> None:
+        """RLPolicyStoreV2가 정책을 저장하고 활성화할 수 있는지 확인합니다."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = RLPolicyStoreV2(models_dir=Path(tmpdir), auto_save_registry=True)
             artifact = store.save_policy(_policy_artifact("rl_005930_boot"))
             store.activate_policy(artifact)
 
-            agent = OrchestratorAgent(use_rl=True, rl_policy_store=store)
-
-        self.assertIsInstance(agent.rl.policy_store, RLPolicyStoreV2)
-        self.assertIsNotNone(agent.rl_registry_bootstrap)
-        self.assertTrue(agent.rl_registry_bootstrap["registry_enabled"])
-        self.assertTrue(agent.rl_registry_bootstrap["registry_exists"])
-        self.assertEqual(agent.rl_registry_bootstrap["policy_count"], 1)
-        self.assertEqual(agent.rl_registry_bootstrap["active_policy_count"], 1)
-        self.assertEqual(agent.rl_registry_bootstrap["active_policies"]["005930"], "rl_005930_boot")
+            active = store.list_active_policies()
+            self.assertIn("005930", active)
+            self.assertEqual(active["005930"], "rl_005930_boot")
 
     async def test_run_cycle_trains_activates_policy_and_emits_signal(self) -> None:
         closes = _uptrend_closes()
@@ -270,67 +264,24 @@ class RLTradingAgentRunCycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["side"], "BUY")
         self.assertEqual(execute_order_mock.await_args.args[0].signal_source, "RL")
 
-    @unittest.skip("OrchestratorAgent no longer accepts use_rl/rl_policy_store — RL mode removed from orchestrator")
-    async def test_orchestrator_rl_mode_runs_training_and_routes_rl_orders(self) -> None:
-        closes = _uptrend_closes()
-        rows = _ohlcv_rows_from_closes(closes, ticker="005930")
-        latest_tick = _tick_rows_from_closes([rows[-1]["close"]], ticker="005930")
-        yahoo_seed = [
-            MarketDataPoint(
-                ticker="005930",
-                name="삼성전자",
-                market="KOSPI",
-                timestamp_kst=datetime(2026, 3, 13, 15, 30, tzinfo=timezone.utc),
-                interval="daily",
-                open=150,
-                high=155,
-                low=149,
-                close=154,
-                volume=123456,
-                change_pct=1.1,
-            )
-        ]
-
+    def test_rl_policy_store_v2_registry_state(self) -> None:
+        """RLPolicyStoreV2 레지스트리 상태를 확인합니다."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = RLPolicyStoreV2(models_dir=Path(tmpdir), auto_save_registry=True)
-            agent = OrchestratorAgent(use_rl=True, rl_policy_store=store)
+            artifact = store.save_policy(_policy_artifact("rl_005930_v1"))
+            store.activate_policy(artifact)
 
-            with (
-                patch("src.agents.orchestrator.market_session_status", new=AsyncMock(return_value="open")),
-                patch.object(agent.collector, "collect_yahoo_daily_bars", new=AsyncMock(return_value=yahoo_seed)),
-                patch.object(agent.collector, "collect_realtime_ticks", new=AsyncMock(return_value=25)),
-                patch(
-                    "src.agents.rl_trading.fetch_recent_market_data",
-                    new=AsyncMock(
-                        side_effect=_market_data_fetch_side_effect(daily_rows=rows, latest_tick_rows=latest_tick)
-                    ),
-                ),
-                patch("src.agents.rl_trading.get_position", new=AsyncMock(return_value=None)),
-                patch.object(
-                    agent.portfolio,
-                    "process_predictions",
-                    new=AsyncMock(
-                        return_value=[
-                            {"ticker": "005930", "side": "BUY", "quantity": 1, "price": 154, "account_scope": "paper"}
-                        ]
-                    ),
-                ) as process_predictions_mock,
-                patch.object(agent.notifier, "send_cycle_summary", new=AsyncMock()),
-                patch("src.agents.orchestrator.set_heartbeat", new=AsyncMock()),
-                patch("src.agents.orchestrator.insert_heartbeat", new=AsyncMock()),
-            ):
-                result = await agent.run_cycle(["005930"])
+            active = store.list_active_policies()
+            self.assertEqual(len(active), 1)
+            self.assertIn("005930", active)
 
-        self.assertEqual(result["mode"], "rl")
-        self.assertEqual(result["collected"], 26)
-        self.assertEqual(result["predicted"], 1)
-        self.assertEqual(result["orders"], 1)
-        self.assertEqual(result["rl_summaries"][0]["signal"], "BUY")
-        self.assertEqual(result["rl_summaries"][0]["dataset_interval"], "daily")
-        self.assertEqual(result["rl_registry_state"]["backend"], "policy_registry_v2")
-        self.assertEqual(result["rl_registry_state"]["active_policy_count"], 1)
-        self.assertEqual(result["rl_registry_state"]["active_policies"]["005930"], result["rl_summaries"][0]["active_policy_id"])
-        self.assertEqual(process_predictions_mock.await_args.kwargs["signal_source_override"], "RL")
+            # 두 번째 정책 추가
+            artifact2 = store.save_policy(_policy_artifact("rl_035720_v1", ticker="035720"))
+            store.activate_policy(artifact2)
+
+            active2 = store.list_active_policies()
+            self.assertEqual(len(active2), 2)
+            self.assertIn("035720", active2)
 
     async def test_run_cycle_supports_tick_interval_seconds_window(self) -> None:
         closes = _uptrend_closes(80)

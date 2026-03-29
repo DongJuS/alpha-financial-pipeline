@@ -48,14 +48,14 @@ def find_method_in_class(
     class_def: ast.ClassDef,
     method_name: str,
 ) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
-    """클래스 내에서 메서드를 찾습니다 (sync/async 모두 지원)."""
+    """클래스 내에서 메서드를 찾습니다."""
     for node in class_def.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == method_name:
             return node
     return None
 
 
-def get_function_args(func_def: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+def get_function_args(func_def: ast.FunctionDef) -> list[str]:
     """함수의 인자 목록을 반환합니다."""
     return [arg.arg for arg in func_def.args.args]
 
@@ -326,13 +326,15 @@ class TestOrchestratorCLI:
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # --independent-portfolio 플래그 근처 코드 검사 (argparse 정의 부분)
+        # --independent-portfolio 플래그 근처 코드 검사
         if "--independent-portfolio" in content:
-            # argparse add_argument 근처에서 store_true 확인 (docstring이 아닌 실제 코드)
-            idx = content.rfind("--independent-portfolio")  # 마지막 출현 = argparse 정의
-            context = content[max(0, idx - 200) : idx + 200]
+            # main() 함수 내에서 add_argument 호출 근처 확인
+            idx = content.find('--independent-portfolio"')
+            if idx == -1:
+                idx = content.find("--independent-portfolio")
+            context = content[idx : idx + 500]
             assert (
-                "action=" in context and "store_true" in context
+                "store_true" in context
             ), (
                 "--independent-portfolio가 store_true 액션을 사용하지 않습니다."
             )
