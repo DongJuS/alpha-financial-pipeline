@@ -41,16 +41,8 @@ logger = logging.getLogger(__name__)
 
 def pytest_configure(config):
     """Pytest 초기화 훅"""
+    # Python 3.9에서 DeprecationWarning 방지
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-    # asyncio.run()이 기존 event loop를 파괴하는 것을 방지:
-    # 세션 전체에서 공유할 loop를 미리 생성하여 세팅
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-    except RuntimeError:
-        asyncio.set_event_loop(asyncio.new_event_loop())
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -128,18 +120,8 @@ def redis_url() -> str:
 # 이벤트 루프 픽스처
 # ────────────────────────────────────────────────────────────────────────────
 
-@pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """
-    pytest-asyncio와 호환되는 이벤트 루프 픽스처.
-    asyncio.run() 및 asyncio.get_event_loop() 모두 이 루프를 사용하도록 설정.
-    """
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-    asyncio.set_event_loop(loop)
-    yield loop
-    loop.close()
-    asyncio.set_event_loop(None)
+# event_loop fixture 제거됨 (pytest-asyncio 0.26에서 deprecated).
+# pytest-asyncio의 auto 모드 + IsolatedAsyncioTestCase가 각자 loop를 관리.
 
 
 # ────────────────────────────────────────────────────────────────────────────
