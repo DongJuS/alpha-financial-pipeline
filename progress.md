@@ -44,7 +44,8 @@ Step 4   K3s 프로덕션 배포       ████████░░   80% 🔧
 - [x] Helm chart 기본 구조 (PR #38)
 - [x] CI/CD 파이프라인 (PR #51) — lint → test → helm lint → build
 - [x] Dockerfile multi-stage 프로덕션 빌드 (PR #39)
-- [ ] 모니터링 (Prometheus + Grafana)
+- [x] 모니터링 Prometheus + Grafana (PR #36)
+- [x] Helm chart lint/template 검증 + readiness 정합 (PR #42)
 - [ ] Helm chart 실배포 검증 (K3s 클러스터 필요)
 
 ### Step 6: 테스트 스위트 완전 정비 ✅
@@ -60,7 +61,6 @@ Step 4   K3s 프로덕션 배포       ████████░░   80% 🔧
 ### 보류
 - [ ] SearchAgent — Step 4 완료 후 재개
 - [ ] RL 에피소드 S3 저장 — `store_rl_episodes()` 구현
-- [ ] 모니터링 (Prometheus + Grafana)
 
 ---
 
