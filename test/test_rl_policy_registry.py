@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 test/test_rl_policy_registry.py — PolicyRegistry 단위 테스트
 
