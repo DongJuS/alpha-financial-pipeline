@@ -101,7 +101,7 @@ async def _post(file_path: Path, *, is_draft: bool, dry_run: bool) -> None:
         else:
             result = await client.publish(post)
 
-        print(f"\n발행 완료!")
+        print("\n발행 완료!")
         print(f"  Post ID: {result.post_id}")
         print(f"  URL: {result.url}")
         print(f"  발행 시각: {result.published_at}")

@@ -7,14 +7,13 @@ stock_master, theme_stocks, macro_indicators, daily_rankings, watchlist 테이�
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date
 from typing import Any, Optional
 
 from src.db.models import (
     DailyRanking,
     MacroIndicator,
     StockMasterRecord,
-    WatchlistItem,
 )
 from src.utils.db_client import execute, executemany, fetch, fetchrow, fetchval
 

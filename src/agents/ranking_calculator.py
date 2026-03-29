@@ -28,7 +28,7 @@ load_dotenv(ROOT / ".env")
 
 from src.db.models import AgentHeartbeatRecord, DailyRanking
 from src.db.marketplace_queries import upsert_daily_rankings
-from src.utils.db_client import fetch, fetchval
+from src.utils.db_client import fetch
 from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import (
     KEY_RANKINGS,
