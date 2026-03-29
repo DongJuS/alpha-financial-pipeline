@@ -18,7 +18,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// 응답 인터셉터: 401 처리
+// 응답 인터셉터: 401 처리 (세션 만료 감지 → /login?expired=true 리다이렉트)
 api.interceptors.response.use(
   (res) => res,
   (err) => {
@@ -26,7 +26,7 @@ api.interceptors.response.use(
     const isLoginRequest = requestUrl.includes("/auth/login");
     if (err.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem("alpha_token");
-      window.location.href = "/login";
+      window.location.href = "/login?expired=true";
     }
     return Promise.reject(err);
   }

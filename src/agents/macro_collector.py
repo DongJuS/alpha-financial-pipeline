@@ -99,34 +99,44 @@ class MacroCollector:
     ) -> Optional[tuple[float, Optional[float], Optional[float]]]:
         """
         FDR로 최신 종가, 전일대비%, 전일종가를 조회합니다.
+        빈 응답이면 lookback을 점진적으로 늘려 재시도합니다.
         Returns: (value, change_pct, previous_close) or None
         """
         fdr = self._load_fdr()
-        start = (datetime.now(KST).date() - timedelta(days=lookback_days)).isoformat()
-        try:
-            df = fdr.DataReader(fdr_symbol, start)
-            if df is None or df.empty:
-                return None
+        # 빈 DataFrame 응답 시 더 긴 lookback으로 최대 3회 재시도
+        retry_days = [lookback_days, 14, 30]
+        df = None
+        for days in retry_days:
+            start = (datetime.now(KST).date() - timedelta(days=days)).isoformat()
+            try:
+                result = fdr.DataReader(fdr_symbol, start)
+                if result is not None and not result.empty:
+                    df = result
+                    break
+                logger.debug("FDR 빈 응답 [%s] lookback=%d일 — 재시도", fdr_symbol, days)
+            except Exception as e:
+                logger.warning("FDR 조회 실패 [%s] lookback=%d일: %s", fdr_symbol, days, e)
 
-            # 최신 행
-            latest = df.iloc[-1]
-            value = float(latest.get("Close", 0))
-            if value == 0:
-                return None
-
-            # 전일 종가 및 변동률 계산
-            previous_close = None
-            change_pct = None
-            if len(df) >= 2:
-                prev = df.iloc[-2]
-                previous_close = float(prev.get("Close", 0))
-                if previous_close > 0:
-                    change_pct = round((value - previous_close) / previous_close * 100, 4)
-
-            return (value, change_pct, previous_close)
-        except Exception as e:
-            logger.warning("FDR 조회 실패 [%s]: %s", fdr_symbol, e)
+        if df is None or df.empty:
+            logger.warning("FDR 조회 최종 실패 [%s]: 데이터 없음", fdr_symbol)
             return None
+
+        # 최신 행
+        latest = df.iloc[-1]
+        value = float(latest.get("Close", 0))
+        if value == 0:
+            return None
+
+        # 전일 종가 및 변동률 계산
+        previous_close = None
+        change_pct = None
+        if len(df) >= 2:
+            prev = df.iloc[-2]
+            previous_close = float(prev.get("Close", 0))
+            if previous_close > 0:
+                change_pct = round((value - previous_close) / previous_close * 100, 4)
+
+        return (value, change_pct, previous_close)
 
     async def collect_foreign_indices(self) -> list[MacroIndicator]:
         """해외 주요 지수를 수집합니다."""

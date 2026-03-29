@@ -95,7 +95,9 @@ async def update_model_config(
 
 
 @router.get("/debug-providers")
-async def debug_providers() -> dict:
+async def debug_providers(
+    _: Annotated[dict, Depends(get_admin_user)],
+) -> dict:
     """Provider 연결 상태 디버그 정보 — 문제 진단용."""
     import os
     import shutil
