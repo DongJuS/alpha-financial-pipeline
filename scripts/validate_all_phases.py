@@ -64,6 +64,9 @@ async def phase1_checks() -> list[CheckResult]:
         "real_trading_audit",
         "operational_audits",
         "paper_trading_runs",
+        "markets",
+        "instruments",
+        "ohlcv_daily",
     }
     rows = await fetch(
         "SELECT tablename FROM pg_tables WHERE schemaname='public'"

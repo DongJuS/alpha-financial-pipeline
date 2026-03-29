@@ -286,60 +286,53 @@ class TestRLTradingFormValidation(unittest.TestCase):
 class TestGenKisDbSchema(unittest.TestCase):
     """GenCollector와 CollectorAgent가 동일한 MarketDataPoint 필드 셋으로 DB에 저장."""
 
-    # 두 에이전트가 공통으로 채워야 하는 필수 필드
-    REQUIRED_FIELDS = {"ticker", "name", "market", "timestamp_kst", "interval", "open", "high", "low", "close", "volume"}
-    OPTIONAL_FIELDS = {"change_pct", "market_cap", "foreigner_ratio"}
+    # 두 에이전트가 공통으로 채워야 하는 필수 필드 (new schema)
+    REQUIRED_FIELDS = {"instrument_id", "name", "market", "traded_at", "open", "high", "low", "close", "volume"}
+    OPTIONAL_FIELDS = {"change_pct", "adj_close"}
 
     def _make_gen_daily_point(self) -> "MarketDataPoint":
         """GenCollector.collect_daily_bars에서 생성하는 MarketDataPoint 재현."""
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
+        from datetime import date as date_type
         from src.db.models import MarketDataPoint
 
         bar = {
             "date": "2026-03-28",
-            "open": 72000, "high": 73000, "low": 71500, "close": 72500,
+            "open": 72000.0, "high": 73000.0, "low": 71500.0, "close": 72500.0,
             "volume": 1000000, "change_pct": 0.69,
         }
-        KST = ZoneInfo("Asia/Seoul")
-        ts = datetime.fromisoformat(bar["date"] + "T15:30:00").replace(tzinfo=KST)
+        traded = date_type.fromisoformat(bar["date"])
         return MarketDataPoint(
-            ticker="005930", name="삼성전자", market="KOSPI",
-            timestamp_kst=ts, interval="daily",
+            instrument_id="005930.KS", name="삼성전자", market="KOSPI",
+            traded_at=traded,
             open=bar["open"], high=bar["high"], low=bar["low"],
             close=bar["close"], volume=bar["volume"], change_pct=bar["change_pct"],
         )
 
     def _make_kis_daily_point(self) -> "MarketDataPoint":
         """CollectorAgent._fetch_daily_bars에서 생성하는 MarketDataPoint 재현."""
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
+        from datetime import date as date_type
         from src.db.models import MarketDataPoint
 
-        KST = ZoneInfo("Asia/Seoul")
-        ts = datetime(2026, 3, 28, 15, 30, tzinfo=KST)
         return MarketDataPoint(
-            ticker="005930", name="삼성전자", market="KOSPI",
-            timestamp_kst=ts, interval="daily",
-            open=72000, high=73000, low=71500, close=72500,
+            instrument_id="005930.KS", name="삼성전자", market="KOSPI",
+            traded_at=date_type(2026, 3, 28),
+            open=72000.0, high=73000.0, low=71500.0, close=72500.0,
             volume=1000000, change_pct=0.69,
         )
 
     def _make_gen_tick_point(self) -> "MarketDataPoint":
         """GenCollector.collect_realtime_ticks에서 생성하는 MarketDataPoint 재현."""
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
+        from datetime import date as date_type
         from src.db.models import MarketDataPoint
 
-        KST = ZoneInfo("Asia/Seoul")
         q = {
             "ticker": "005930", "name": "삼성전자", "market": "KOSPI",
-            "current_price": 72500, "open": 72000, "high": 73000, "low": 71500,
+            "current_price": 72500.0, "open": 72000.0, "high": 73000.0, "low": 71500.0,
             "volume": 500000, "change_pct": 0.69,
         }
         return MarketDataPoint(
-            ticker=q["ticker"], name=q["name"], market=q["market"],
-            timestamp_kst=datetime.now(KST), interval="tick",
+            instrument_id="005930.KS", name=q["name"], market=q["market"],
+            traded_at=date_type.today(),
             open=q["open"], high=q["high"], low=q["low"],
             close=q["current_price"], volume=q["volume"],
             change_pct=q["change_pct"],
@@ -347,15 +340,13 @@ class TestGenKisDbSchema(unittest.TestCase):
 
     def _make_kis_tick_point(self) -> "MarketDataPoint":
         """CollectorAgent KIS WebSocket에서 생성하는 MarketDataPoint 재현."""
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
+        from datetime import date as date_type
         from src.db.models import MarketDataPoint
 
-        KST = ZoneInfo("Asia/Seoul")
-        price = 72500
+        price = 72500.0
         return MarketDataPoint(
-            ticker="005930", name="삼성전자", market="KOSPI",
-            timestamp_kst=datetime.now(KST), interval="tick",
+            instrument_id="005930.KS", name="삼성전자", market="KOSPI",
+            traded_at=date_type.today(),
             open=price, high=price, low=price, close=price,
             volume=500000, change_pct=None,
         )
@@ -381,13 +372,10 @@ class TestGenKisDbSchema(unittest.TestCase):
             self.assertIsNotNone(getattr(gen_pt, field), f"gen tick '{field}' is None")
             self.assertIsNotNone(getattr(kis_pt, field), f"kis tick '{field}' is None")
 
-    def test_tick_interval_is_tick(self) -> None:
-        """틱 레코드의 interval은 반드시 'tick'이어야 한다."""
-        self.assertEqual(self._make_gen_tick_point().interval, "tick")
-        self.assertEqual(self._make_kis_tick_point().interval, "tick")
-
-    def test_daily_interval_is_daily(self) -> None:
-        """일봉 레코드의 interval은 반드시 'daily'이어야 한다."""
+    def test_interval_is_always_daily(self) -> None:
+        """ohlcv_daily 전용 모델이므로 interval은 항상 'daily'이어야 한다."""
+        self.assertEqual(self._make_gen_tick_point().interval, "daily")
+        self.assertEqual(self._make_kis_tick_point().interval, "daily")
         self.assertEqual(self._make_gen_daily_point().interval, "daily")
         self.assertEqual(self._make_kis_daily_point().interval, "daily")
 
@@ -408,16 +396,16 @@ class TestGenKisRedisCacheSchema(unittest.TestCase):
 
     EXPECTED_KEYS = {"ticker", "name", "current_price", "change_pct", "volume", "updated_at", "source"}
 
-    def _make_redis_payload(self, close: int, change_pct, source: str) -> dict:
+    def _make_redis_payload(self, close: float, change_pct, source: str) -> dict:
         """_cache_latest_tick 내 payload 딕셔너리 재현."""
-        from datetime import datetime
+        from datetime import date as date_type, datetime
         from zoneinfo import ZoneInfo
         from src.db.models import MarketDataPoint
 
         KST = ZoneInfo("Asia/Seoul")
         point = MarketDataPoint(
-            ticker="005930", name="삼성전자", market="KOSPI",
-            timestamp_kst=datetime.now(KST), interval="tick",
+            instrument_id="005930.KS", name="삼성전자", market="KOSPI",
+            traded_at=date_type.today(),
             open=close, high=close, low=close, close=close,
             volume=100000, change_pct=change_pct,
         )
