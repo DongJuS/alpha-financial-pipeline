@@ -3,6 +3,8 @@ import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from src.agents.portfolio_manager import PortfolioManagerAgent
 from src.brokers.paper import PaperBrokerExecution
 from src.db.models import PredictionSignal
@@ -162,6 +164,7 @@ class PortfolioManagerRiskGuardTest(unittest.IsolatedAsyncioTestCase):
         heartbeat_mock.assert_awaited_once()
         insert_heartbeat_mock.assert_awaited_once()
 
+    @pytest.mark.integration
     async def test_process_predictions_executes_both_paper_and_real_when_enabled(self) -> None:
         agent = PortfolioManagerAgent()
         signal = PredictionSignal(
