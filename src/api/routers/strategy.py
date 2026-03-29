@@ -240,7 +240,7 @@ async def get_strategy_a_signals(
         LEFT JOIN predictor_tournament_scores s
             ON p.agent_id = s.agent_id AND p.trading_date = s.trading_date
         WHERE p.strategy = 'A'
-          AND p.trading_date = {date_filter if date else '$1'}::date
+          AND p.trading_date = {'$1' if date else 'CURRENT_DATE'}::date
         ORDER BY p.agent_id
         """,
         *([date] if date else []),
