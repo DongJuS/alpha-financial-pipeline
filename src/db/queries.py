@@ -515,6 +515,29 @@ async def fetch_trade_rows(
     return [dict(r) for r in rows]
 
 
+async def fetch_trade_rows_by_source(
+    signal_source: str,
+    days: int,
+    account_scope: AccountScope = "paper",
+) -> list[dict]:
+    """특정 전략(signal_source)의 최근 N일 거래 이력을 반환합니다."""
+    scope = normalize_account_scope(account_scope)
+    rows = await fetch(
+        """
+        SELECT ticker, side, price, quantity, amount, executed_at
+        FROM trade_history
+        WHERE signal_source = $1
+          AND account_scope = $2
+          AND executed_at >= NOW() - ($3 * INTERVAL '1 day')
+        ORDER BY executed_at
+        """,
+        signal_source,
+        scope,
+        days,
+    )
+    return [dict(r) for r in rows]
+
+
 async def fetch_all_trade_rows(account_scope: AccountScope = "paper") -> list[dict]:
     scope = normalize_account_scope(account_scope)
     rows = await fetch(
