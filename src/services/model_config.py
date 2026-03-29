@@ -21,7 +21,9 @@ SUPPORTED_MODEL_OPTIONS = [
     {"model": "claude-sonnet-4-5-20250514", "provider": "claude", "label": "Claude Sonnet 4.5", "description": "이전 세대 Sonnet · 코딩 특화"},
     {"model": "claude-opus-4-5-20251114", "provider": "claude", "label": "Claude Opus 4.5", "description": "이전 세대 Opus · 안정적 추론"},
     {"model": "claude-3-5-sonnet-latest", "provider": "claude", "label": "Claude 3.5 Sonnet", "description": "레거시 호환 · 복합 추론"},
-    # ── GPT (OpenAI API Key) ────────────────────────────────────
+    # ── GPT (OpenAI API Key / Codex CLI fallback) ──────────────
+    {"model": "gpt-5.4", "provider": "gpt", "label": "GPT-5.4", "description": "Codex 기본 최신 모델 · ChatGPT 로그인 CLI fallback 지원"},
+    {"model": "gpt-5.4-mini", "provider": "gpt", "label": "GPT-5.4 Mini", "description": "경량 Codex 모델 · ChatGPT 로그인 CLI fallback 지원"},
     {"model": "gpt-4o", "provider": "gpt", "label": "GPT-4o", "description": "최신 멀티모달 · 고성능 추론 · 128K 컨텍스트"},
     {"model": "gpt-4o-mini", "provider": "gpt", "label": "GPT-4o Mini", "description": "경량 고속 · 저비용 · 일상 분석 최적"},
     {"model": "gpt-4-turbo", "provider": "gpt", "label": "GPT-4 Turbo", "description": "이전 세대 Turbo · 안정적 추론"},
@@ -134,11 +136,16 @@ def provider_status() -> list[dict]:
     # ── GPT ──
     try:
         gpt = GPTClient(model="gpt-4o-mini")
-        gpt_mode = "API Key" if gpt.is_configured else "미연결"
+        if gpt.auth_mode == "codex_cli":
+            gpt_mode = "Codex CLI (ChatGPT)"
+        elif gpt.auth_mode == "api_key":
+            gpt_mode = "API Key"
+        else:
+            gpt_mode = "미연결"
         results.append({
             "provider": "gpt",
             "mode": gpt_mode,
-            "default_model": "gpt-4o-mini",
+            "default_model": gpt.effective_model,
             "configured": gpt.is_configured,
         })
     except Exception:

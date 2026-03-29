@@ -175,6 +175,7 @@ class RLDatasetBuilder:
                                 market_str = "KOSPI"
 
                             points = []
+                            previous_close = None
                             for idx_row, row_data in df.iterrows():
                                 trade_date = idx_row.date() if hasattr(idx_row, "date") else date.today()
                                 ts = datetime(
@@ -184,7 +185,6 @@ class RLDatasetBuilder:
                                 close_val = int(row_data.get("Close", 0))
                                 if close_val <= 0:
                                     continue
-                                change = row_data.get("Change")
                                 points.append(MarketDataPoint(
                                     ticker=ticker,
                                     name=name,
@@ -196,8 +196,9 @@ class RLDatasetBuilder:
                                     low=int(row_data.get("Low", close_val)),
                                     close=close_val,
                                     volume=int(row_data.get("Volume", 0)),
-                                    change_pct=float(change * 100.0) if change is not None else None,
+                                    change_pct=compute_change_pct(close_val, previous_close),
                                 ))
+                                previous_close = close_val
                             if points:
                                 saved = await upsert_market_data(points)
                                 logger.info("FDR 데이터 DB 자동 저장: ticker=%s, %d건", ticker, saved)
