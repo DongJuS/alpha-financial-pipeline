@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 test/test_search_runner.py — SearchRunner + ResearchPortfolioManager 통합 테스트
 
