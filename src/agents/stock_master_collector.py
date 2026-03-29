@@ -30,6 +30,7 @@ from src.db.models import AgentHeartbeatRecord, StockMasterRecord
 from src.db.marketplace_queries import (
     get_sectors,
     list_stock_master,
+    update_stock_sectors,
     upsert_stock_master,
 )
 from src.utils.logging import get_logger, setup_logging
@@ -164,6 +165,64 @@ class StockMasterCollector:
         logger.info("ETF/ETN 조회 완료: %d건", len(records))
         return records
 
+    def _fetch_market_sector_map(self) -> dict[str, tuple[Optional[str], Optional[str]]]:
+        """KOSPI/KOSDAQ 개별 리스팅에서 섹터/업종 매핑을 수집합니다.
+
+        FDR의 시장별 리스팅(KOSPI/KOSDAQ)은 KRX 통합 리스팅보다
+        업종명(sector) 데이터를 더 신뢰성 있게 제공합니다.
+        Returns: {ticker: (sector, industry)} dict
+        """
+        fdr = self._load_fdr()
+        sector_map: dict[str, tuple[Optional[str], Optional[str]]] = {}
+
+        # 섹터 컬럼 후보 (FDR 버전/마켓별로 컬럼명이 다를 수 있음)
+        sector_cols = ["Sector", "업종명", "업종", "IndustryName", "IndustryCode", "섹터"]
+        industry_cols = ["Industry", "업종상세", "IndustryDetail", "산업"]
+
+        for market_code in ("KOSPI", "KOSDAQ"):
+            try:
+                df = fdr.StockListing(market_code)
+                if df is None or df.empty:
+                    continue
+
+                col_index = set(df.columns.tolist())
+                s_col = next((c for c in sector_cols if c in col_index), None)
+                i_col = next((c for c in industry_cols if c in col_index), None)
+
+                if not s_col and not i_col:
+                    logger.debug("%s 리스팅에 섹터 컬럼 없음 (columns=%s)", market_code, list(df.columns))
+                    continue
+
+                for _, row in df.iterrows():
+                    ticker = str(row.get("Code", row.get("Symbol", ""))).strip()
+                    if not ticker:
+                        continue
+                    sector = str(row[s_col]).strip() if s_col and row.get(s_col) else None
+                    industry = str(row[i_col]).strip() if i_col and row.get(i_col) else None
+                    sector = sector or None
+                    industry = industry or None
+                    if sector or industry:
+                        sector_map[ticker] = (sector, industry)
+
+                logger.info("%s 섹터 맵 수집: %d건", market_code, sum(
+                    1 for t in sector_map if t in sector_map
+                ))
+            except Exception as e:
+                logger.warning("%s 섹터 맵 조회 실패: %s", market_code, e)
+
+        return sector_map
+
+    async def seed_sector_data(self) -> int:
+        """NULL 섹터 종목에 KOSPI/KOSDAQ 리스팅 기반 섹터 데이터를 충전합니다."""
+        sector_map = await asyncio.to_thread(self._fetch_market_sector_map)
+        if not sector_map:
+            logger.warning("섹터 맵 수집 결과 없음 — 섹터 시딩 건너뜀")
+            return 0
+
+        updated = await update_stock_sectors(sector_map)
+        logger.info("섹터 데이터 시딩 완료: %d건 대상 처리", updated)
+        return updated
+
     async def collect_stock_master(self, include_etf: bool = True) -> int:
         """전체 종목 마스터 수집 + DB upsert."""
         # KRX 전종목
@@ -176,6 +235,12 @@ class StockMasterCollector:
 
         # DB upsert
         saved = await upsert_stock_master(records)
+
+        # 섹터 데이터 보강 — KOSPI/KOSDAQ 리스팅에서 NULL 섹터 충전
+        try:
+            await self.seed_sector_data()
+        except Exception as e:
+            logger.warning("섹터 시딩 실패 (비필수): %s", e)
 
         # Redis 캐시 갱신
         await self.refresh_stock_master_cache()
