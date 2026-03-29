@@ -71,6 +71,25 @@
   - 로컬에서 통과한 테스트가 3.11에서 실패할 가능성 낮지만, `match` 문 등 3.10+ 문법 사용 시 역방향 호환성 문제 가능
   - 기존 47개 실패 중 4개는 Python 3.9의 `X | None` union type 미지원 (`TypeError: unsupported operand type(s) for |`) — 3.11에서는 통과할 것으로 예상
 
+## 7. Helm chart 검증 상태 (E)
+
+- **helm lint:** 통과 ✅ (icon 권장 INFO만)
+- **helm template:** 전체 렌더링 정상 ✅
+- **실제 K3s dry-run:** 미검증 (클러스터 없음)
+- **수정 사항:**
+  - worker.yaml: readiness probe 추가, RL 데이터 PVC + volumeMounts 추가
+  - values.yaml: `rlDataStorage: 5Gi` 추가
+- **잔여 리스크:**
+  - `local-path` StorageClass가 K3s에서 기본 제공되지만, 커스텀 설정 시 변경 필요
+  - worker PVC `ReadWriteOnce` → replicas > 1이면 `ReadWriteMany` 또는 별도 PVC 필요
+
+## 8. readiness.py ↔ Helm chart 정합 (H)
+
+- **DNS 서비스명:** `postgres`, `redis`, `minio` → Helm chart Service name과 일치 ✅
+- **볼륨 마운트:** `/data/rl/models`, `/data/rl/experiments` → worker.yaml에 PVC로 마운트 ✅
+- **ServiceAccount 토큰:** 표준 경로 `/var/run/secrets/kubernetes.io/serviceaccount/token` ✅
+- **수정 사항:** MinIO DNS 체크 추가
+
 ---
 
 *이 파일은 위 항목이 모두 검증되면 MEMORY.md에 요약 후 삭제합니다.*
