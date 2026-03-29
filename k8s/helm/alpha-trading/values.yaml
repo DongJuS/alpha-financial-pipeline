@@ -6,57 +6,23 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
-# ── PostgreSQL ─────────────────────────────────────────────────────────
-postgres:
-  enabled: true
-  image: postgres:15-alpine
-  database: alpha_db
-  user: alpha_user
-  # 프로덕션에서는 secrets.yaml에서 관리
-  password: alpha_pass
-  storage:
-    size: 10Gi
-    storageClass: local-path
-  resources:
-    requests:
-      cpu: 250m
-      memory: 256Mi
-    limits:
-      cpu: "1"
-      memory: 1Gi
-
-# ── Redis ──────────────────────────────────────────────────────────────
-redis:
-  enabled: true
-  image: redis:7-alpine
-  storage:
-    size: 2Gi
-    storageClass: local-path
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-# ── MinIO (S3 호환) ───────────────────────────────────────────────────
-minio:
-  enabled: true
-  image: minio/minio:latest
-  rootUser: minioadmin
-  rootPassword: minioadmin
-  bucket: alpha-lake
-  storage:
-    size: 20Gi
-    storageClass: local-path
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
+# ── 인프라 (Bitnami chart로 외부 관리) ────────────────────────────────
+# PostgreSQL, Redis, MinIO는 Bitnami Helm chart로 별도 설치합니다.
+# 설치 방법: k8s/helm/bitnami-values/README.md 참조
+# 서비스명: postgresql (5432), redis-master (6379), minio (9000)
+infra:
+  postgres:
+    host: postgresql
+    port: 5432
+    database: alpha_db
+    user: alpha_user
+  redis:
+    host: redis-master
+    port: 6379
+  minio:
+    host: minio
+    port: 9000
+    bucket: alpha-lake
 
 # ── API 서버 ──────────────────────────────────────────────────────────
 api:
