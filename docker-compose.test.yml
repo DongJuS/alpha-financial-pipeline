@@ -46,7 +46,7 @@ services:
       ANTHROPIC_API_KEY: sk-test-000000000000000000000000
       OPENAI_API_KEY: sk-test-000000000000000000000000
       GOOGLE_API_KEY: test-key-000000000000000000
-      GEMINI_API_KEY: test-key-000000000000000000
+      # GEMINI_API_KEY 제거됨 — OAuth(ADC) 전용
       # KIS 브로커 (테스트 모드)
       KIS_API_KEY: test-kis-key
       KIS_SECRET_KEY: test-kis-secret

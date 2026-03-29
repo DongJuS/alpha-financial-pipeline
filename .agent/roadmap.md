@@ -139,5 +139,27 @@ pre_market_collection (08:10 KST, 월~금)
 1. deploy.sh Helm→Kustomize 순서 수정 — PR #68 완료
 2. K3s 6 Pod Running 검증 완료 — PR #68
 
+### Step 7 — 글로벌 데이터 레이크 확장
+
+KR(2,772종목) + US(6,591종목) 전 종목의 FDR 최대 12년 일봉을 수집한다.
+
+**배경 (2026-03-30 회의):**
+기존 `market_data` 테이블은 KR 전용(int 가격, KST 고정, interval 혼재)으로 글로벌 확장에 부적합.
+미장 추가, 실시간 분봉/틱 대응, 장기 데이터 축적을 위해 테이블을 재설계한다.
+
+**신규 테이블 구조:**
+1. `markets` — 시장 메타 (KOSPI/KOSDAQ/NYSE/NASDAQ, timezone, currency)
+2. `instruments` — 종목 마스터 (글로벌 유니크 ID: 005930.KS, AAPL.US)
+3. `ohlcv_daily` — 일봉 (NUMERIC(15,4) 가격, 연도별 파티셔닝 2010~2027)
+4. (미래) `ohlcv_minute` — 분봉, `ticks` — 틱 (S3 전용)
+
+**핵심 설계 결정:**
+- 가격: `int` → `NUMERIC(15,4)` (KRW 정수 + USD 소수점 통합)
+- instrument_id에 시장 접미사 (.KS, .KQ, .US) → 코드 충돌 방지
+- 일봉/분봉/틱 테이블 분리 → 행 수 차이 1000배, 쿼리 패턴 다름
+- ohlcv_daily 연도별 파티셔닝 → 오래된 데이터 DROP PARTITION으로 정리
+
+**예상 규모:** ~9,363종목, ~2,800만 행, ~5GB (PostgreSQL)
+
 ### 보류
 - SearchAgent (SearXNG 통합)
