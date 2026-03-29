@@ -11,13 +11,15 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 KST = ZoneInfo("Asia/Seoul")
 
 
-class TestCollectorHistoricalDaily(unittest.TestCase):
+class TestCollectorHistoricalDaily(unittest.IsolatedAsyncioTestCase):
     """CollectorAgent.fetch_historical_ohlcv 일봉 수집 테스트."""
 
     @patch.dict("os.environ", {
@@ -28,11 +30,11 @@ class TestCollectorHistoricalDaily(unittest.TestCase):
         from src.agents.collector import CollectorAgent
         return CollectorAgent(agent_id="test_collector")
 
+    @pytest.mark.integration
     @patch("src.agents.collector.upsert_market_data", new_callable=AsyncMock, return_value=3)
     @patch("src.agents.collector.CollectorAgent._load_fdr")
-    def test_fetch_historical_daily_basic(self, mock_fdr_loader, mock_upsert):
+    async def test_fetch_historical_daily_basic(self, mock_fdr_loader, mock_upsert):
         """일봉 과거 데이터 수집이 정상 동작하는지 확인합니다."""
-        import asyncio
         import pandas as pd
 
         mock_fdr = MagicMock()
@@ -49,15 +51,13 @@ class TestCollectorHistoricalDaily(unittest.TestCase):
         mock_fdr_loader.return_value = mock_fdr
 
         agent = self._make_agent()
-        points = asyncio.run(
-            agent.fetch_historical_ohlcv(
-                ticker="005930",
-                start_date="2024-01-01",
-                end_date="2024-01-05",
-                interval="D",
-                name="삼성전자",
-                market="KOSPI",
-            )
+        points = await agent.fetch_historical_ohlcv(
+            ticker="005930",
+            start_date="2024-01-01",
+            end_date="2024-01-05",
+            interval="D",
+            name="삼성전자",
+            market="KOSPI",
         )
 
         self.assertEqual(len(points), 3)
@@ -66,11 +66,11 @@ class TestCollectorHistoricalDaily(unittest.TestCase):
         self.assertEqual(points[0].interval, "daily")
         mock_upsert.assert_called_once()
 
+    @pytest.mark.integration
     @patch("src.agents.collector.upsert_market_data", new_callable=AsyncMock, return_value=0)
     @patch("src.agents.collector.CollectorAgent._load_fdr")
-    def test_fetch_historical_daily_empty(self, mock_fdr_loader, mock_upsert):
+    async def test_fetch_historical_daily_empty(self, mock_fdr_loader, mock_upsert):
         """데이터가 없을 때 빈 리스트를 반환하는지 확인합니다."""
-        import asyncio
         import pandas as pd
 
         mock_fdr = MagicMock()
@@ -78,30 +78,26 @@ class TestCollectorHistoricalDaily(unittest.TestCase):
         mock_fdr_loader.return_value = mock_fdr
 
         agent = self._make_agent()
-        points = asyncio.run(
-            agent.fetch_historical_ohlcv("999999", "2024-01-01", "2024-01-05")
-        )
+        points = await agent.fetch_historical_ohlcv("999999", "2024-01-01", "2024-01-05")
 
         self.assertEqual(len(points), 0)
 
 
-class TestCollectorCheckDataExists(unittest.TestCase):
+class TestCollectorCheckDataExists(unittest.IsolatedAsyncioTestCase):
     """CollectorAgent.check_data_exists 테스트."""
 
+    @pytest.mark.integration
     @patch.dict("os.environ", {
         "DATABASE_URL": "postgresql://test:test@localhost:5432/test",
         "JWT_SECRET": "test-secret",
     })
     @patch("src.utils.db_client.fetchval", new_callable=AsyncMock, return_value=150)
-    def test_check_data_exists_returns_count(self, mock_fetchval):
+    async def test_check_data_exists_returns_count(self, mock_fetchval):
         """기존 데이터 건수를 정확히 반환하는지 확인합니다."""
-        import asyncio
         from src.agents.collector import CollectorAgent
 
         agent = CollectorAgent()
-        count = asyncio.run(
-            agent.check_data_exists("005930", "daily")
-        )
+        count = await agent.check_data_exists("005930", "daily")
         self.assertEqual(count, 150)
 
 
