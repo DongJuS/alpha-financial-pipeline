@@ -24,3 +24,9 @@
 - **해결:** (1) deprecated `event_loop` fixture 제거. (2) `asyncio.run()` → `IsolatedAsyncioTestCase` + `await` 전환. (3) test_search_pipeline.py 현재 인터페이스에 맞게 재작성. (4) DB 의존 테스트 `@pytest.mark.integration` 마킹.
 - **영향:** conftest.py, test_blend_nway.py, test_aggregate_risk.py, test_strategy_promotion.py, test_data_pipeline.py, test_rl_bootstrap.py, test_search_pipeline.py, test_portfolio_manager.py, test_risk_validation.py
 - **결과:** 462 passed → **557 passed, 0 failed**
+
+### 2026-03-29 — README 빠른 시작 minio 서비스 누락
+- **증상:** README 명령대로 `docker compose up` 실행 시 api/worker가 시작 불가
+- **원인:** docker-compose.yml에서 api/worker가 minio에 `service_healthy` 의존하나 README 명령에 minio 누락
+- **해결:** README.md 두 곳에 `minio` 서비스 추가 (PR #53)
+- **영향:** README.md만 수정, 런타임 코드 변경 없음
