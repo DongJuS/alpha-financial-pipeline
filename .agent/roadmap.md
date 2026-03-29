@@ -2,255 +2,49 @@
 
 이 파일은 이 저장소의 canonical roadmap입니다.
 기존 Strategy A/B 기반 자동 투자 시스템을 유지한 채, RL Trading과 Search/Scraping pipeline을 어떤 순서로 편입할지 정리합니다.
+이 파일은 마일스톤 수준의 방향과 원칙만 작성합니다. 구체적인 체크리스트, 서브태스크, 이슈 등은 progress.md를 참조합니다.
+완료된 이력은 roadmap-archive.md를 참조하세요.
 
-## 기본 전제
+---
 
-- 기존 Strategy A / Strategy B / PortfolioManager / paper-real 구조는 유지합니다.
-- RL Trading은 기존 전략을 대체하지 않고 별도 signal lane으로 추가합니다.
-- Search/Scraping은 기존 전략을 대체하지 않고 연구와 feature 공급 레이어로 편입합니다.
-- 최종 주문 권한은 계속 `PortfolioManagerAgent`에만 있습니다.
-- 검색 스택은 `SearXNG -> 웹 페이지 접속 -> ScrapeGraphAI -> Claude CLI`를 기준으로 합니다.
-- README 상태 표기는 현재 기준 `통합 테스트 진행 중`입니다.
+## 현재 상태 (2026-03-29)
 
-## 5-Agent 의사결정 결과
+- **코어 트레이딩**: Phase 1~13 구현 완료, 유지보수 단계
+- **다음 목표**: Step 3 → Step 4 순서로 진행
 
-| Agent | 관점 | 핵심 제안 |
-|-------|------|-----------|
-| `FastFlowAgent` | 빠른 구조 설계 | 검색 데이터 계약을 먼저 고정하고, RL은 그 계약에 맞춰 병렬 준비 |
-| `SlowMeticulousAgent` | 꼼꼼한 검증 | 저장 스키마, 평가 게이트, 감사 로그 없이 다음 단계로 넘기지 않기 |
-| `OptimistAgent` | 확장 기회 | 검색 결과를 Strategy B와 RL feature에 함께 공급해 조기 가치 확보 |
-| `PessimistAgent` | 실패 가능성 | 검증 없는 웹 데이터와 과적합 정책의 조기 연결을 차단 |
-| `DecisionDirectorAgent` | 최종 결정 | Search foundation 먼저, RL은 offline-first로 붙인 뒤 paper gate 이후 승격 |
+---
 
-## 완료된 코어 트랙
-
-### Phase 1 — 인프라 기반 구축
-- [x] 프로젝트 구조와 기본 문서 체계 수립
-- [x] PostgreSQL / Redis / FastAPI / UI 기동 구조 확보
-- [x] 기본 DB 스키마 및 운영 스크립트 구축
-
-### Phase 2 — 코어 에이전트 구현
-- [x] CollectorAgent
-- [x] PredictorAgent
-- [x] PortfolioManagerAgent
-- [x] NotifierAgent
-- [x] OrchestratorAgent
-- [x] 헬스비트 및 운영 상태 기록
-
-### Phase 3 — Strategy A
-- [x] predictor 다중 인스턴스 운영
-- [x] 토너먼트 스코어링
-- [x] winner 기반 시그널 선택
-
-### Phase 4 — Strategy B
-- [x] 토론형 합의 구조
-- [x] transcript 저장
-- [x] confidence / HOLD 규칙 반영
-
-### Phase 5 — 대시보드와 운영 화면
-- [x] 핵심 대시보드 UI
-- [x] 전략/포트폴리오/설정/모의투자 화면
-- [x] 모델 관리와 paper/real 운영 제어
-
-### Phase 6 — 페이퍼 운용과 검증
-- [x] 페이퍼 트레이딩 검증 경로
-- [x] 운영 감사 / 리스크 검증
-- [x] 장외 주문 차단 정책
-
-### Phase 7 — 실거래 준비
-- [x] readiness 체크 체계
-- [x] real/paper 분리 계좌 구조
-- [x] 운영 가이드 및 감사 로그
-
-## 확장 트랙
-
-### Phase 8 — Search/Scraping Foundation
-
-목표:
-- `SearXNG -> 웹 페이지 접속 -> ScrapeGraphAI -> Claude CLI` 파이프라인을 구조적으로 편입
-- 출처 저장, 추출 결과 저장, 재실행 가능성을 확보
-
-작업 항목:
-- [x] SearXNG 서비스와 검색 요청 계약 정의
-- [x] fetch/render worker 계층 설계
-- [x] ScrapeGraphAI 구조화 출력 포맷 확정
-- [x] Claude CLI 추출 포맷과 citation 규칙 정의
-- [x] 검색 질의/결과/source/extraction 저장 스키마 확정
-- [x] Strategy B와 RL feature용 공통 research contract 정의
-
-완료 기준:
-- 동일 질의의 검색 결과, 원문 출처, 추출 결과를 각각 조회 가능
-- 실패 케이스가 `partial` 또는 `failed` 상태로 구분 기록
-- Strategy/RL이 재사용 가능한 JSON contract 확보
-
-### Phase 9 — RL Trading Lane
-
-목표:
-- RL을 기존 전략의 대체가 아닌 별도 offline-first lane으로 편입
-- 학습, 평가, 정책 저장, 추론, 주문 경계가 분리된 구조 확보
-
-현재 상태:
-- [x] 최소 runnable RL lane 구현 (`src/agents/rl_trading.py`)
-- [x] tabular Q-learning 기반 `train -> evaluate -> infer` 경로 구현
-- [x] `orchestrator --rl` 및 `scripts/run_rl_trading.py` 실행 경로 추가
-- [x] `PortfolioManagerAgent`를 통한 `RL` signal source 연결
-- [x] `scripts/validate_rl_trading.py`와 `test/test_rl_trading.py`로 자동 검증 추가
-
-다음 작업:
-- [x] 정책 레지스트리(PolicyRegistry) 및 RLPolicyStoreV2 구현
-- [x] 알고리즘 네임스페이스(tabular/dqn/ppo) 도입 및 기존 아티팩트 마이그레이션
-- [x] 승격 게이트 및 자동 정리 규칙 구현
-- [x] RL 실험 관리 시스템 구현 (profiles/ + experiments/ 디렉터리, RLExperimentManager)
-- [x] RL 하이퍼파라미터 프로파일 기반 재사용 구조 확보
-- [x] RL dataset builder를 market/research feature 기준으로 확장 (RLDatasetBuilderV2)
-- [x] trading simulator/environment 정의 고도화 (TradingEnv Gymnasium 호환)
-- [x] 정책 레지스트리 조회 API 추가 (REST 17개 엔드포인트)
-- [x] walk-forward / out-of-sample 평가 기준을 DB/API로 노출 (WalkForwardEvaluator)
-- [x] shadow inference와 paper promotion gate 정교화 (ShadowInferenceEngine)
-
-완료 기준:
-- 학습 결과가 dataset version, config, artifact hash와 함께 저장
-- 승인된 정책과 보류 정책을 구분해 조회 가능
-- RL signal의 생성/차단 이유를 run 단위로 추적 가능
+## 진행 중 마일스톤
 
 ### Phase 10 — 확장 통합 운영
 
-목표:
-- Search와 RL을 기존 Strategy A/B 위에 레이어로 연결
-- A/B/RL/Search 전반의 설정 변경과 성능 관리를 위한 공통 메타 레이어 구축 (GitOps 기반 `config/` 통합)
-- 통합 테스트를 거쳐 paper 운영 단계에서만 승격
+Search와 RL을 기존 Strategy A/B 위에 레이어로 연결한다.
+A/B/RL/Search 전반의 설정과 성능을 관리하는 공통 메타 레이어를 구축한다.
+통합 테스트를 거쳐 paper 운영 단계에서만 프로덕션으로 승격한다.
 
-작업 항목:
-- [x] `config/` 기반 공통 메타데이터 실험 추적 구조(GitOps) 확정 및 `ExperimentTracker` 클래스 도입
-- [ ] Search 추출 결과를 Strategy B prompt와 RL feature에 연결
-- [ ] RL policy inference를 signal 후보로 추가하되 기본값은 shadow 또는 paper-only
-- [ ] 대시보드에 검색 출처, RL 평가, 활성 정책 상태 표시
-- [ ] 운영 감사와 통합 테스트 체크리스트 반영
-- [ ] 공통 `ExperimentTracker`를 Strategy A, B, RL, Search 에이전트에 전부 연동 적용
-- [ ] README의 `통합 테스트 진행 중` 문구를 실제 상태에 맞게 갱신
+### Phase 12 — 전략별 독립 포트폴리오 + 가상 트레이딩 (잔여)
 
-완료 기준:
-- RL/Search 핵심 경로가 paper 환경에서 재현 가능하게 검증됨
-- query/job/policy/config 기준으로 회귀 원인 추적 가능
-- 공통 `config/experiments`에 A, B, RL, Search의 메타데이터가 단일 스키마로 로깅됨
-- 운영 문서와 API 문서가 현재 구현 상태와 일치
+각 전략이 독립적인 포트폴리오를 운용하도록 블렌딩 구조에서 독립 구조로 전환한다.
+전략별 real/paper/virtual 3-모드 운용을 지원한다.
+과거 데이터 수집 → 학습/백테스트 → 가상 트레이딩 → 모의 → 실전 승격 파이프라인을 완성한다.
 
-## 자동 완료 조건
+---
 
-현재 확장 트랙의 자동 개발 완료 조건은 아래 기준을 통과하는 것입니다.
+## 다음 단계
 
-1. RL trading lane이 실제로 실행된다.
-2. `train -> evaluate -> infer -> order route` 자동 테스트가 통과한다.
-3. RL이 직접 브로커를 호출하지 않고 `PortfolioManagerAgent`를 통해서만 주문 경로에 들어간다.
+### Step 3 — RL 부트스트랩 + 3전략 동시 블렌딩
 
-### Phase 11 — N-way 블렌딩 + StrategyRunner Registry
+3개 전략(A/B/RL)이 동일한 모드에서 동작한다는 것이 핵심 원칙이다.
 
-목표:
-- 기존 elif 체인을 `StrategyRunner` Protocol + Registry 패턴으로 리팩토링
-- A/B/RL 3개 전략을 N-way `blend_signals()`로 통합
-- 향후 S/L 전략 추가 시 Runner만 구현하면 되는 구조 확보
+**운영 흐름:**
+1. **장 시작 전:** FDR 과거 데이터로 RL 학습·평가 후 활성 정책을 등록한다. Strategy A/B도 동일 데이터로 predictor를 워밍업한다.
+2. **장 시간:** KIS 실시간 데이터로 A/B/RL 3전략을 동시에 블렌딩하여 투자한다.
+3. **장 마감 후:** 성과 기반으로 RL을 재학습하고 블렌딩 가중치를 동적으로 조정한다.
 
-작업 항목:
-- [x] `StrategyRunner` Protocol + `StrategyRegistry` 신설 (`src/agents/strategy_runner.py`)
-- [x] N-way `blend_signals()` 일반화 (`src/agents/blending.py`)
-- [x] Orchestrator Registry 기반 병렬 실행 리팩토링 + `--strategies` CLI
-- [x] RL V2 시그널 매핑 (`map_v2_action_to_signal`, `normalize_q_confidence`)
-- [x] shadow gate 기반 인프라 (`predictions.is_shadow` 컬럼, `PredictionSignal.is_shadow` 필드)
-- [x] 전략별 가중치 외부화 (`STRATEGY_BLEND_WEIGHTS`)
-- [x] DB 스키마 확장 (`blend_meta JSONB`, `strategy CHECK S/L`, `is_shadow`)
-- [x] `BlendInput` + `NWayBlendResult` 데이터 클래스
-- [x] 통합 테스트 (`test/test_blend_nway.py`)
+모드(gen/paper/real)는 세 전략에 항상 동일하게 적용한다.
 
-완료 기준:
-- `--strategies A,B,RL` 플래그로 N개 전략 병렬 실행 + 블렌딩 동작
-- 기존 단독 모드(`--tournament`, `--consensus`, `--rl`)가 그대로 동작
-- shadow 전략 시그널이 DB에 기록되되 blend에는 참여하지 않음
+### Step 4 — K3s 프로덕션 배포
 
-논의 문서: `.agent/discussions/20260314-strategy-ab-rl-extension.md`
-
-### Phase 12 — 전략별 독립 포트폴리오 + 가상 트레이딩
-
-목표:
-- 각 전략이 독립적인 포트폴리오를 운용 (블렌딩 → 독립 전환)
-- 전략별 real/paper/virtual 3-모드 운용
-- KIS API 과거 데이터 수집 → 학습/백테스트 → 가상 트레이딩 → 모의 → 실전 승격 파이프라인
-
-전환 포인트:
-- Phase 11의 `StrategyRunner` 인터페이스를 그대로 활용
-- Orchestrator에서 blend 대신 각 Runner의 결과를 개별 PortfolioManager에 전달
-- 전략 코드 변경 없이 Orchestrator 레벨에서만 전환
-
-전체 매트릭스 (최대 5 × 3 = 15개 독립 포트폴리오):
-```
-Strategy A  → [real] [paper] [virtual]
-Strategy B  → [real] [paper] [virtual]
-Strategy RL → [real] [paper] [virtual]
-Strategy S  → [real] [paper] [virtual]
-Strategy L  → [real] [paper] [virtual]
-```
-
-현재 상태:
-- [x] DB 격리: `strategy_id` 컬럼 + `COALESCE(strategy_id, '')` 유니크 인덱스
-- [x] VirtualBroker: 슬리피지(0~N bps), 부분 체결(50~100%), 체결 지연(0~N초) 시뮬레이션
-- [x] 전략 승격 파이프라인: `StrategyPromoter` (virtual→paper→real 평가/실행/DB 기록)
-- [x] 합산 리스크 모니터링: `AggregateRiskMonitor` (단일 종목 노출/전략 간 중복도)
-- [x] 데이터 파이프라인: Historical OHLCV 벌크 수집 (FinanceDataReader + KIS API)
-- [x] Orchestrator `--independent-portfolio` 모드: 전략별 독립 PM 인스턴스 + 합산 리스크 체크 + 승격 알림
-- [x] 승격 알림: NotifierAgent `send_promotion_alert()` Telegram 연동
-- [x] 승격 CLI: `scripts/promote_strategy.py` (--check, --list, --force)
-- [x] 승격 API: 3개 엔드포인트 (promotion-status, promotion-readiness, promote)
-
-다음 작업:
-- [ ] Docker 환경 통합 테스트 (pytest)
-- [ ] 대시보드에 전략별 모드/성과/승격 상태 UI 추가
-- [ ] 전략별 가상 자금 잔고 대시보드 표시
-- [ ] 백테스트 시뮬레이션 모드 (과거 데이터 기반 가상 트레이딩)
-
-논의 문서: `.agent/discussions/20260315-independent-portfolio-per-strategy.md`
-
-### Phase 13 — 마켓플레이스 섹터 확장
-
-목표:
-- 증권사 수준의 종목/섹터 커버리지 확보
-- KRX 전체 2,650종목 + ETF 700개 매일 EOD 수집
-- 섹터 히트맵, 랭킹, 테마, ETF, 워치리스트 UI 구축
-- AI 시그널 오버레이 (Strategy A/B/RL/S → 마켓플레이스)
-- 월 ₩4,100 이하 비용으로 운영
-
-작업 항목:
-- [x] `stock_master` + `macro_indicators` + `daily_rankings` + `theme_stocks` + `watchlist` DB 테이블
-- [x] 전체 종목 배치 수집기 (`stock_master_collector.py`, `macro_collector.py`, `ranking_calculator.py`)
-- [x] Redis 캐시 구조 (24h 마스터, 5min 랭킹, 1h 매크로)
-- [x] Marketplace API 15+ 엔드포인트 (`marketplace.py`)
-- [x] 섹터 히트맵/랭킹/테마/ETF/워치리스트 UI (`Marketplace.tsx`)
-- [x] 30개 투자 테마 초기 데이터 (`src/data/themes.py`)
-- [x] 통합 테스트 (`test/test_marketplace_week1.py`)
-
-논의 문서: `.agent/discussions/20260315-marketplace-sector-expansion.md` (Closed)
-
-### 수집-저장 파이프라인 최적화 (2026-03-16)
-
-목표:
-- N+1 쿼리 안티패턴 제거로 DB 부하 95%+ 감소
-- 실시간 틱 단건 INSERT를 버퍼 배치로 전환
-
-완료 항목:
-- [x] `db_client.py`에 `executemany()` 헬퍼 추가 (chunk_size=5,000 내장)
-- [x] `queries.py` — `upsert_market_data()` for→executemany 전환 (2,400 RTT → 1 RTT)
-- [x] `marketplace_queries.py` — 4개 함수 전환 (stock_master/theme/macro/rankings)
-- [x] `collector.py` — 실시간 틱 버퍼 도입 (100건 또는 1초 주기 flush)
-- [x] AST 검증 통과, AI 합의(Copilot/Claude Opus) 확인
-
-논의 문서: `.agent/discussions/20260316-n1-query-batch-optimization.md`
-
-## 현재 상태 요약
-
-- 코어 트레이딩 트랙: 구현 완료 및 유지보수 단계
-- **수집-저장 파이프라인**: N+1 쿼리 제거 + 틱 버퍼링으로 최적화 완료 (2026-03-16)
-- RL 트레이딩: Phase 9 전체 구현 완료 (dataset builder v2, trading env, walk-forward, shadow inference, promotion gate, REST API 17개)
-- 검색/스크래핑 스택: 파이프라인 설계 완료, MVP 구현 완료, SearchRunner Orchestrator 통합 완료
-- N-way 블렌딩: 설계 확정, 구현 완료 (Phase 11), Strategy S 포함 4-way 블렌딩 운영 중
-- 독립 포트폴리오: 핵심 인프라 + Orchestrator 통합 완료 (Phase 12)
-- 마켓플레이스: Week 1~5 전체 구현 완료 (Phase 13)
-- 피드백 루프: LLM 피드백 + RL 재학습 + 백테스트 파이프라인 운영 중
-- S3 Data Lake: MinIO + Parquet 기반 데이터 레이크 운영 중
+경량 Kubernetes(K3s) 클러스터에 전체 시스템을 배포한다.
+자동 복구, 롤링 업데이트, 리소스 관리를 갖춘 운영 환경을 구성한다.
+실거래 전환 체크리스트를 완료한 후 배포를 승격한다.
