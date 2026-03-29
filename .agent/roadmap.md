@@ -50,14 +50,14 @@ PR #38/#39/#41/#51. Helm chart + Kustomize + CI/CD(4단계 게이트) + Dockerfi
 **롤백**: 인프라 `helm rollback` / 앱 `git revert` → `kubectl apply -k`
 
 **완료된 액션 아이템:**
-1. ~~`k8s/base/`에서 postgres/redis/minio 삭제~~ — PR #64 완료
-2. ~~Kustomize overlays dev/prod 보강~~ — PR #64 완료 (storage, ingress TLS, UI 리소스 패치)
-3. ~~configmap/secrets Bitnami 서비스명 정합~~ — PR #64 완료
+1. ~~커스텀 StatefulSet 삭제 → Bitnami chart values 작성~~ — PR #63 완료 (Helm 레이어)
+2. ~~`k8s/base/`에서 postgres/redis/minio 삭제~~ — PR #64 완료 (Kustomize 레이어)
+3. ~~Kustomize overlays dev/prod 보강~~ — PR #64 완료 (storage, ingress TLS, UI 리소스 패치)
+4. ~~configmap/secrets Bitnami 서비스명 정합~~ — PR #63/#64 완료
 
 **남은 액션 아이템:**
-1. Bitnami Helm repo 추가 + 인프라 설치 스크립트 작성
-2. `k8s/scripts/deploy.sh`를 Helm → Kustomize 순서로 수정
-3. K3s 클러스터 실배포 검증
+1. `k8s/scripts/deploy.sh`를 Helm(인프라) → Kustomize(앱) 순서로 수정
+2. K3s 클러스터 실배포 검증
 
 #### K8s 로컬 환경: Colima
 
