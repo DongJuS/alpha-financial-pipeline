@@ -37,8 +37,8 @@ class ModelConfigApiTest(unittest.IsolatedAsyncioTestCase):
             patch(
                 "src.api.routers.models.provider_status",
                 return_value=[
-                    {"provider": "claude", "default_model": "claude-3-5-sonnet-latest", "configured": True},
-                    {"provider": "gpt", "default_model": "gpt-4o-mini", "configured": False},
+                    {"provider": "claude", "mode": "SDK (API Key)", "default_model": "claude-3-5-sonnet-latest", "configured": True},
+                    {"provider": "gpt", "mode": "미연결", "default_model": "gpt-4o-mini", "configured": False},
                 ],
             ),
         ):
@@ -64,7 +64,7 @@ class ModelConfigApiTest(unittest.IsolatedAsyncioTestCase):
             patch("src.api.routers.models.ensure_model_role_configs", new=AsyncMock(return_value=self._rows())),
             patch(
                 "src.api.routers.models.provider_status",
-                return_value=[{"provider": "claude", "default_model": "claude-3-5-sonnet-latest", "configured": True}],
+                return_value=[{"provider": "claude", "mode": "SDK (API Key)", "default_model": "claude-3-5-sonnet-latest", "configured": True}],
             ),
         ):
             response = await update_model_config(payload, {"sub": "admin", "is_admin": True})
