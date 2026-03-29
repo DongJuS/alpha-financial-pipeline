@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 test/test_search_runner_integration.py — SearchRunner Integration Tests
 
@@ -70,9 +72,19 @@ class TestSearchRunnerProtocol(unittest.IsolatedAsyncioTestCase):
             search_agent=self.mock_search_agent,
         )
         self.runner = SearchRunner(self.rpm)
+        # Redis/DB 의존성 mock
+        self._patches = [
+            patch("src.agents.research_portfolio_manager.get_redis", new_callable=AsyncMock),
+            patch("src.agents.research_portfolio_manager.set_heartbeat", new_callable=AsyncMock),
+            patch("src.agents.research_portfolio_manager.insert_heartbeat", new_callable=AsyncMock),
+        ]
+        for p in self._patches:
+            p.start()
 
     async def asyncTearDown(self):
         """각 테스트 후 정리."""
+        for p in self._patches:
+            p.stop()
         await self.rpm.close()
 
     async def test_runner_implements_protocol(self):
@@ -135,15 +147,17 @@ class TestSearchRunnerProtocol(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(signals, [])
 
     async def test_runner_error_handling(self):
-        """리서치 실패 시 빈 리스트 반환."""
+        """리서치 실패 시 HOLD 시그널 반환 (graceful degradation)."""
 
         async def failing_research(*args, **kwargs):
             raise RuntimeError("검색 실패!")
 
         self.mock_search_agent.run_research = failing_research
         signals = await self.runner.run(["005930"])
-        # 에러 핸들링: 빈 리스트 반환
-        self.assertEqual(signals, [])
+        # 에러 핸들링: ResearchPortfolioManager가 HOLD 시그널로 변환
+        self.assertEqual(len(signals), 1)
+        self.assertEqual(signals[0].signal, "HOLD")
+        self.assertEqual(signals[0].confidence, 0.0)
 
     async def test_runner_partial_failure(self):
         """일부 티커 실패 시에도 성공한 신호 반환."""
@@ -218,15 +232,28 @@ class TestOrchestratorSearchRunnerIntegration(unittest.IsolatedAsyncioTestCase):
         """각 테스트 전 초기화."""
         from src.agents.orchestrator import OrchestratorAgent
 
-        self.orchestrator = OrchestratorAgent()
+        # config의 strategy_blend_weights 기본값과 동일하게 S 포함 가중치 전달
+        self.orchestrator = OrchestratorAgent(
+            strategy_blend_weights={"A": 0.30, "B": 0.30, "RL": 0.20, "S": 0.20},
+        )
         self.mock_search_agent = MockSearchAgent()
         self.rpm = ResearchPortfolioManager(
             search_agent=self.mock_search_agent,
         )
         self.runner = SearchRunner(self.rpm)
+        # Redis/DB 의존성 mock
+        self._patches = [
+            patch("src.agents.research_portfolio_manager.get_redis", new_callable=AsyncMock),
+            patch("src.agents.research_portfolio_manager.set_heartbeat", new_callable=AsyncMock),
+            patch("src.agents.research_portfolio_manager.insert_heartbeat", new_callable=AsyncMock),
+        ]
+        for p in self._patches:
+            p.start()
 
     async def asyncTearDown(self):
         """각 테스트 후 정리."""
+        for p in self._patches:
+            p.stop()
         await self.rpm.close()
 
     async def test_register_search_runner(self):
@@ -239,7 +266,7 @@ class TestOrchestratorSearchRunnerIntegration(unittest.IsolatedAsyncioTestCase):
     async def test_list_runners_includes_search_runner(self):
         """등록된 러너 목록에 S가 포함됨."""
         self.orchestrator.register_strategy(self.runner)
-        runners = self.orchestrator.registry.list_runners()
+        runners = self.orchestrator.registry.active_names
         self.assertIn("S", runners)
 
     async def test_run_strategies_with_search_runner(self):
