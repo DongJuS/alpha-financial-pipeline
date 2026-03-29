@@ -1,0 +1,24 @@
+# Bitnami Redis Helm chart values
+# 설치: helm install redis bitnami/redis -n alpha-trading -f redis-values.yaml
+
+architecture: standalone
+
+auth:
+  enabled: false
+
+master:
+  persistence:
+    size: 2Gi
+    storageClass: local-path
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
