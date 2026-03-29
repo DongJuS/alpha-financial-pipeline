@@ -63,6 +63,18 @@ services:
       "
     restart: "no"
 
+  db-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://alpha_user:alpha_pass@postgres:5432/alpha_db
+    command: python scripts/db/init_db.py
+    restart: "no"
+
   api:
     build:
       context: .
@@ -78,8 +90,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://minio:9000
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       minio:
@@ -118,8 +130,8 @@ services:
       ORCH_CONSENSUS_ROUNDS: ""
       ORCH_CONSENSUS_THRESHOLD: ""
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       minio:
@@ -161,8 +173,8 @@ services:
       S3_ENDPOINT_URL: http://minio:9000
       GEN_API_URL: http://gen:9999
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       minio:
