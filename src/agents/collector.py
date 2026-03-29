@@ -31,6 +31,7 @@ from src.services.yahoo_finance import fetch_daily_bars
 from src.utils.config import get_settings, has_kis_credentials, kis_app_key_for_scope, kis_app_secret_for_scope
 from src.utils.logging import get_logger, setup_logging
 from src.utils.market_data import compute_change_pct
+from src.utils.ticker import from_raw as ticker_from_raw
 from src.utils.redis_client import (
     KEY_LATEST_TICKS,
     KEY_REALTIME_SERIES,
@@ -158,32 +159,26 @@ class CollectorAgent:
         if df is None or df.empty:
             return []
 
+        mkt = market if market in {"KOSPI", "KOSDAQ"} else "KOSPI"
+        instrument_id = ticker_from_raw(ticker, mkt)
+
         points: list[MarketDataPoint] = []
-        previous_close: int | None = None
+        previous_close: float | None = None
         for index, row in df.iterrows():
             trade_date = index.date() if hasattr(index, "date") else datetime.now(KST).date()
-            ts = datetime(
-                trade_date.year,
-                trade_date.month,
-                trade_date.day,
-                15,
-                30,
-                tzinfo=KST,
-            )
-            close_value = int(row.get("Close", 0))
+            close_value = float(row.get("Close", 0))
             if close_value <= 0:
                 continue
             change_pct = compute_change_pct(close_value, previous_close)
             points.append(
                 MarketDataPoint(
-                    ticker=ticker,
+                    instrument_id=instrument_id,
                     name=name,
-                    market=market if market in {"KOSPI", "KOSDAQ"} else "KOSPI",
-                    timestamp_kst=ts,
-                    interval="daily",
-                    open=int(row.get("Open", 0)),
-                    high=int(row.get("High", 0)),
-                    low=int(row.get("Low", 0)),
+                    market=mkt,
+                    traded_at=trade_date,
+                    open=float(row.get("Open", 0)),
+                    high=float(row.get("High", 0)),
+                    low=float(row.get("Low", 0)),
                     close=close_value,
                     volume=int(row.get("Volume", 0)),
                     change_pct=change_pct,
@@ -225,7 +220,7 @@ class CollectorAgent:
             tick_records = []
             for point in batch:
                 tick_records.append({
-                    "ticker": point.ticker,
+                    "ticker": point.instrument_id,
                     "price": point.close,
                     "volume": point.volume,
                     "timestamp_kst": point.timestamp_kst,
@@ -241,8 +236,11 @@ class CollectorAgent:
 
     async def _cache_latest_tick(self, point: MarketDataPoint, source: str) -> None:
         redis = await get_redis()
+        # Redis 키는 instrument_id (005930.KS) 기반
+        cache_key = point.instrument_id
         payload = {
-            "ticker": point.ticker,
+            "ticker": cache_key,
+            "instrument_id": cache_key,
             "name": point.name,
             "current_price": point.close,
             "change_pct": point.change_pct,
@@ -251,11 +249,11 @@ class CollectorAgent:
             "source": source,
         }
         encoded = json.dumps(payload, ensure_ascii=False)
-        series_key = KEY_REALTIME_SERIES.format(ticker=point.ticker)
+        series_key = KEY_REALTIME_SERIES.format(ticker=cache_key)
 
         # Redis pipeline: 4 round trips → 1 round trip
         pipe = redis.pipeline(transaction=False)
-        pipe.set(KEY_LATEST_TICKS.format(ticker=point.ticker), encoded, ex=60)
+        pipe.set(KEY_LATEST_TICKS.format(ticker=cache_key), encoded, ex=60)
         pipe.lpush(series_key, encoded)
         pipe.ltrim(series_key, 0, 299)
         pipe.expire(series_key, TTL_REALTIME_SERIES)
@@ -453,32 +451,30 @@ class CollectorAgent:
         """FinanceDataReader를 이용한 일봉 과거 데이터 수집."""
         fdr = self._load_fdr()
 
+        mkt = market if market in {"KOSPI", "KOSDAQ"} else "KOSPI"
+        instrument_id = ticker_from_raw(ticker, mkt)
+
         def _fetch():
             df = fdr.DataReader(ticker, start_date, end_date)
             if df is None or df.empty:
                 return []
             points: list[MarketDataPoint] = []
-            previous_close: int | None = None
+            previous_close: float | None = None
             for index, row in df.iterrows():
                 trade_date = index.date() if hasattr(index, "date") else datetime.now(KST).date()
-                ts = datetime(
-                    trade_date.year, trade_date.month, trade_date.day,
-                    15, 30, tzinfo=KST,
-                )
-                close_value = int(row.get("Close", 0))
+                close_value = float(row.get("Close", 0))
                 if close_value <= 0:
                     continue
                 change_pct = compute_change_pct(close_value, previous_close)
                 points.append(
                     MarketDataPoint(
-                        ticker=ticker,
+                        instrument_id=instrument_id,
                         name=name,
-                        market=market if market in {"KOSPI", "KOSDAQ"} else "KOSPI",
-                        timestamp_kst=ts,
-                        interval="daily",
-                        open=int(row.get("Open", 0)),
-                        high=int(row.get("High", 0)),
-                        low=int(row.get("Low", 0)),
+                        market=mkt,
+                        traded_at=trade_date,
+                        open=float(row.get("Open", 0)),
+                        high=float(row.get("High", 0)),
+                        low=float(row.get("Low", 0)),
                         close=close_value,
                         volume=int(row.get("Volume", 0)),
                         change_pct=change_pct,
@@ -507,7 +503,11 @@ class CollectorAgent:
         name: str,
         market: str,
     ) -> list[MarketDataPoint]:
-        """KIS API를 이용한 분봉 과거 데이터 수집 (초당 1회 제한)."""
+        """KIS API를 이용한 분봉 과거 데이터 수집 (초당 1회 제한).
+
+        NOTE: ohlcv_daily는 일봉 전용 테이블이므로, 분봉 데이터는 일별로
+        집계(일봉 OHLCV)하여 저장합니다. 원본 분봉은 S3에만 보관됩니다.
+        """
         scope = self._account_scope()
         app_key = kis_app_key_for_scope(self.settings, scope)
         app_secret = kis_app_secret_for_scope(self.settings, scope)
@@ -525,6 +525,8 @@ class CollectorAgent:
             "custtype": "P",
         }
 
+        mkt = market if market in {"KOSPI", "KOSDAQ"} else "KOSPI"
+        instrument_id = ticker_from_raw(ticker, mkt)
         points: list[MarketDataPoint] = []
         base_url = self.settings.kis_base_url_for_scope(scope)
         url = f"{base_url}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice"
@@ -550,29 +552,40 @@ class CollectorAgent:
                     data = resp.json()
 
                 output2 = data.get("output2") or []
-                for item in output2:
-                    ts_str = item.get("stck_cntg_hour", "")
-                    if len(ts_str) >= 6:
-                        ts = datetime(
-                            current.year, current.month, current.day,
-                            int(ts_str[:2]), int(ts_str[2:4]), int(ts_str[4:6]),
-                            tzinfo=KST,
-                        )
-                    else:
-                        ts = datetime(current.year, current.month, current.day, 15, 30, tzinfo=KST)
+                # 일별 집계용 변수
+                day_open: float | None = None
+                day_high: float = 0
+                day_low: float = float("inf")
+                day_close: float = 0
+                day_volume: int = 0
 
+                for item in output2:
+                    o = float(item.get("stck_oprc", 0))
+                    h = float(item.get("stck_hgpr", 0))
+                    l = float(item.get("stck_lwpr", 0))
+                    c = float(item.get("stck_prpr", 0))
+                    v = int(item.get("cntg_vol", 0))
+
+                    if day_open is None:
+                        day_open = o
+                    day_high = max(day_high, h)
+                    if l > 0:
+                        day_low = min(day_low, l)
+                    day_close = c
+                    day_volume += v
+
+                if day_open is not None and day_close > 0:
                     points.append(
                         MarketDataPoint(
-                            ticker=ticker,
+                            instrument_id=instrument_id,
                             name=name,
-                            market=market if market in {"KOSPI", "KOSDAQ"} else "KOSPI",
-                            timestamp_kst=ts,
-                            interval="tick",
-                            open=int(item.get("stck_oprc", 0)),
-                            high=int(item.get("stck_hgpr", 0)),
-                            low=int(item.get("stck_lwpr", 0)),
-                            close=int(item.get("stck_prpr", 0)),
-                            volume=int(item.get("cntg_vol", 0)),
+                            market=mkt,
+                            traded_at=current,
+                            open=day_open,
+                            high=day_high,
+                            low=day_low if day_low != float("inf") else day_open,
+                            close=day_close,
+                            volume=day_volume,
                             change_pct=None,
                         )
                     )
@@ -586,20 +599,24 @@ class CollectorAgent:
         if points:
             from src.db.queries import upsert_market_data
             saved = await upsert_market_data(points)
-            logger.info("Historical intraday [%s] %s~%s: %d건 저장", ticker, start_date, end_date, saved)
+            logger.info("Historical intraday [%s] %s~%s: %d건 저장 (일별 집계)", ticker, start_date, end_date, saved)
 
         return points
 
     async def check_data_exists(self, ticker: str, interval: str = "daily") -> int:
-        """특정 종목의 기존 데이터 수를 확인합니다 (resume 지원용)."""
+        """특정 종목의 기존 데이터 수를 확인합니다 (resume 지원용).
+
+        ticker는 instrument_id(005930.KS) 또는 raw_code(005930) 모두 허용합니다.
+        """
         from src.utils.db_client import fetchval
         count = await fetchval(
             """
-            SELECT COUNT(*) FROM market_data
-            WHERE ticker = $1 AND interval = $2
+            SELECT COUNT(*)
+            FROM ohlcv_daily o
+            JOIN instruments i ON o.instrument_id = i.instrument_id
+            WHERE o.instrument_id = $1 OR i.raw_code = $1
             """,
             ticker,
-            interval,
         )
         return int(count or 0)
 
@@ -648,7 +665,7 @@ class CollectorAgent:
                     "type": "data_ready",
                     "agent_id": self.agent_id,
                     "count": saved,
-                    "tickers": [p.ticker for p in latest_points[:20]],
+                    "tickers": [p.instrument_id for p in latest_points[:20]],
                     "timestamp_utc": datetime.utcnow().isoformat() + "Z",
                 },
                 ensure_ascii=False,
@@ -705,6 +722,8 @@ class CollectorAgent:
                     logger.warning("Yahoo yfinance 수집도 실패 [%s/%s]: %s", ticker, yahoo_ticker, yf_exc)
                     continue
 
+            mkt = market if market in {"KOSPI", "KOSDAQ"} else "KOSPI"
+            instrument_id = ticker_from_raw(ticker, mkt)
             for bar in bars:
                 try:
                     bar_date = bar.get("date") if isinstance(bar, dict) else bar.date
@@ -718,22 +737,14 @@ class CollectorAgent:
                     trade_date = datetime.now(KST).date()
                 points.append(
                     MarketDataPoint(
-                        ticker=ticker,
+                        instrument_id=instrument_id,
                         name=name,
-                        market=market if market in {"KOSPI", "KOSDAQ"} else "KOSPI",
-                        timestamp_kst=datetime(
-                            trade_date.year,
-                            trade_date.month,
-                            trade_date.day,
-                            15,
-                            30,
-                            tzinfo=KST,
-                        ),
-                        interval="daily",
-                        open=int(round(float(bar_open))),
-                        high=int(round(float(bar_high))),
-                        low=int(round(float(bar_low))),
-                        close=int(round(float(bar_close))),
+                        market=mkt,
+                        traded_at=trade_date,
+                        open=float(bar_open),
+                        high=float(bar_high),
+                        low=float(bar_low),
+                        close=float(bar_close),
                         volume=int(bar_volume),
                         change_pct=None,
                     )
@@ -753,12 +764,12 @@ class CollectorAgent:
         # 최신 data point들로 Redis 캐시 + Pub/Sub 발행
         if points:
             latest_points = []
-            # ticker별로 최신 1건씩 추출
-            seen_tickers = set()
+            # instrument_id별로 최신 1건씩 추출
+            seen_ids = set()
             for p in reversed(points):
-                if p.ticker not in seen_tickers:
+                if p.instrument_id not in seen_ids:
                     latest_points.append(p)
-                    seen_tickers.add(p.ticker)
+                    seen_ids.add(p.instrument_id)
                     if len(latest_points) >= len(selected):
                         break
 
@@ -772,7 +783,7 @@ class CollectorAgent:
                         "type": "data_ready",
                         "agent_id": self.agent_id,
                         "count": saved,
-                        "tickers": [p.ticker for p in latest_points[:20]],
+                        "tickers": [p.instrument_id for p in latest_points[:20]],
                         "timestamp_utc": datetime.utcnow().isoformat() + "Z",
                     },
                     ensure_ascii=False,
@@ -897,16 +908,17 @@ class CollectorAgent:
                             continue
 
                         now_kst = datetime.now(KST)
+                        mkt = market if market in {"KOSPI", "KOSDAQ"} else "KOSPI"
+                        inst_id = ticker_from_raw(ticker, mkt)
                         point = MarketDataPoint(
-                            ticker=ticker,
+                            instrument_id=inst_id,
                             name=name,
-                            market=market if market in {"KOSPI", "KOSDAQ"} else "KOSPI",
-                            timestamp_kst=now_kst,
-                            interval="tick",
-                            open=int(price),
-                            high=int(price),
-                            low=int(price),
-                            close=int(price),
+                            market=mkt,
+                            traded_at=now_kst.date(),
+                            open=float(price),
+                            high=float(price),
+                            low=float(price),
+                            close=float(price),
                             volume=int(volume),
                             change_pct=None,
                         )
@@ -923,8 +935,9 @@ class CollectorAgent:
                                 {
                                     "type": "tick",
                                     "agent_id": self.agent_id,
-                                    "ticker": ticker,
-                                    "price": int(price),
+                                    "ticker": inst_id,
+                                    "instrument_id": inst_id,
+                                    "price": float(price),
                                     "volume": int(volume),
                                     "timestamp_utc": datetime.utcnow().isoformat() + "Z",
                                 },
