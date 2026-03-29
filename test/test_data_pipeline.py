@@ -49,7 +49,7 @@ class TestCollectorHistoricalDaily(unittest.TestCase):
         mock_fdr_loader.return_value = mock_fdr
 
         agent = self._make_agent()
-        points = asyncio.get_event_loop().run_until_complete(
+        points = asyncio.run(
             agent.fetch_historical_ohlcv(
                 ticker="005930",
                 start_date="2024-01-01",
@@ -78,7 +78,7 @@ class TestCollectorHistoricalDaily(unittest.TestCase):
         mock_fdr_loader.return_value = mock_fdr
 
         agent = self._make_agent()
-        points = asyncio.get_event_loop().run_until_complete(
+        points = asyncio.run(
             agent.fetch_historical_ohlcv("999999", "2024-01-01", "2024-01-05")
         )
 
@@ -99,7 +99,7 @@ class TestCollectorCheckDataExists(unittest.TestCase):
         from src.agents.collector import CollectorAgent
 
         agent = CollectorAgent()
-        count = asyncio.get_event_loop().run_until_complete(
+        count = asyncio.run(
             agent.check_data_exists("005930", "daily")
         )
         self.assertEqual(count, 150)
