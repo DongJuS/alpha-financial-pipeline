@@ -96,7 +96,7 @@ class StrategyATournament:
 
     async def backfill_outcomes(self, target_date: date) -> int:
         """
-        predictions.was_correct / actual_close를 market_data 일봉 기준으로 채웁니다.
+        predictions.was_correct / actual_close를 ohlcv_daily 일봉 기준으로 채웁니다.
         """
         rows = await fetch(
             """
@@ -108,19 +108,23 @@ class StrategyATournament:
             """,
             target_date,
         )
+        from src.utils.market_data import to_instrument_id
         updated = 0
         for row in rows:
+            candidates = [
+                to_instrument_id(row["ticker"], "KOSPI"),
+                to_instrument_id(row["ticker"], "KOSDAQ"),
+            ]
             md = await fetchrow(
                 """
-                SELECT open, close
-                FROM market_data
-                WHERE ticker = $1
-                  AND interval = 'daily'
-                  AND (timestamp_kst AT TIME ZONE 'Asia/Seoul')::date = $2
-                ORDER BY timestamp_kst DESC
+                SELECT od.open, od.close
+                FROM ohlcv_daily od
+                WHERE od.instrument_id = ANY($1)
+                  AND od.traded_at = $2
+                ORDER BY od.traded_at DESC
                 LIMIT 1
                 """,
-                row["ticker"],
+                candidates,
                 target_date,
             )
             if not md:

@@ -379,13 +379,13 @@ async def get_performance(
     benchmark_task = fetch(
         """
         SELECT
-            (timestamp_kst AT TIME ZONE 'Asia/Seoul')::date AS trade_date,
-            AVG(close)::float AS avg_close
-        FROM market_data
-        WHERE interval = 'daily'
-          AND market = 'KOSPI'
-          AND timestamp_kst >= NOW() - ($1 * INTERVAL '1 day')
-        GROUP BY (timestamp_kst AT TIME ZONE 'Asia/Seoul')::date
+            od.traded_at AS trade_date,
+            AVG(od.close)::float AS avg_close
+        FROM ohlcv_daily od
+        JOIN instruments i ON od.instrument_id = i.instrument_id
+        WHERE i.market_id = 'KOSPI'
+          AND od.traded_at >= CURRENT_DATE - ($1 * INTERVAL '1 day')
+        GROUP BY od.traded_at
         ORDER BY trade_date
         """,
         days,
@@ -438,13 +438,13 @@ async def get_performance_series(
     benchmark_rows = await fetch(
         """
         SELECT
-            (timestamp_kst AT TIME ZONE 'Asia/Seoul')::date AS trade_date,
-            AVG(close)::float AS avg_close
-        FROM market_data
-        WHERE interval = 'daily'
-          AND market = 'KOSPI'
-          AND timestamp_kst >= NOW() - ($1 * INTERVAL '1 day')
-        GROUP BY (timestamp_kst AT TIME ZONE 'Asia/Seoul')::date
+            od.traded_at AS trade_date,
+            AVG(od.close)::float AS avg_close
+        FROM ohlcv_daily od
+        JOIN instruments i ON od.instrument_id = i.instrument_id
+        WHERE i.market_id = 'KOSPI'
+          AND od.traded_at >= CURRENT_DATE - ($1 * INTERVAL '1 day')
+        GROUP BY od.traded_at
         ORDER BY trade_date
         """,
         days,

@@ -25,12 +25,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
-from src.db.models import AgentHeartbeatRecord, MarketDataPoint
-from src.db.queries import insert_heartbeat, upsert_market_data
+from src.db.models import AgentHeartbeatRecord, MarketDataPoint, OHLCVDaily
+from src.db.queries import insert_heartbeat, upsert_market_data, upsert_ohlcv_daily
 from src.services.yahoo_finance import fetch_daily_bars
 from src.utils.config import get_settings, has_kis_credentials, kis_app_key_for_scope, kis_app_secret_for_scope
 from src.utils.logging import get_logger, setup_logging
-from src.utils.market_data import compute_change_pct
+from src.utils.market_data import compute_change_pct, to_instrument_id
 from src.utils.redis_client import (
     KEY_LATEST_TICKS,
     KEY_REALTIME_SERIES,
@@ -191,6 +191,27 @@ class CollectorAgent:
             )
             previous_close = close_value
         return points
+
+    @staticmethod
+    def _to_ohlcv_daily_list(points: list[MarketDataPoint]) -> list[OHLCVDaily]:
+        """MarketDataPoint 리스트(daily)를 OHLCVDaily 리스트로 변환합니다."""
+        result: list[OHLCVDaily] = []
+        for p in points:
+            if p.interval != "daily":
+                continue
+            result.append(OHLCVDaily(
+                instrument_id=to_instrument_id(p.ticker, p.market),
+                traded_at=p.timestamp_kst.date() if hasattr(p.timestamp_kst, "date") else p.timestamp_kst,
+                open=float(p.open),
+                high=float(p.high),
+                low=float(p.low),
+                close=float(p.close),
+                volume=p.volume,
+                change_pct=p.change_pct,
+                market_cap=p.market_cap,
+                foreign_ratio=p.foreigner_ratio,
+            ))
+        return result
 
     async def _flush_tick_buffer(self, force: bool = False) -> int:
         """틱 버퍼를 DB에 배치 flush합니다.
@@ -489,8 +510,9 @@ class CollectorAgent:
 
         points = await asyncio.to_thread(_fetch)
         if points:
-            from src.db.queries import upsert_market_data
-            saved = await upsert_market_data(points)
+            from src.db.queries import upsert_ohlcv_daily as _upsert_ohlcv
+            ohlcv_points = self._to_ohlcv_daily_list(points)
+            saved = await _upsert_ohlcv(ohlcv_points)
             logger.info("Historical daily [%s] %s~%s: %d건 저장", ticker, start_date, end_date, saved)
             # Redis 캐시 갱신 — 벌크 시드 후 대시보드에 최신값이 표시되도록
             try:
@@ -593,14 +615,27 @@ class CollectorAgent:
     async def check_data_exists(self, ticker: str, interval: str = "daily") -> int:
         """특정 종목의 기존 데이터 수를 확인합니다 (resume 지원용)."""
         from src.utils.db_client import fetchval
-        count = await fetchval(
-            """
-            SELECT COUNT(*) FROM market_data
-            WHERE ticker = $1 AND interval = $2
-            """,
-            ticker,
-            interval,
-        )
+        if interval == "daily":
+            candidates = [
+                to_instrument_id(ticker, "KOSPI"),
+                to_instrument_id(ticker, "KOSDAQ"),
+            ]
+            count = await fetchval(
+                """
+                SELECT COUNT(*) FROM ohlcv_daily
+                WHERE instrument_id = ANY($1)
+                """,
+                candidates,
+            )
+        else:
+            count = await fetchval(
+                """
+                SELECT COUNT(*) FROM market_data
+                WHERE ticker = $1 AND interval = $2
+                """,
+                ticker,
+                interval,
+            )
         return int(count or 0)
 
     async def collect_daily_bars(
@@ -627,7 +662,8 @@ class CollectorAgent:
             except Exception as e:
                 logger.warning("일봉 수집 실패 [%s]: %s", ticker, e)
 
-        saved = await upsert_market_data(points)
+        ohlcv_points = self._to_ohlcv_daily_list(points)
+        saved = await upsert_ohlcv_daily(ohlcv_points)
 
         # S3(MinIO) 저장
         try:
@@ -739,7 +775,8 @@ class CollectorAgent:
                     )
                 )
 
-        saved = await upsert_market_data(points)
+        ohlcv_points = self._to_ohlcv_daily_list(points)
+        saved = await upsert_ohlcv_daily(ohlcv_points)
 
         # S3(MinIO) 저장
         try:

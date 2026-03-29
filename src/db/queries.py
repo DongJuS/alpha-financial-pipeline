@@ -12,15 +12,17 @@ from src.db.models import (
     AgentHeartbeatRecord,
     MarketDataPoint,
     NotificationRecord,
+    OHLCVDaily,
     PaperOrderRequest,
     PredictionSignal,
 )
 from src.utils.account_scope import AccountScope, normalize_account_scope, scope_from_is_paper
 from src.utils.db_client import execute, executemany, fetch, fetchrow, fetchval
+from src.utils.market_data import to_instrument_id
 
 
 async def upsert_market_data(points: list[MarketDataPoint]) -> int:
-    """market_data를 upsert하고 반영 건수를 반환합니다."""
+    """market_data를 upsert하고 반영 건수를 반환합니다 (틱 데이터 전용)."""
     if not points:
         return 0
 
@@ -58,12 +60,50 @@ async def upsert_market_data(points: list[MarketDataPoint]) -> int:
     return len(points)
 
 
+async def upsert_ohlcv_daily(points: list[OHLCVDaily]) -> int:
+    """ohlcv_daily 테이블에 일봉 데이터를 upsert합니다."""
+    if not points:
+        return 0
+
+    query = """
+        INSERT INTO ohlcv_daily (
+            instrument_id, traded_at,
+            open, high, low, close, volume,
+            change_pct, market_cap, foreign_ratio, adj_close
+        ) VALUES (
+            $1, $2,
+            $3, $4, $5, $6, $7,
+            $8, $9, $10, $11
+        )
+        ON CONFLICT (instrument_id, traded_at)
+        DO UPDATE SET
+            open = EXCLUDED.open,
+            high = EXCLUDED.high,
+            low = EXCLUDED.low,
+            close = EXCLUDED.close,
+            volume = EXCLUDED.volume,
+            change_pct = EXCLUDED.change_pct,
+            market_cap = EXCLUDED.market_cap,
+            foreign_ratio = EXCLUDED.foreign_ratio,
+            adj_close = EXCLUDED.adj_close
+    """
+    await executemany(query, [
+        (
+            p.instrument_id, p.traded_at,
+            p.open, p.high, p.low, p.close, p.volume,
+            p.change_pct, p.market_cap, p.foreign_ratio, p.adj_close,
+        )
+        for p in points
+    ])
+    return len(points)
+
+
 async def list_tickers(limit: int = 30) -> list[dict]:
     rows = await fetch(
         """
-        SELECT DISTINCT ON (ticker) ticker, name, market
-        FROM market_data
-        ORDER BY ticker, timestamp_kst DESC
+        SELECT DISTINCT ON (i.raw_code) i.raw_code AS ticker, i.name, i.market_id AS market
+        FROM instruments i
+        ORDER BY i.raw_code
         LIMIT $1
         """,
         limit,
@@ -86,53 +126,86 @@ async def fetch_recent_market_data(
     if interval not in {"daily", "tick"}:
         raise ValueError(f"지원하지 않는 interval입니다: {interval}")
 
-    if days is None and seconds is None:
-        days = 30 if interval == "daily" else None
-        seconds = 86_400 if interval == "tick" else None
+    # ── tick 데이터: 기존 market_data 테이블 사용 ──
+    if interval == "tick":
+        if days is None and seconds is None:
+            seconds = 86_400
+        conditions = ["ticker = $1", "interval = $2"]
+        params: list[Any] = [ticker, interval]
+        if days is not None:
+            params.append(days)
+            conditions.append(f"timestamp_kst >= NOW() - (${len(params)} * INTERVAL '1 day')")
+        if seconds is not None:
+            params.append(seconds)
+            conditions.append(f"timestamp_kst >= NOW() - (${len(params)} * INTERVAL '1 second')")
+        limit_sql = ""
+        if limit is not None:
+            params.append(limit)
+            limit_sql = f" LIMIT ${len(params)}"
+        rows = await fetch(
+            f"""
+            SELECT
+                ticker, name, timestamp_kst, open, high, low, close, volume, change_pct
+            FROM market_data
+            WHERE {' AND '.join(conditions)}
+            ORDER BY timestamp_kst DESC
+            {limit_sql}
+            """,
+            *params,
+        )
+        return [dict(r) for r in rows]
 
-    conditions = [
-        "ticker = $1",
-        "interval = $2",
+    # ── daily 데이터: ohlcv_daily + instruments 테이블 사용 ──
+    if days is None:
+        days = 30
+
+    # ticker -> instrument_id 후보 생성 (KS, KQ 둘 다 시도)
+    candidates = [
+        to_instrument_id(ticker, "KOSPI"),
+        to_instrument_id(ticker, "KOSDAQ"),
     ]
-    params: list[Any] = [ticker, interval]
-
-    if days is not None:
-        params.append(days)
-        conditions.append(f"timestamp_kst >= NOW() - (${len(params)} * INTERVAL '1 day')")
-    if seconds is not None:
-        params.append(seconds)
-        conditions.append(f"timestamp_kst >= NOW() - (${len(params)} * INTERVAL '1 second')")
-
+    params_daily: list[Any] = [candidates, days]
     limit_sql = ""
     if limit is not None:
-        params.append(limit)
-        limit_sql = f" LIMIT ${len(params)}"
+        params_daily.append(limit)
+        limit_sql = f" LIMIT ${len(params_daily)}"
 
     rows = await fetch(
         f"""
         SELECT
-            ticker, name, timestamp_kst, open, high, low, close, volume, change_pct
-        FROM market_data
-        WHERE {' AND '.join(conditions)}
-        ORDER BY timestamp_kst DESC
+            i.raw_code AS ticker,
+            i.name,
+            od.traded_at AS timestamp_kst,
+            od.open, od.high, od.low, od.close, od.volume,
+            od.change_pct
+        FROM ohlcv_daily od
+        JOIN instruments i ON od.instrument_id = i.instrument_id
+        WHERE od.instrument_id = ANY($1)
+          AND od.traded_at >= CURRENT_DATE - ($2 * INTERVAL '1 day')
+        ORDER BY od.traded_at DESC
         {limit_sql}
         """,
-        *params,
+        *params_daily,
     )
     return [dict(r) for r in rows]
 
 
 async def latest_close_price(ticker: str) -> Optional[int]:
-    return await fetchval(
+    candidates = [
+        to_instrument_id(ticker, "KOSPI"),
+        to_instrument_id(ticker, "KOSDAQ"),
+    ]
+    val = await fetchval(
         """
         SELECT close
-        FROM market_data
-        WHERE ticker = $1
-        ORDER BY timestamp_kst DESC
+        FROM ohlcv_daily
+        WHERE instrument_id = ANY($1)
+        ORDER BY traded_at DESC
         LIMIT 1
         """,
-        ticker,
+        candidates,
     )
+    return int(val) if val is not None else None
 
 
 async def insert_prediction(signal: PredictionSignal) -> int:
