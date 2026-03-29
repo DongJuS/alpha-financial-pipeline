@@ -8,6 +8,7 @@ import json
 from typing import Any, Optional
 
 from src.llm.cli_bridge import build_cli_command, is_cli_available, run_cli_prompt
+from src.services.llm_usage_limiter import reserve_provider_call
 from src.utils.config import get_settings
 from src.utils.logging import get_logger
 from src.utils.secret_validation import is_placeholder_secret
@@ -59,14 +60,17 @@ class ClaudeClient:
         return bool(self._cli_command) or self._client is not None
 
     async def ask(self, prompt: str, max_tokens: int = 600, temperature: float = 0.2) -> str:
+        if not self.is_configured:
+            raise RuntimeError("Claude client is not configured.")
+
+        await reserve_provider_call("claude")
+
         if self._cli_command:
             return await run_cli_prompt(
                 command=self._cli_command,
                 prompt=prompt,
                 timeout_seconds=self.cli_timeout_seconds,
             )
-        if not self._client:
-            raise RuntimeError("Claude client is not configured.")
 
         resp = await self._client.messages.create(
             model=self.model,
