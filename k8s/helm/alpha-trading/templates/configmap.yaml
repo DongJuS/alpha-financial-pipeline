@@ -10,9 +10,9 @@ data:
   PORT: {{ .Values.api.port | quote }}
   APP_URL: "http://api:{{ .Values.api.port }}"
   DATABASE_URL: {{ include "alpha-trading.databaseUrl" . | quote }}
-  REDIS_URL: "redis://redis:6379/0"
-  S3_ENDPOINT_URL: "http://minio:9000"
-  S3_BUCKET_NAME: {{ .Values.minio.bucket | quote }}
+  REDIS_URL: {{ include "alpha-trading.redisUrl" . | quote }}
+  S3_ENDPOINT_URL: {{ include "alpha-trading.s3EndpointUrl" . | quote }}
+  S3_BUCKET_NAME: {{ .Values.infra.minio.bucket | quote }}
   LOG_LEVEL: "INFO"
   # Worker 설정
   {{- range $key, $val := .Values.worker.env }}

@@ -1,0 +1,20 @@
+# Bitnami MinIO Helm chart values
+# 설치: helm install minio bitnami/minio -n alpha-trading -f minio-values.yaml
+
+auth:
+  rootUser: minioadmin
+  rootPassword: minioadmin
+
+defaultBuckets: alpha-lake
+
+persistence:
+  size: 20Gi
+  storageClass: local-path
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
