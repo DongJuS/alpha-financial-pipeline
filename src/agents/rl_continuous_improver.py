@@ -176,6 +176,15 @@ class RLContinuousImprover:
                 self._mark_promoted(best.run_id)
 
         active_after = self._active_policy_id(canonical_ticker)
+
+        # S3 Data Lake에 학습 에피소드 아카이빙 (비필수)
+        await self._store_episode_to_s3(
+            ticker=canonical_ticker,
+            best=best,
+            dataset_days=dataset_days,
+            deployed=deployed,
+        )
+
         return RetrainOutcome(
             ticker=canonical_ticker,
             success=True,
@@ -326,3 +335,33 @@ class RLContinuousImprover:
             datetime.now(timezone.utc).isoformat(),
             encoding="utf-8",
         )
+
+    async def _store_episode_to_s3(
+        self,
+        ticker: str,
+        best: CandidateResult,
+        dataset_days: int,
+        deployed: bool,
+    ) -> None:
+        """학습 에피소드를 S3 Data Lake에 아카이빙합니다 (비필수)."""
+        try:
+            from src.services.datalake import store_rl_episodes
+
+            evaluation = best.artifact.evaluation
+            record = {
+                "ticker": ticker,
+                "policy_id": best.artifact.policy_id,
+                "profile_id": best.profile_id,
+                "dataset_days": dataset_days,
+                "train_return_pct": evaluation.baseline_return_pct,
+                "holdout_return_pct": evaluation.total_return_pct,
+                "excess_return_pct": evaluation.excess_return_pct,
+                "max_drawdown_pct": evaluation.max_drawdown_pct,
+                "walk_forward_passed": best.walk_forward.overall_approved,
+                "walk_forward_consistency": best.walk_forward.consistency_score,
+                "deployed": deployed,
+                "created_at": datetime.now(timezone.utc),
+            }
+            await store_rl_episodes([record])
+        except Exception as exc:
+            logger.debug("RL 에피소드 S3 저장 실패 (비필수): %s", exc)

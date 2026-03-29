@@ -37,25 +37,47 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
+def _is_running_in_container() -> bool:
+    """Docker/K8s 컨테이너 내부에서 실행 중인지 감지합니다."""
+    import os
+
+    if os.path.isfile("/.dockerenv"):
+        return True
+    if os.environ.get("KUBERNETES_SERVICE_HOST"):
+        return True
+    try:
+        with open("/proc/1/cgroup", "r") as f:
+            return "docker" in f.read() or "kubepods" in f.read()
+    except (FileNotFoundError, PermissionError):
+        return False
+
+
 def load_gemini_oauth_credentials() -> tuple[Any | None, str | None]:
     global _cached_credentials
     if _cached_credentials is not None and _cached_credentials[0] is not None:
         return _cached_credentials
     import os
+
     cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
     if cred_path and os.path.isfile(cred_path):
         logger.info("GOOGLE_APPLICATION_CREDENTIALS 파일 발견: %s", cred_path)
+
+    # ADC 탐색 경로: 로컬 + Docker/K8s 마운트 경로
     adc_paths = [
         os.path.expanduser("~/.config/gcloud/application_default_credentials.json"),
         "/root/.config/gcloud/application_default_credentials.json",
+        "/var/secrets/google/credentials.json",       # K8s secret mount
+        "/etc/google/auth/application_default_credentials.json",  # GKE workload identity
     ]
     for adc_path in adc_paths:
         if not cred_path and os.path.isfile(adc_path):
             logger.info("gcloud ADC 파일 발견: %s", adc_path)
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
             break
+
     try:
         import google.auth
+
         credentials, project_id = google.auth.default(scopes=list(GEMINI_OAUTH_SCOPES))
         _cached_credentials = (credentials, project_id)
         return _cached_credentials
