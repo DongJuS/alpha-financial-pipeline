@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 test/test_blend_nway.py — N-way 블렌딩 + StrategyRegistry + RL V2 시그널 매핑 통합 테스트
 """
