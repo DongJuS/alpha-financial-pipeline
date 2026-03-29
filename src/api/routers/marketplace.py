@@ -31,9 +31,7 @@ from src.utils.redis_client import (
     KEY_MACRO,
     KEY_RANKINGS,
     KEY_SECTOR_MAP,
-    KEY_STOCK_MASTER,
     KEY_THEME_MAP,
-    TTL_RANKINGS,
     get_redis,
 )
 

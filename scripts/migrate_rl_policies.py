@@ -41,7 +41,6 @@ sys.path.insert(0, str(ROOT))
 from src.agents.rl_policy_registry import (
     PolicyEntry,
     PolicyRegistry,
-    algorithm_dir_name,
     build_relative_path,
 )
 
@@ -201,7 +200,7 @@ def run_migration(*, execute: bool = False, clean: bool = False) -> None:
         registry.register_policy(entry)
 
     # 3. V1 활성 정책 반영
-    print(f"\n활성 정책 매핑:")
+    print("\n활성 정책 매핑:")
     for ticker, info in v1_active.items():
         active_pid = info.get("policy_id")
         if active_pid:
@@ -222,7 +221,7 @@ def run_migration(*, execute: bool = False, clean: bool = False) -> None:
                 dir_path.mkdir(parents=True, exist_ok=True)
 
     # 5. registry.json 저장
-    print(f"\nregistry.json 저장:")
+    print("\nregistry.json 저장:")
     print(f"  종목 수: {len(registry.tickers)}")
     print(f"  정책 수: {registry.total_policy_count()}")
     print(f"  활성 정책: {registry.list_active_policies()}")
@@ -238,7 +237,7 @@ def run_migration(*, execute: bool = False, clean: bool = False) -> None:
 
     # 6. 레거시 파일 정리 (선택)
     if clean:
-        print(f"\n레거시 파일 정리:")
+        print("\n레거시 파일 정리:")
         for path, _ in legacy:
             print(f"  [DEL] {path.relative_to(ROOT)}")
             if execute:
@@ -267,7 +266,7 @@ def run_migration(*, execute: bool = False, clean: bool = False) -> None:
     print(f"  스킵 (이미 존재): {skipped}개")
     print(f"  레지스트리 등록: {registry.total_policy_count()}개")
     if not execute:
-        print(f"\n  실제 실행하려면 --execute 플래그를 추가하세요.")
+        print("\n  실제 실행하려면 --execute 플래그를 추가하세요.")
     print()
 
 
