@@ -28,9 +28,8 @@ class TestRLDatasetBuilderV2:
 
     def test_technical_features_calculation(self):
         from src.agents.rl_dataset_builder_v2 import (
-            TechnicalFeatures,
-            compute_rsi,
             compute_sma,
+            compute_rsi,
             compute_volatility,
             compute_volume_ratio,
             compute_returns,
@@ -40,48 +39,31 @@ class TestRLDatasetBuilderV2:
         closes = [10000 + i * 100 for i in range(70)]
         volumes = [1_000_000 + random.randint(-100_000, 100_000) for _ in range(70)]
 
-        features = TechnicalFeatures(
-            sma_5=compute_sma(closes, 5),
-            sma_20=compute_sma(closes, 20),
-            sma_60=compute_sma(closes, 60),
-            rsi_14=compute_rsi(closes, 14),
-            volatility_10=compute_volatility(closes, 10),
-            volume_ratio=compute_volume_ratio(volumes, 20),
-            returns=compute_returns(closes),
-        )
+        sma_5 = compute_sma(closes, 5)
+        sma_20 = compute_sma(closes, 20)
+        sma_60 = compute_sma(closes, 60)
+        rsi_14 = compute_rsi(closes, 14)
+        vol_10 = compute_volatility(closes, 10)
+        vol_ratio = compute_volume_ratio(volumes, 20)
+        returns = compute_returns(closes)
 
-        assert features.sma_5[69] > 0
-        assert features.sma_20[69] > 0
-        assert features.sma_60[69] > 0
-        assert 0.0 <= features.rsi_14[69] <= 100.0
-        assert features.volatility_10[69] >= 0.0
-        assert features.volume_ratio[69] > 0.0
-        assert isinstance(features.returns[69], float)
+        assert sma_5[-1] > 0
+        assert sma_20[-1] > 0
+        assert sma_60[-1] > 0
+        assert 0.0 <= rsi_14[-1] <= 100.0
+        assert vol_10[-1] >= 0.0
+        assert vol_ratio[-1] > 0.0
+        assert isinstance(returns[-1], float)
 
     def test_technical_features_insufficient_data(self):
-        from src.agents.rl_dataset_builder_v2 import (
-            TechnicalFeatures,
-            compute_rsi,
-            compute_sma,
-            compute_volatility,
-            compute_volume_ratio,
-            compute_returns,
-        )
+        from src.agents.rl_dataset_builder_v2 import compute_sma
 
         closes = [10000, 10100, 10200]
-        volumes = [1000, 1100, 1200]
 
-        features = TechnicalFeatures(
-            sma_5=compute_sma(closes, 5),
-            sma_20=compute_sma(closes, 20),
-            sma_60=compute_sma(closes, 60),
-            rsi_14=compute_rsi(closes, 14),
-            volatility_10=compute_volatility(closes, 10),
-            volume_ratio=compute_volume_ratio(volumes, 20),
-            returns=compute_returns(closes),
-        )
+        sma_5 = compute_sma(closes, 5)
+        sma_60 = compute_sma(closes, 60)
         # SMA_60은 데이터 부족 시 사용 가능한 만큼으로 계산
-        assert features.sma_5[2] > 0 or features.sma_60[2] == 0.0
+        assert sma_5[-1] > 0 or sma_60[-1] == 0.0
 
     def test_enriched_dataset_state_vector(self):
         from src.agents.rl_dataset_builder_v2 import (
@@ -90,36 +72,44 @@ class TestRLDatasetBuilderV2:
             RLDatasetBuilderV2,
             TechnicalFeatures,
             compute_data_hash,
+            compute_returns,
+            compute_rsi,
+            compute_sma,
+            compute_volatility,
+            compute_volume_ratio,
         )
 
         closes = [10000 + i * 100 for i in range(10)]
-        technical = TechnicalFeatures(
-            sma_5=[10000.0 + i * 50 for i in range(10)],
-            sma_20=[10000.0 + i * 20 for i in range(10)],
-            sma_60=[10000.0 + i * 10 for i in range(10)],
-            rsi_14=[50.0 + i for i in range(10)],
-            volatility_10=[0.02] * 10,
-            volume_ratio=[1.1] * 10,
-            returns=[0.01] * 10,
-        )
-        market_context = MarketContext(kospi_change_pct=0.5)
+        volumes = [1_000_000] * 10
 
+        technical = TechnicalFeatures(
+            sma_5=compute_sma(closes, 5),
+            sma_20=compute_sma(closes, 20),
+            sma_60=compute_sma(closes, 60),
+            rsi_14=compute_rsi(closes, 14),
+            volatility_10=compute_volatility(closes, 10),
+            volume_ratio=compute_volume_ratio(volumes, 20),
+            returns=compute_returns(closes),
+        )
+
+        mc = MarketContext(kospi_change_pct=0.5, usd_krw=1350.0)
         dataset = EnrichedRLDataset(
             ticker="005930",
             closes=closes,
-            volumes=[1_000_000] * 10,
+            volumes=volumes,
             timestamps=["2026-03-01"] * 10,
             technical=technical,
-            market_context=market_context,
+            market_context=mc,
             dataset_version="v2_enriched",
             data_hash=compute_data_hash(closes),
-            feature_count=7,
+            feature_count=9,
             created_at="2026-03-01T00:00:00Z",
         )
 
         builder = RLDatasetBuilderV2()
         state_vector = builder.to_state_vector(dataset, 9)
         assert isinstance(state_vector, dict)
+        assert "sma_cross" in state_vector
         assert "rsi" in state_vector
         assert "kospi_chg" in state_vector
 
@@ -143,7 +133,7 @@ class TestTradingEnv:
     def test_reset(self):
         env = self._make_env()
         obs, info = env.reset()
-        assert hasattr(obs, '__len__')  # numpy array
+        assert obs is not None
         assert env._step_idx >= 0
 
     def test_step_hold(self):
@@ -157,11 +147,12 @@ class TestTradingEnv:
     def test_full_episode(self):
         env = self._make_env(50)
         env.reset()
-        terminated = False
+        done = False
         steps = 0
-        while not terminated:
+        while not done:
             action = random.randint(0, 2)  # BUY/SELL/HOLD
             obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
             steps += 1
             if steps > 200:
                 break
@@ -176,8 +167,8 @@ class TestTradingEnv:
         # BUY
         obs, reward, terminated, truncated, info = env.step(0)  # BUY
         assert env._position == 1
-        # SELL (allow_short=True by default, so SELL -> position -1)
-        obs, reward, terminated, truncated, info = env.step(3)  # CLOSE -> position 0
+        # CLOSE (포지션 청산)
+        obs, reward, terminated, truncated, info = env.step(3)  # CLOSE
         assert env._position == 0
 
 

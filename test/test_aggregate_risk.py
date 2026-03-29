@@ -33,6 +33,8 @@ class TestAggregateRiskMonitorConfig(unittest.TestCase):
 
     @patch.dict("os.environ", ENV_PATCH)
     def test_default_limits(self):
+        from src.utils.config import get_settings
+        get_settings.cache_clear()
         from src.utils.aggregate_risk import AggregateRiskMonitor
         monitor = AggregateRiskMonitor()
         self.assertAlmostEqual(monitor.max_single_stock_pct, 30.0)
@@ -40,6 +42,8 @@ class TestAggregateRiskMonitorConfig(unittest.TestCase):
 
     @patch.dict("os.environ", {**ENV_PATCH, "MAX_SINGLE_STOCK_EXPOSURE_PCT": "50.0"})
     def test_custom_limits(self):
+        from src.utils.config import get_settings
+        get_settings.cache_clear()
         from src.utils.aggregate_risk import AggregateRiskMonitor
         monitor = AggregateRiskMonitor()
         self.assertAlmostEqual(monitor.max_single_stock_pct, 50.0)
