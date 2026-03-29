@@ -15,7 +15,7 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
 from src.db.models import AgentHeartbeatRecord, MacroIndicator
-from src.db.marketplace_queries import upsert_macro_indicators, get_macro_indicators
+from src.db.marketplace_queries import upsert_macro_indicators
 from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import (
     KEY_MACRO,

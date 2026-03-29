@@ -68,7 +68,7 @@ async def run_gen_collector(
 
         elif mode == "full":
             result = await agent.run_full_cycle(lookback_days=lookback_days)
-            print(f"\n✅ 통합 수집 완료:")
+            print("\n✅ 통합 수집 완료:")
             print(f"   일봉: {result['daily_bars_count']}건")
             print(f"   틱:   {result['tick_count']}건")
             print(f"   지수: {result['indices_count']}건")
