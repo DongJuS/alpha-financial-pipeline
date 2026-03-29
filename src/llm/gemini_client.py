@@ -47,8 +47,7 @@ def _is_running_in_container() -> bool:
         return True
     try:
         with open("/proc/1/cgroup", "r") as f:
-            content = f.read()
-            return "docker" in content or "kubepods" in content
+            return "docker" in f.read() or "kubepods" in f.read()
     except (FileNotFoundError, PermissionError):
         return False
 
@@ -105,33 +104,7 @@ class GeminiClient:
         self._model: Optional[Any] = None
         self._auth_mode: Optional[str] = None
         self._quota_exhausted = self.__class__._global_quota_exhausted
-        # OAuth 우선, 실패 시 API key fallback
-        if not self._configure_oauth():
-            self._configure_api_key()
-
-    def _configure_api_key(self) -> bool:
-        """GEMINI_API_KEY 또는 GOOGLE_API_KEY 환경변수로 API key 모드를 시도합니다."""
-        import os
-
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        if not api_key:
-            if _is_running_in_container():
-                logger.warning(
-                    "컨테이너 환경에서 Gemini OAuth + API key 모두 미설정. "
-                    "GEMINI_API_KEY 환경변수 또는 서비스 계정 마운트를 확인하세요."
-                )
-            return False
-        try:
-            import google.generativeai as genai
-
-            genai.configure(api_key=api_key)
-            self._model = genai.GenerativeModel(self.model)
-            self._auth_mode = "api_key"
-            logger.info("Gemini API key 모드 활성화")
-            return True
-        except Exception as exc:
-            logger.warning("Gemini API key 초기화 실패: %s", exc)
-            return False
+        self._configure_oauth()
 
     def _configure_oauth(self) -> bool:
         credentials, project_id = load_gemini_oauth_credentials()
