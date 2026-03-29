@@ -5,7 +5,6 @@ DB/FDR 의존 없이 mock으로 부트스트랩 전체 흐름을 검증합니다
 """
 from __future__ import annotations
 
-import asyncio
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -57,10 +56,10 @@ def _make_artifact(
     )
 
 
-class TestSeedFdrHistory(unittest.TestCase):
+class TestSeedFdrHistory(unittest.IsolatedAsyncioTestCase):
     """seed_fdr_history 단위 테스트."""
 
-    def test_skip_when_db_has_enough_data(self):
+    async def test_skip_when_db_has_enough_data(self):
         """DB에 데이터가 충분하면 시딩을 스킵합니다."""
         from scripts.rl_bootstrap import seed_fdr_history
 
@@ -68,13 +67,13 @@ class TestSeedFdrHistory(unittest.TestCase):
 
         with patch("scripts.rl_bootstrap.fetch_recent_market_data", new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = mock_rows
-            result = asyncio.run(seed_fdr_history("005930", days=720))
+            result = await seed_fdr_history("005930", days=720)
 
         self.assertTrue(result.success)
         self.assertEqual(result.source, "db_existing")
         self.assertEqual(result.rows, 500)
 
-    def test_seed_via_fdr_fallback(self):
+    async def test_seed_via_fdr_fallback(self):
         """DB 데이터 부족 시 FDR 폴백으로 시딩합니다."""
         from scripts.rl_bootstrap import seed_fdr_history
 
@@ -92,12 +91,12 @@ class TestSeedFdrHistory(unittest.TestCase):
             mock_builder.build_dataset.return_value = dataset
 
             with patch("scripts.rl_bootstrap.RLDatasetBuilder", return_value=mock_builder):
-                result = asyncio.run(seed_fdr_history("005930", days=720))
+                result = await seed_fdr_history("005930", days=720)
 
         self.assertTrue(result.success)
         self.assertEqual(result.rows, 500)
 
-    def test_seed_failure_returns_error(self):
+    async def test_seed_failure_returns_error(self):
         """시딩 실패 시 에러 결과를 반환합니다."""
         from scripts.rl_bootstrap import seed_fdr_history
 
@@ -110,16 +109,16 @@ class TestSeedFdrHistory(unittest.TestCase):
             mock_builder.build_dataset.side_effect = ValueError("데이터 부족")
             mock_builder_cls.return_value = mock_builder
 
-            result = asyncio.run(seed_fdr_history("005930", days=720))
+            result = await seed_fdr_history("005930", days=720)
 
         self.assertFalse(result.success)
         self.assertIn("데이터 부족", result.error)
 
 
-class TestBootstrapTicker(unittest.TestCase):
+class TestBootstrapTicker(unittest.IsolatedAsyncioTestCase):
     """bootstrap_ticker 통합 테스트."""
 
-    def test_full_bootstrap_with_activation(self):
+    async def test_full_bootstrap_with_activation(self):
         """시딩 → 학습 → 활성화 전체 흐름을 검증합니다."""
         from scripts.rl_bootstrap import bootstrap_ticker
 
@@ -149,7 +148,7 @@ class TestBootstrapTicker(unittest.TestCase):
             mock_builder_cls.return_value = mock_builder
             mock_retrain.return_value = mock_retrain_outcome
 
-            result = asyncio.run(bootstrap_ticker("005930", seed_days=720, train_days=720))
+            result = await bootstrap_ticker("005930", seed_days=720, train_days=720)
 
         self.assertIsNotNone(result.seed)
         self.assertTrue(result.seed.success)
@@ -158,7 +157,7 @@ class TestBootstrapTicker(unittest.TestCase):
         self.assertTrue(result.retrain.deployed)
         self.assertEqual(result.retrain.active_policy_after, "rl_005930_test")
 
-    def test_seed_only_skips_training(self):
+    async def test_seed_only_skips_training(self):
         """--seed-only 모드에서는 학습을 스킵합니다."""
         from scripts.rl_bootstrap import bootstrap_ticker
 
@@ -171,13 +170,13 @@ class TestBootstrapTicker(unittest.TestCase):
             mock_builder.build_dataset.return_value = _make_dataset("005930")
             mock_builder_cls.return_value = mock_builder
 
-            result = asyncio.run(bootstrap_ticker("005930", seed_only=True))
+            result = await bootstrap_ticker("005930", seed_only=True)
 
         self.assertIsNotNone(result.seed)
         self.assertTrue(result.seed.success)
         self.assertIsNone(result.retrain)
 
-    def test_train_only_skips_seeding(self):
+    async def test_train_only_skips_seeding(self):
         """--train-only 모드에서는 시딩을 스킵합니다."""
         from scripts.rl_bootstrap import bootstrap_ticker
 
@@ -190,13 +189,13 @@ class TestBootstrapTicker(unittest.TestCase):
             RLContinuousImprover, "retrain_ticker", new_callable=AsyncMock
         ) as mock_retrain:
             mock_retrain.return_value = mock_outcome
-            result = asyncio.run(bootstrap_ticker("005930", train_only=True))
+            result = await bootstrap_ticker("005930", train_only=True)
 
         self.assertIsNone(result.seed)
         self.assertIsNotNone(result.retrain)
         self.assertTrue(result.retrain.success)
 
-    def test_force_promote_activates_unapproved_policy(self):
+    async def test_force_promote_activates_unapproved_policy(self):
         """--force-promote 시 승격 게이트 미통과 정책도 강제 활성화합니다."""
         from scripts.rl_bootstrap import bootstrap_ticker
 
@@ -220,9 +219,9 @@ class TestBootstrapTicker(unittest.TestCase):
             mock_builder_cls.return_value = mock_builder
             mock_retrain.return_value = mock_outcome
 
-            result = asyncio.run(bootstrap_ticker(
+            result = await bootstrap_ticker(
                 "005930", force_promote=True, seed_days=720,
-            ))
+            )
 
         self.assertTrue(result.retrain.deployed)
         mock_force.assert_called_once_with("005930", "rl_005930_force")
