@@ -1,0 +1,117 @@
+# ── 글로벌 설정 ────────────────────────────────────────────────────────
+namespace: alpha-trading
+
+image:
+  repository: alpha-trading
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# ── PostgreSQL ─────────────────────────────────────────────────────────
+postgres:
+  enabled: true
+  image: postgres:15-alpine
+  database: alpha_db
+  user: alpha_user
+  # 프로덕션에서는 secrets.yaml에서 관리
+  password: alpha_pass
+  storage:
+    size: 10Gi
+    storageClass: local-path
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# ── Redis ──────────────────────────────────────────────────────────────
+redis:
+  enabled: true
+  image: redis:7-alpine
+  storage:
+    size: 2Gi
+    storageClass: local-path
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ── MinIO (S3 호환) ───────────────────────────────────────────────────
+minio:
+  enabled: true
+  image: minio/minio:latest
+  rootUser: minioadmin
+  rootPassword: minioadmin
+  bucket: alpha-lake
+  storage:
+    size: 20Gi
+    storageClass: local-path
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ── API 서버 ──────────────────────────────────────────────────────────
+api:
+  replicas: 2
+  port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+# ── Worker (오케스트레이터) ────────────────────────────────────────────
+worker:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  env:
+    ORCH_MODE: blend
+    ORCH_INTERVAL_SECONDS: "600"
+    ORCH_RUN_ONCE: "false"
+    ORCH_ENABLE_DAILY_REPORT: "false"
+
+# ── UI (프론트엔드) ───────────────────────────────────────────────────
+ui:
+  enabled: true
+  replicas: 1
+  image: alpha-trading-ui
+  tag: latest
+  port: 5173
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# ── Ingress (K3s Traefik) ────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: traefik
+  host: alpha.local
+  tls: false
+
+# ── Pod Disruption Budget ────────────────────────────────────────────
+pdb:
+  api:
+    minAvailable: 1
