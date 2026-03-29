@@ -136,15 +136,20 @@
 
 ---
 
-## 권장 해결 순서
+## 해결 현황 (2026-03-29 PR #45)
 
-1. **`from __future__ import annotations`** — 8건 즉시 해결 가능
-2. **설정값 변경 반영** — 4건 assert 값만 수정
-3. **Phase 9 RL V2 테스트 재작성** — 6건, 인터페이스 변경 반영
-4. **market_hours 테스트 업데이트** — 6건
-5. **pytest-asyncio event loop** — 14건, Python 3.11+ 또는 pytest.ini 설정
-6. **기타 인터페이스 불일치** — 나머지
+| 카테고리 | 원래 건수 | 해결 | 잔여 |
+|---|---|---|---|
+| Python 3.9 문법 | 8 | **8** ✅ | 0 |
+| pytest-asyncio event loop | 14 | **일부** | 32건 event loop 오염 잔존 (별도 문서) |
+| API/모델 인터페이스 불일치 | 17 | **17** ✅ | 0 |
+| DB 미연결 | 3 | 0 | 3 (환경 의존) |
+| 수집 오류 | 5 | **4** | 1 (test_search_pipeline import) |
+
+**전체: 462 passed → 512 passed (+50 개선)**
+
+잔여 38건 상세는 `test-suite-event-loop-pollution.md` 참조.
 
 ---
 
-*작성: 2026-03-29*
+*작성: 2026-03-29, 업데이트: 2026-03-29 (PR #45 반영)*
