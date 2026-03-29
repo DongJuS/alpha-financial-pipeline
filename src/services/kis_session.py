@@ -11,6 +11,7 @@ import httpx
 from src.utils.config import (
     Settings,
     get_settings,
+    has_kis_credentials,
     kis_account_number_for_scope,
     kis_app_key_for_scope,
     kis_app_secret_for_scope,
@@ -28,7 +29,7 @@ async def issue_kis_token(
     app_key = kis_app_key_for_scope(active_settings, scope)
     app_secret = kis_app_secret_for_scope(active_settings, scope)
 
-    if not app_key or not app_secret:
+    if not has_kis_credentials(active_settings, scope):
         raise RuntimeError("KIS_APP_KEY 또는 KIS_APP_SECRET 이 설정되지 않았습니다.")
 
     url = f"{active_settings.kis_base_url_for_scope(scope)}/oauth2/tokenP"
