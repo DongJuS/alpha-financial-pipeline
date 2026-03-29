@@ -25,8 +25,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
-from src.db.models import AgentHeartbeatRecord, MarketDataPoint
-from src.db.queries import insert_heartbeat, upsert_market_data
+from src.db.models import AgentHeartbeatRecord, MarketDataPoint, OHLCVDaily
+from src.db.queries import insert_heartbeat, upsert_market_data, upsert_ohlcv_daily
+from src.utils.market_data import to_instrument_id
 from src.utils.logging import get_logger, setup_logging
 
 # S3/Parquet 저장은 optional — datalake 모듈이 없으면 스킵
@@ -55,7 +56,7 @@ class GenCollectorAgent:
 
     수집 경로:
         Gen Server (/gen/*) → GenCollectorAgent
-            → PostgreSQL (market_data 테이블)
+            → PostgreSQL (ohlcv_daily 일봉 / market_data 틱)
             → Redis (latest_ticks, realtime_series, pub/sub)
             → S3/MinIO (Parquet)
     """
@@ -163,7 +164,19 @@ class GenCollectorAgent:
             except Exception as e:
                 logger.warning("Gen 일봉 수집 실패 [%s]: %s", ticker, e)
 
-        saved = await upsert_market_data(all_points)
+        ohlcv_points: list[OHLCVDaily] = []
+        for p in all_points:
+            ohlcv_points.append(OHLCVDaily(
+                instrument_id=to_instrument_id(p.ticker, p.market),
+                traded_at=p.timestamp_kst.date() if hasattr(p.timestamp_kst, "date") else p.timestamp_kst,
+                open=float(p.open),
+                high=float(p.high),
+                low=float(p.low),
+                close=float(p.close),
+                volume=p.volume,
+                change_pct=p.change_pct,
+            ))
+        saved = await upsert_ohlcv_daily(ohlcv_points)
         logger.info("GenCollector 일봉 DB 저장: %d건", saved)
 
         if _store_daily_bars is not None:

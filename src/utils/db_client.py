@@ -7,7 +7,7 @@ src/utils/db_client.py — asyncpg 연결 풀 관리
     async def handler():
         pool = await get_pool()
         async with pool.acquire() as conn:
-            rows = await conn.fetch("SELECT * FROM market_data LIMIT 10")
+            rows = await conn.fetch("SELECT * FROM ohlcv_daily LIMIT 10")
 """
 
 import asyncpg
