@@ -58,6 +58,32 @@ async def upsert_stock_master(records: list[StockMasterRecord]) -> int:
     return len(records)
 
 
+async def update_stock_sectors(sector_map: dict[str, tuple[Optional[str], Optional[str]]]) -> int:
+    """ticker → (sector, industry) 맵으로 NULL 섹터를 일괄 업데이트합니다.
+
+    이미 sector 값이 있는 종목은 덮어쓰지 않습니다 (COALESCE 보호).
+    Returns: 업데이트 대상 건수
+    """
+    if not sector_map:
+        return 0
+
+    query = """
+        UPDATE stock_master
+        SET
+            sector   = COALESCE(stock_master.sector,   $2),
+            industry = COALESCE(stock_master.industry, $3),
+            updated_at = NOW()
+        WHERE ticker = $1
+          AND (stock_master.sector IS NULL OR stock_master.industry IS NULL)
+    """
+    await executemany(query, [
+        (ticker, sector, industry)
+        for ticker, (sector, industry) in sector_map.items()
+        if sector or industry
+    ])
+    return len(sector_map)
+
+
 async def get_stock_master(ticker: str) -> Optional[dict]:
     """단일 종목 마스터 조회."""
     row = await fetchrow(
