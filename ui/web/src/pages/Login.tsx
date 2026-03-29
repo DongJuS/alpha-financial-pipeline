@@ -1,5 +1,5 @@
 import { FormEvent, useMemo, useState } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { api } from "@/utils/api";
 
@@ -50,11 +50,16 @@ function BrandMark() {
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const token = localStorage.getItem("alpha_token");
 
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("admin1234");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(
+    searchParams.get("expired") === "true"
+      ? "세션이 만료되었습니다. 다시 로그인해 주세요."
+      : ""
+  );
   const [submitting, setSubmitting] = useState(false);
 
   const redirectPath = useMemo(() => {
