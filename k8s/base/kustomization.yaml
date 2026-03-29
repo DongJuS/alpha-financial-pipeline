@@ -7,9 +7,8 @@ resources:
   - namespace.yaml
   - configmap.yaml
   - secrets.yaml
-  - postgres.yaml
-  - redis.yaml
-  - minio.yaml
+  # 인프라(postgres/redis/minio)는 Bitnami Helm chart로 배포.
+  # k8s/helm/bitnami-values/ 참조.
   - api.yaml
   - worker.yaml
   - ui.yaml
