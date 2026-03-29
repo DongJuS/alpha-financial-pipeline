@@ -325,7 +325,7 @@ async def _evaluate_k8s_readiness() -> list[dict[str, Any]]:
     # 9c) DNS 해석 가능 여부 (클러스터 내부 서비스)
     import socket
 
-    for svc, label in [("postgres", "PostgreSQL"), ("redis", "Redis")]:
+    for svc, label in [("postgres", "PostgreSQL"), ("redis", "Redis"), ("minio", "MinIO")]:
         try:
             socket.getaddrinfo(svc, None)
             dns_ok = True
