@@ -27,67 +27,101 @@ class TestRLDatasetBuilderV2:
     """기술지표 계산과 상태 벡터 변환을 검증합니다."""
 
     def test_technical_features_calculation(self):
-        from src.agents.rl_dataset_builder_v2 import TechnicalFeatures
+        from src.agents.rl_dataset_builder_v2 import (
+            TechnicalFeatures,
+            compute_rsi,
+            compute_sma,
+            compute_volatility,
+            compute_volume_ratio,
+            compute_returns,
+        )
 
         # 충분한 길이의 가격 데이터 생성
         closes = [10000 + i * 100 for i in range(70)]
         volumes = [1_000_000 + random.randint(-100_000, 100_000) for _ in range(70)]
 
-        features = TechnicalFeatures.compute(closes, volumes, index=69)
+        features = TechnicalFeatures(
+            sma_5=compute_sma(closes, 5),
+            sma_20=compute_sma(closes, 20),
+            sma_60=compute_sma(closes, 60),
+            rsi_14=compute_rsi(closes, 14),
+            volatility_10=compute_volatility(closes, 10),
+            volume_ratio=compute_volume_ratio(volumes, 20),
+            returns=compute_returns(closes),
+        )
 
-        assert features.sma_5 > 0
-        assert features.sma_20 > 0
-        assert features.sma_60 > 0
-        assert 0.0 <= features.rsi_14 <= 100.0
-        assert features.volatility_10 >= 0.0
-        assert features.volume_ratio > 0.0
-        assert isinstance(features.return_1d, float)
+        assert features.sma_5[69] > 0
+        assert features.sma_20[69] > 0
+        assert features.sma_60[69] > 0
+        assert 0.0 <= features.rsi_14[69] <= 100.0
+        assert features.volatility_10[69] >= 0.0
+        assert features.volume_ratio[69] > 0.0
+        assert isinstance(features.returns[69], float)
 
     def test_technical_features_insufficient_data(self):
-        from src.agents.rl_dataset_builder_v2 import TechnicalFeatures
+        from src.agents.rl_dataset_builder_v2 import (
+            TechnicalFeatures,
+            compute_rsi,
+            compute_sma,
+            compute_volatility,
+            compute_volume_ratio,
+            compute_returns,
+        )
 
         closes = [10000, 10100, 10200]
         volumes = [1000, 1100, 1200]
 
-        features = TechnicalFeatures.compute(closes, volumes, index=2)
+        features = TechnicalFeatures(
+            sma_5=compute_sma(closes, 5),
+            sma_20=compute_sma(closes, 20),
+            sma_60=compute_sma(closes, 60),
+            rsi_14=compute_rsi(closes, 14),
+            volatility_10=compute_volatility(closes, 10),
+            volume_ratio=compute_volume_ratio(volumes, 20),
+            returns=compute_returns(closes),
+        )
         # SMA_60은 데이터 부족 시 사용 가능한 만큼으로 계산
-        assert features.sma_5 > 0 or features.sma_60 == 0.0
+        assert features.sma_5[2] > 0 or features.sma_60[2] == 0.0
 
     def test_enriched_dataset_state_vector(self):
         from src.agents.rl_dataset_builder_v2 import (
             EnrichedRLDataset,
             MarketContext,
+            RLDatasetBuilderV2,
             TechnicalFeatures,
+            compute_data_hash,
         )
 
-        features_list = []
-        for i in range(10):
-            features_list.append(
-                TechnicalFeatures(
-                    sma_5=10000.0 + i * 50,
-                    sma_20=10000.0 + i * 20,
-                    sma_60=10000.0 + i * 10,
-                    rsi_14=50.0 + i,
-                    volatility_10=0.02,
-                    volume_ratio=1.1,
-                    return_1d=0.01,
-                )
-            )
+        closes = [10000 + i * 100 for i in range(10)]
+        technical = TechnicalFeatures(
+            sma_5=[10000.0 + i * 50 for i in range(10)],
+            sma_20=[10000.0 + i * 20 for i in range(10)],
+            sma_60=[10000.0 + i * 10 for i in range(10)],
+            rsi_14=[50.0 + i for i in range(10)],
+            volatility_10=[0.02] * 10,
+            volume_ratio=[1.1] * 10,
+            returns=[0.01] * 10,
+        )
+        market_context = MarketContext(kospi_change_pct=0.5)
 
         dataset = EnrichedRLDataset(
             ticker="005930",
-            closes=[10000 + i * 100 for i in range(10)],
+            closes=closes,
             volumes=[1_000_000] * 10,
             timestamps=["2026-03-01"] * 10,
-            features=features_list,
-            market_context=MarketContext(),
+            technical=technical,
+            market_context=market_context,
+            dataset_version="v2_enriched",
+            data_hash=compute_data_hash(closes),
+            feature_count=7,
+            created_at="2026-03-01T00:00:00Z",
         )
 
-        state_vector = dataset.to_state_vector(9)
+        builder = RLDatasetBuilderV2()
+        state_vector = builder.to_state_vector(dataset, 9)
         assert isinstance(state_vector, dict)
-        assert "sma_5" in state_vector
-        assert "rsi_14" in state_vector
-        assert "kospi_change_pct" in state_vector
+        assert "rsi" in state_vector
+        assert "kospi_chg" in state_vector
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -103,48 +137,48 @@ class TestTradingEnv:
 
         closes = [10000 + i * 50 + random.randint(-30, 30) for i in range(n_steps)]
         volumes = [1_000_000] * n_steps
-        config = TradingEnvConfig(lookback=5)
-        return TradingEnv(closes=closes, volumes=volumes, config=config)
+        config = TradingEnvConfig(closes=closes, volumes=volumes, lookback=5)
+        return TradingEnv(config=config)
 
     def test_reset(self):
         env = self._make_env()
-        obs = env.reset()
-        assert isinstance(obs, dict)
-        assert env.current_step >= 0
+        obs, info = env.reset()
+        assert hasattr(obs, '__len__')  # numpy array
+        assert env._step_idx >= 0
 
     def test_step_hold(self):
         env = self._make_env()
         env.reset()
-        obs, reward, done, info = env.step(2)  # HOLD=2
+        obs, reward, terminated, truncated, info = env.step(2)  # HOLD=2
         assert isinstance(reward, float)
-        assert isinstance(done, bool)
+        assert isinstance(terminated, bool)
         assert "portfolio_value" in info
 
     def test_full_episode(self):
         env = self._make_env(50)
         env.reset()
-        done = False
+        terminated = False
         steps = 0
-        while not done:
+        while not terminated:
             action = random.randint(0, 2)  # BUY/SELL/HOLD
-            obs, reward, done, info = env.step(action)
+            obs, reward, terminated, truncated, info = env.step(action)
             steps += 1
             if steps > 200:
                 break
         summary = env.get_episode_summary()
         assert "total_return_pct" in summary
         assert "max_drawdown_pct" in summary
-        assert "trades" in summary
+        assert "total_trades" in summary
 
     def test_buy_sell_sequence(self):
         env = self._make_env(20)
         env.reset()
         # BUY
-        obs, reward, done, info = env.step(0)  # BUY
-        assert env.position == 1
-        # SELL
-        obs, reward, done, info = env.step(1)  # SELL
-        assert env.position == 0
+        obs, reward, terminated, truncated, info = env.step(0)  # BUY
+        assert env._position == 1
+        # SELL (allow_short=True by default, so SELL -> position -1)
+        obs, reward, terminated, truncated, info = env.step(3)  # CLOSE -> position 0
+        assert env._position == 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════

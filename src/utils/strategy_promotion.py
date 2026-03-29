@@ -73,7 +73,8 @@ class StrategyPromoter:
         self._criteria = self._load_criteria()
 
     def _load_criteria(self) -> dict[str, dict[str, Any]]:
-        criteria = dict(DEFAULT_CRITERIA)
+        import copy
+        criteria = copy.deepcopy(DEFAULT_CRITERIA)
         try:
             override = json.loads(self.settings.promotion_criteria_override)
             if isinstance(override, dict):

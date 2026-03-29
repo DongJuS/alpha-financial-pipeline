@@ -18,6 +18,16 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
+# .env 파일이 없는 환경(worktree, CI)에서도 Settings 로드가 실패하지 않도록
+# 필수 환경변수가 미설정이면 더미값을 주입
+_REQUIRED_DEFAULTS = {
+    "DATABASE_URL": "postgresql://test:test@localhost:5432/test_db",
+    "JWT_SECRET": "test-secret-for-pytest",
+}
+for _key, _default in _REQUIRED_DEFAULTS.items():
+    if not os.environ.get(_key):
+        os.environ[_key] = _default
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s"
@@ -31,8 +41,16 @@ logger = logging.getLogger(__name__)
 
 def pytest_configure(config):
     """Pytest 초기화 훅"""
-    # 비동기 테스트 활성화
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+    # asyncio.run()이 기존 event loop를 파괴하는 것을 방지:
+    # 세션 전체에서 공유할 loop를 미리 생성하여 세팅
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -114,10 +132,14 @@ def redis_url() -> str:
 def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     """
     pytest-asyncio와 호환되는 이벤트 루프 픽스처.
+    asyncio.run() 및 asyncio.get_event_loop() 모두 이 루프를 사용하도록 설정.
     """
-    loop = asyncio.get_event_loop_policy().new_event_loop()
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
+    asyncio.set_event_loop(loop)
     yield loop
     loop.close()
+    asyncio.set_event_loop(None)
 
 
 # ────────────────────────────────────────────────────────────────────────────

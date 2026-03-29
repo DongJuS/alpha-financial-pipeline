@@ -145,7 +145,7 @@ class TestGenCollectorPipeline(unittest.IsolatedAsyncioTestCase):
     """GenCollectorAgent의 수집→저장 경로를 mock으로 검증합니다."""
 
     @patch("src.agents.gen_collector.upsert_market_data", new_callable=AsyncMock)
-    @patch("src.agents.gen_collector.store_daily_bars", new_callable=AsyncMock)
+    @patch("src.agents.gen_collector._store_daily_bars", new_callable=AsyncMock)
     @patch("src.agents.gen_collector.publish_message", new_callable=AsyncMock)
     @patch("src.agents.gen_collector.set_heartbeat", new_callable=AsyncMock)
     @patch("src.agents.gen_collector.insert_heartbeat", new_callable=AsyncMock)
@@ -188,7 +188,7 @@ class TestGenCollectorPipeline(unittest.IsolatedAsyncioTestCase):
         mock_s3.assert_called_once()
         mock_publish.assert_called_once()
         pub_data = json.loads(mock_publish.call_args[0][1])
-        self.assertEqual(pub_data["source"], "gen")
+        self.assertEqual(pub_data["type"], "data_ready")
         await agent.close()
 
     @patch("src.agents.gen_collector.upsert_market_data", new_callable=AsyncMock)
