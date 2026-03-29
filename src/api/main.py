@@ -24,13 +24,11 @@ from src.api.routers import (
     notifications,
     portfolio,
     rl,
+    scheduler,
     strategy,
     system_health,
 )
-from src.schedulers.index_scheduler import start_index_scheduler, stop_index_scheduler
-from src.schedulers.collector_agent_scheduler import start_collector_scheduler, stop_collector_scheduler
-from src.schedulers.macro_collector_scheduler import start_macro_scheduler, stop_macro_scheduler
-from src.schedulers.stock_master_scheduler import start_stock_master_scheduler, stop_stock_master_scheduler
+from src.schedulers.unified_scheduler import start_unified_scheduler, stop_unified_scheduler
 from src.utils.config import get_settings
 from src.utils.db_client import close_pool, get_pool
 from src.utils.logging import get_logger, setup_logging
@@ -53,6 +51,7 @@ class HealthResponse(BaseModel):
                     "database": "ok",
                     "redis": "ok",
                 },
+                "scheduler": {"running": True, "job_count": 5},
             }
         }
     )
@@ -62,6 +61,7 @@ class HealthResponse(BaseModel):
     environment: str
     paper_trading: bool
     services: dict[str, str]
+    scheduler: dict[str, object] | None = None
 
 
 class RootResponse(BaseModel):
@@ -92,6 +92,7 @@ OPENAPI_TAGS = [
     {"name": "datalake", "description": "Data Lake 저장물 및 메타데이터 조회"},
     {"name": "audit", "description": "실거래/운영 감사 이력"},
     {"name": "feedback", "description": "전략 피드백 수집 및 조회"},
+    {"name": "scheduler", "description": "통합 스케줄러 상태 및 잡 실행 이력"},
     {"name": "system", "description": "루트 및 헬스체크"},
 ]
 
@@ -121,31 +122,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning("⚠️ 티커 마스터 캐시 로드 실패 (비필수): %s", e)
 
-    # Index scheduler 시작
-    await start_index_scheduler()
-
-    # CollectorAgent scheduler 시작 (08:30 KST)
-    await start_collector_scheduler()
-
-    # MacroCollector scheduler 시작 (08:20 KST)
-    await start_macro_scheduler()
-
-    # StockMasterCollector scheduler 시작 (08:10 KST)
-    await start_stock_master_scheduler()
+    # 통합 스케줄러 시작 (stock_master / macro / collector / index 포함)
+    await start_unified_scheduler()
 
     yield
 
-    # Index scheduler 종료
-    await stop_index_scheduler()
-
-    # CollectorAgent scheduler 종료
-    await stop_collector_scheduler()
-
-    # MacroCollector scheduler 종료
-    await stop_macro_scheduler()
-
-    # StockMasterCollector scheduler 종료
-    await stop_stock_master_scheduler()
+    # 통합 스케줄러 종료
+    await stop_unified_scheduler()
 
     logger.info("🔴 Alpha Trading System 종료 중...")
     await close_pool()
@@ -200,6 +183,7 @@ app.include_router(system_health.router, prefix=f"{API_PREFIX}/system", tags=["s
 app.include_router(datalake.router, prefix=f"{API_PREFIX}/datalake", tags=["datalake"])
 app.include_router(audit.router, prefix=f"{API_PREFIX}/audit", tags=["audit"])
 app.include_router(feedback.router, prefix=f"{API_PREFIX}/feedback", tags=["feedback"])
+app.include_router(scheduler.router, prefix=f"{API_PREFIX}/scheduler", tags=["scheduler"])
 
 
 # ─── 헬스 체크 ────────────────────────────────────────────────────────────────────────────────────────
@@ -231,6 +215,9 @@ async def health_check() -> HealthResponse:
     except Exception as e:
         logger.warning("Redis 헬스체크 실패: %s", e)
 
+    from src.schedulers.unified_scheduler import get_scheduler_status
+
+    sched_status = get_scheduler_status()
     status = "healthy" if (db_ok and redis_ok) else "degraded"
 
     return HealthResponse(
@@ -241,6 +228,10 @@ async def health_check() -> HealthResponse:
         services={
             "database": "ok" if db_ok else "error",
             "redis": "ok" if redis_ok else "error",
+        },
+        scheduler={
+            "running": sched_status["running"],
+            "job_count": sched_status.get("job_count", 0),
         },
     )
 
