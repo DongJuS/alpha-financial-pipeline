@@ -1,7 +1,7 @@
 """
 src/agents/ranking_calculator.py — 일별 랭킹 계산기
 
-매일 장 마감 후 market_data + stock_master를 기반으로
+매일 장 마감 후 ohlcv_daily + instruments + stock_master를 기반으로
 시가총액, 거래량, 거래대금, 상승률, 하락률 랭킹을 계산합니다.
 
 사용법:
@@ -74,15 +74,16 @@ class RankingCalculator:
         rows = await fetch(
             """
             SELECT sm.ticker, sm.name, sm.market_cap,
-                   COALESCE(md.change_pct, 0) AS change_pct
+                   COALESCE(od.change_pct, 0) AS change_pct
             FROM stock_master sm
             LEFT JOIN LATERAL (
-                SELECT change_pct
-                FROM market_data md
-                WHERE md.ticker = sm.ticker AND md.interval = 'daily'
-                ORDER BY md.timestamp_kst DESC
+                SELECT od.change_pct
+                FROM ohlcv_daily od
+                JOIN instruments i ON od.instrument_id = i.instrument_id
+                WHERE i.raw_code = sm.ticker
+                ORDER BY od.traded_at DESC
                 LIMIT 1
-            ) md ON TRUE
+            ) od ON TRUE
             WHERE sm.is_active = TRUE
               AND sm.is_etf = FALSE AND sm.is_etn = FALSE
               AND sm.market_cap IS NOT NULL AND sm.market_cap > 0
@@ -120,16 +121,16 @@ class RankingCalculator:
 
         rows = await fetch(
             """
-            SELECT md.ticker, sm.name,
-                   SUM(md.volume) AS total_volume,
-                   COALESCE(md.change_pct, 0) AS change_pct
-            FROM market_data md
-            LEFT JOIN stock_master sm ON md.ticker = sm.ticker
-            WHERE md.interval = 'daily'
-              AND DATE(md.timestamp_kst) = $1
+            SELECT i.raw_code AS ticker, sm.name,
+                   SUM(od.volume) AS total_volume,
+                   COALESCE(od.change_pct, 0) AS change_pct
+            FROM ohlcv_daily od
+            JOIN instruments i ON od.instrument_id = i.instrument_id
+            LEFT JOIN stock_master sm ON i.raw_code = sm.ticker
+            WHERE od.traded_at = $1
               AND sm.is_active = TRUE
               AND sm.is_etf = FALSE AND sm.is_etn = FALSE
-            GROUP BY md.ticker, sm.name, md.change_pct
+            GROUP BY i.raw_code, sm.name, od.change_pct
             ORDER BY total_volume DESC
             LIMIT $2
             """,
@@ -165,16 +166,16 @@ class RankingCalculator:
 
         rows = await fetch(
             """
-            SELECT md.ticker, sm.name,
-                   SUM(md.close * md.volume) AS total_turnover,
-                   COALESCE(md.change_pct, 0) AS change_pct
-            FROM market_data md
-            LEFT JOIN stock_master sm ON md.ticker = sm.ticker
-            WHERE md.interval = 'daily'
-              AND DATE(md.timestamp_kst) = $1
+            SELECT i.raw_code AS ticker, sm.name,
+                   SUM(od.close * od.volume) AS total_turnover,
+                   COALESCE(od.change_pct, 0) AS change_pct
+            FROM ohlcv_daily od
+            JOIN instruments i ON od.instrument_id = i.instrument_id
+            LEFT JOIN stock_master sm ON i.raw_code = sm.ticker
+            WHERE od.traded_at = $1
               AND sm.is_active = TRUE
               AND sm.is_etf = FALSE AND sm.is_etn = FALSE
-            GROUP BY md.ticker, sm.name, md.change_pct
+            GROUP BY i.raw_code, sm.name, od.change_pct
             ORDER BY total_turnover DESC
             LIMIT $2
             """,
@@ -210,17 +211,15 @@ class RankingCalculator:
 
         rows = await fetch(
             """
-            SELECT DISTINCT ON (md.ticker)
-                   md.ticker, sm.name, md.change_pct
-            FROM market_data md
-            LEFT JOIN stock_master sm ON md.ticker = sm.ticker
-            WHERE md.interval = 'daily'
-              AND DATE(md.timestamp_kst) = $1
-              AND md.change_pct > 0
+            SELECT i.raw_code AS ticker, sm.name, od.change_pct
+            FROM ohlcv_daily od
+            JOIN instruments i ON od.instrument_id = i.instrument_id
+            LEFT JOIN stock_master sm ON i.raw_code = sm.ticker
+            WHERE od.traded_at = $1
+              AND od.change_pct > 0
               AND sm.is_active = TRUE
               AND sm.is_etf = FALSE AND sm.is_etn = FALSE
-            ORDER BY md.ticker, md.timestamp_kst DESC
-            ORDER BY md.change_pct DESC
+            ORDER BY od.change_pct DESC
             LIMIT $2
             """,
             ranking_date,
@@ -254,17 +253,15 @@ class RankingCalculator:
 
         rows = await fetch(
             """
-            SELECT DISTINCT ON (md.ticker)
-                   md.ticker, sm.name, md.change_pct
-            FROM market_data md
-            LEFT JOIN stock_master sm ON md.ticker = sm.ticker
-            WHERE md.interval = 'daily'
-              AND DATE(md.timestamp_kst) = $1
-              AND md.change_pct < 0
+            SELECT i.raw_code AS ticker, sm.name, od.change_pct
+            FROM ohlcv_daily od
+            JOIN instruments i ON od.instrument_id = i.instrument_id
+            LEFT JOIN stock_master sm ON i.raw_code = sm.ticker
+            WHERE od.traded_at = $1
+              AND od.change_pct < 0
               AND sm.is_active = TRUE
               AND sm.is_etf = FALSE AND sm.is_etn = FALSE
-            ORDER BY md.ticker, md.timestamp_kst DESC
-            ORDER BY md.change_pct ASC
+            ORDER BY od.change_pct ASC
             LIMIT $2
             """,
             ranking_date,
@@ -345,17 +342,18 @@ class RankingCalculator:
             """
             SELECT sm.sector,
                    COUNT(*) AS stock_count,
-                   COALESCE(AVG(md.change_pct), 0) AS avg_change_pct,
+                   COALESCE(AVG(od.change_pct), 0) AS avg_change_pct,
                    COALESCE(SUM(sm.market_cap), 0) AS total_market_cap,
-                   COALESCE(SUM(md.volume), 0) AS total_volume
+                   COALESCE(SUM(od.volume), 0) AS total_volume
             FROM stock_master sm
             LEFT JOIN LATERAL (
-                SELECT change_pct, volume
-                FROM market_data md
-                WHERE md.ticker = sm.ticker AND md.interval = 'daily'
-                ORDER BY md.timestamp_kst DESC
+                SELECT od.change_pct, od.volume
+                FROM ohlcv_daily od
+                JOIN instruments i ON od.instrument_id = i.instrument_id
+                WHERE i.raw_code = sm.ticker
+                ORDER BY od.traded_at DESC
                 LIMIT 1
-            ) md ON TRUE
+            ) od ON TRUE
             WHERE sm.is_active = TRUE
               AND sm.is_etf = FALSE AND sm.is_etn = FALSE
               AND sm.sector IS NOT NULL AND sm.sector != ''

@@ -11,11 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from src.api.deps import get_current_user
-from src.db.models import MarketDataPoint
-from src.db.queries import upsert_market_data
+from src.db.models import OHLCVDaily
+from src.db.queries import upsert_ohlcv_daily
 from src.utils.db_client import fetch, fetchrow
 from src.utils.logging import get_logger
-from src.utils.market_data import compute_change_pct
+from src.utils.market_data import compute_change_pct, to_instrument_id
 from src.utils.redis_client import KEY_LATEST_TICKS, KEY_REALTIME_SERIES, get_redis
 
 logger = get_logger(__name__)
@@ -79,19 +79,19 @@ async def list_tickers(
     """추적 중인 종목 목록을 반환합니다."""
     offset = (page - 1) * per_page
 
-    base_query = "FROM market_data"
     params: list = [per_page, offset]
     where = ""
 
     if market:
-        where = " WHERE market = $3"
+        where = " WHERE i.market_id = $3"
         params.append(market)
 
     rows = await fetch(
         f"""
-        SELECT DISTINCT ON (ticker) ticker, name, market
-        {base_query}{where}
-        ORDER BY ticker
+        SELECT DISTINCT ON (i.raw_code) i.raw_code AS ticker, i.name, i.market_id AS market
+        FROM instruments i
+        {where}
+        ORDER BY i.raw_code
         LIMIT $1 OFFSET $2
         """,
         *params,
@@ -112,34 +112,64 @@ async def get_ohlcv(
     interval: str = Query(default="daily", pattern="^(daily|tick)$"),
 ) -> OHLCVResponse:
     """특정 종목의 OHLCV 이력을 반환합니다."""
-    params: list = [ticker, interval]
-    where_extra = ""
+    if interval == "tick":
+        # tick 데이터는 기존 market_data 테이블 사용
+        params: list = [ticker, interval]
+        where_extra = ""
+        if from_date:
+            params.append(from_date)
+            where_extra += f" AND timestamp_kst >= ${len(params)}::date"
+        if to_date:
+            params.append(to_date)
+            where_extra += f" AND timestamp_kst < (${len(params)}::date + interval '1 day')"
+        rows = await fetch(
+            f"""
+            SELECT
+                to_char(timestamp_kst AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD"T"HH24:MI:SS+09:00') AS timestamp_kst,
+                open, high, low, close, volume,
+                COALESCE(change_pct, 0)::float AS change_pct
+            FROM market_data
+            WHERE ticker = $1 AND interval = $2 {where_extra}
+            ORDER BY timestamp_kst DESC
+            LIMIT 200
+            """,
+            *params,
+        )
+        meta = await fetchrow(
+            "SELECT name FROM market_data WHERE ticker = $1 LIMIT 1", ticker
+        )
+    else:
+        # daily 데이터는 ohlcv_daily + instruments 사용
+        candidates = [
+            to_instrument_id(ticker, "KOSPI"),
+            to_instrument_id(ticker, "KOSDAQ"),
+        ]
+        params_daily: list = [candidates]
+        where_extra = ""
+        if from_date:
+            params_daily.append(from_date)
+            where_extra += f" AND od.traded_at >= ${len(params_daily)}::date"
+        if to_date:
+            params_daily.append(to_date)
+            where_extra += f" AND od.traded_at < (${len(params_daily)}::date + interval '1 day')"
+        rows = await fetch(
+            f"""
+            SELECT
+                to_char(od.traded_at, 'YYYY-MM-DD"T"15:30:00+09:00') AS timestamp_kst,
+                od.open, od.high, od.low, od.close, od.volume,
+                COALESCE(od.change_pct, 0)::float AS change_pct
+            FROM ohlcv_daily od
+            WHERE od.instrument_id = ANY($1) {where_extra}
+            ORDER BY od.traded_at DESC
+            LIMIT 200
+            """,
+            *params_daily,
+        )
+        meta = await fetchrow(
+            "SELECT name FROM instruments WHERE instrument_id = ANY($1) LIMIT 1",
+            candidates,
+        )
 
-    if from_date:
-        params.append(from_date)
-        where_extra += f" AND timestamp_kst >= ${len(params)}::date"
-    if to_date:
-        params.append(to_date)
-        where_extra += f" AND timestamp_kst < (${len(params)}::date + interval '1 day')"
-
-    rows = await fetch(
-        f"""
-        SELECT
-            to_char(timestamp_kst AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD"T"HH24:MI:SS+09:00') AS timestamp_kst,
-            open, high, low, close, volume,
-            COALESCE(change_pct, 0)::float AS change_pct
-        FROM market_data
-        WHERE ticker = $1 AND interval = $2 {where_extra}
-        ORDER BY timestamp_kst DESC
-        LIMIT 200
-        """,
-        *params,
-    )
-
-    # 종목 이름 조회
-    meta = await fetchrow(
-        "SELECT name FROM market_data WHERE ticker = $1 LIMIT 1", ticker
-    )
     if not meta:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -231,19 +261,25 @@ async def get_quote(
         data = json.loads(cached)
         return QuoteResponse(**data)
 
-    # DB에서 최신 종가 조회 (fallback)
+    # DB에서 최신 종가 조회 (fallback) — ohlcv_daily + instruments
+    candidates = [
+        to_instrument_id(ticker, "KOSPI"),
+        to_instrument_id(ticker, "KOSDAQ"),
+    ]
     row = await fetchrow(
         """
         SELECT
-            ticker, name, close AS current_price, change_pct,
-            volume,
-            to_char(timestamp_kst AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD"T"HH24:MI:SS+09:00') AS updated_at
-        FROM market_data
-        WHERE ticker = $1
-        ORDER BY timestamp_kst DESC
+            i.raw_code AS ticker, i.name,
+            od.close AS current_price, od.change_pct,
+            od.volume,
+            to_char(od.traded_at, 'YYYY-MM-DD"T"15:30:00+09:00') AS updated_at
+        FROM ohlcv_daily od
+        JOIN instruments i ON od.instrument_id = i.instrument_id
+        WHERE od.instrument_id = ANY($1)
+        ORDER BY od.traded_at DESC
         LIMIT 1
         """,
-        ticker,
+        candidates,
     )
 
     if not row:
@@ -255,9 +291,9 @@ async def get_quote(
     return QuoteResponse(
         ticker=row["ticker"],
         name=row["name"],
-        current_price=row["current_price"],
+        current_price=int(row["current_price"]),
         change_pct=float(row["change_pct"]) if row["change_pct"] else None,
-        volume=row["volume"],
+        volume=int(row["volume"]) if row["volume"] else None,
         updated_at=row["updated_at"],
     )
 
@@ -292,20 +328,25 @@ async def get_realtime_series(
         return RealtimeSeriesResponse(ticker=ticker, name=name, points=points)
 
     # 캐시가 비어 있으면 DB 최신 일봉으로 최소 시계열 구성
+    candidates = [
+        to_instrument_id(ticker, "KOSPI"),
+        to_instrument_id(ticker, "KOSDAQ"),
+    ]
     rows = await fetch(
         """
         SELECT
-            name,
-            close AS current_price,
-            volume,
-            COALESCE(change_pct, 0)::float AS change_pct,
-            to_char(timestamp_kst AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD"T"HH24:MI:SS+09:00') AS ts
-        FROM market_data
-        WHERE ticker = $1 AND interval = 'daily'
-        ORDER BY timestamp_kst DESC
+            i.name,
+            od.close AS current_price,
+            od.volume,
+            COALESCE(od.change_pct, 0)::float AS change_pct,
+            to_char(od.traded_at, 'YYYY-MM-DD"T"15:30:00+09:00') AS ts
+        FROM ohlcv_daily od
+        JOIN instruments i ON od.instrument_id = i.instrument_id
+        WHERE od.instrument_id = ANY($1)
+        ORDER BY od.traded_at DESC
         LIMIT $2
         """,
-        ticker,
+        candidates,
         min(limit, 60),
     )
     if not rows:
@@ -324,7 +365,7 @@ async def get_realtime_series(
                 current_price=int(r["current_price"]),
                 volume=int(r["volume"]) if r["volume"] is not None else None,
                 change_pct=float(r["change_pct"]) if r["change_pct"] is not None else None,
-                source="market_data_daily",
+                source="ohlcv_daily",
             )
             for r in reversed(data)
         ],
@@ -368,8 +409,8 @@ class CollectResponse(BaseModel):
     message: str
 
 
-def _collect_fdr_to_db_sync(tickers: list[str], days: int) -> tuple[int, list[str], list[str]]:
-    """FDR로 일봉 데이터를 수집하고 DB용 MarketDataPoint 리스트를 반환합니다."""
+def _collect_fdr_to_db_sync(tickers: list[str], days: int) -> tuple[list[OHLCVDaily], list[str], list[str]]:
+    """FDR로 일봉 데이터를 수집하고 DB용 OHLCVDaily 리스트를 반환합니다."""
     import FinanceDataReader as fdr
 
     start = (datetime.now(KST).date() - timedelta(days=days + 5)).isoformat()
@@ -388,7 +429,7 @@ def _collect_fdr_to_db_sync(tickers: list[str], days: int) -> tuple[int, list[st
     if not tickers:
         tickers = list(info.keys())[:30]
 
-    points: list[MarketDataPoint] = []
+    ohlcv_points: list[OHLCVDaily] = []
     collected: list[str] = []
     failed: list[str] = []
 
@@ -400,28 +441,22 @@ def _collect_fdr_to_db_sync(tickers: list[str], days: int) -> tuple[int, list[st
                 continue
 
             name, market = info.get(ticker, (ticker, "KOSPI"))
+            instrument_id = to_instrument_id(ticker, market)
             previous_close: int | None = None
 
             for idx, row in df.iterrows():
                 trade_date = idx.date() if hasattr(idx, "date") else datetime.now(KST).date()
-                ts = datetime(
-                    trade_date.year, trade_date.month, trade_date.day,
-                    15, 30, 0, tzinfo=KST,
-                )
                 close_val = int(row.get("Close", 0))
                 if close_val <= 0:
                     continue
-                points.append(
-                    MarketDataPoint(
-                        ticker=ticker,
-                        name=name,
-                        market=market,  # type: ignore[arg-type]
-                        timestamp_kst=ts,
-                        interval="daily",
-                        open=int(row.get("Open", close_val)),
-                        high=int(row.get("High", close_val)),
-                        low=int(row.get("Low", close_val)),
-                        close=close_val,
+                ohlcv_points.append(
+                    OHLCVDaily(
+                        instrument_id=instrument_id,
+                        traded_at=trade_date,
+                        open=float(row.get("Open", close_val)),
+                        high=float(row.get("High", close_val)),
+                        low=float(row.get("Low", close_val)),
+                        close=float(close_val),
                         volume=int(row.get("Volume", 0)),
                         change_pct=compute_change_pct(close_val, previous_close),
                     )
@@ -432,7 +467,7 @@ def _collect_fdr_to_db_sync(tickers: list[str], days: int) -> tuple[int, list[st
             logger.warning("FDR 수집 실패 [%s]: %s", ticker, e)
             failed.append(ticker)
 
-    return points, collected, failed
+    return ohlcv_points, collected, failed
 
 
 @router.post("/collect", response_model=CollectResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -445,7 +480,7 @@ async def collect_market_data(
     tickers를 비워서 요청하면 KOSPI/KOSDAQ 상위 30개 종목을 자동으로 수집합니다.
     """
     try:
-        points, collected, failed = await asyncio.to_thread(
+        ohlcv_points, collected, failed = await asyncio.to_thread(
             _collect_fdr_to_db_sync, req.tickers, req.days
         )
     except ImportError:
@@ -457,13 +492,13 @@ async def collect_market_data(
         logger.error("FDR 수집 오류: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
-    saved = await upsert_market_data(points)
+    saved = await upsert_ohlcv_daily(ohlcv_points)
     logger.info("FDR 수집 완료: saved=%d, tickers=%s", saved, collected)
 
     # S3(MinIO) 저장
     try:
         from src.services.datalake import store_daily_bars as _store_daily_bars
-        s3_records = [p.model_dump() for p in points]
+        s3_records = [p.model_dump() for p in ohlcv_points]
         await _store_daily_bars(s3_records)
         logger.info("FDR 수집 S3 저장 완료: %d건", len(s3_records))
     except Exception as s3_err:
