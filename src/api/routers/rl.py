@@ -508,10 +508,10 @@ async def run_walk_forward(req: WalkForwardRequestModel) -> dict:
 # ── Shadow Inference 엔드포인트 ────────────────────────────────────────
 
 
-_shadow_engine: "ShadowInferenceEngine | None" = None
+_shadow_engine: ShadowInferenceEngine | None = None  # type: ignore[name-defined]  # noqa: F821
 
 
-def _get_shadow_engine() -> "ShadowInferenceEngine":
+def _get_shadow_engine() -> ShadowInferenceEngine:  # type: ignore[name-defined]  # noqa: F821
     global _shadow_engine
     if _shadow_engine is None:
         from src.agents.rl_shadow_inference import ShadowInferenceEngine

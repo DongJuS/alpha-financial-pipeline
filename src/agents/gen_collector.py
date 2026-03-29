@@ -234,7 +234,7 @@ class GenCollectorAgent:
                     )
                     points.append(point)
 
-                saved = await upsert_market_data(points)
+                await upsert_market_data(points)
 
                 for point in points:
                     await self._cache_latest_tick(point, source="gen_tick")

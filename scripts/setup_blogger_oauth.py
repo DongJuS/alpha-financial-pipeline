@@ -116,8 +116,8 @@ def main() -> None:
     thread.start()
 
     # 3. 브라우저 열기
-    print(f"\n브라우저에서 Google 계정 인증을 진행합니다...")
-    print(f"자동으로 열리지 않으면 아래 URL을 직접 열어주세요:\n")
+    print("\n브라우저에서 Google 계정 인증을 진행합니다...")
+    print("자동으로 열리지 않으면 아래 URL을 직접 열어주세요:\n")
     print(f"  {auth_url}\n")
     webbrowser.open(auth_url)
 
@@ -158,10 +158,10 @@ def main() -> None:
     # 6. .env에 refresh_token 저장
     _update_env_file("BLOGGER_REFRESH_TOKEN", refresh_token)
 
-    print(f"\nBlogger OAuth 설정 완료!")
-    print(f"  BLOGGER_REFRESH_TOKEN이 .env에 저장되었습니다.")
-    print(f"\n이제 아래 명령으로 블로그 포스팅을 테스트할 수 있습니다:")
-    print(f"  python scripts/post_discussion_to_blog.py --dry-run")
+    print("\nBlogger OAuth 설정 완료!")
+    print("  BLOGGER_REFRESH_TOKEN이 .env에 저장되었습니다.")
+    print("\n이제 아래 명령으로 블로그 포스팅을 테스트할 수 있습니다:")
+    print("  python scripts/post_discussion_to_blog.py --dry-run")
 
 
 if __name__ == "__main__":
