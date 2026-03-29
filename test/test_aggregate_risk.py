@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock, patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from src.utils.config import get_settings
+
 ENV_PATCH = {
     "DATABASE_URL": "postgresql://test:test@localhost:5432/test",
     "JWT_SECRET": "test-secret",
@@ -22,6 +24,12 @@ ENV_PATCH = {
 
 class TestAggregateRiskMonitorConfig(unittest.TestCase):
     """AggregateRiskMonitor 설정 테스트."""
+
+    def setUp(self):
+        get_settings.cache_clear()
+
+    def tearDown(self):
+        get_settings.cache_clear()
 
     @patch.dict("os.environ", ENV_PATCH)
     def test_default_limits(self):
@@ -40,6 +48,12 @@ class TestAggregateRiskMonitorConfig(unittest.TestCase):
 class TestExposureCheck(unittest.TestCase):
     """종목별 노출 조회 테스트."""
 
+    def setUp(self):
+        get_settings.cache_clear()
+
+    def tearDown(self):
+        get_settings.cache_clear()
+
     @patch.dict("os.environ", ENV_PATCH)
     @patch("src.utils.aggregate_risk.AggregateRiskMonitor._total_aum", new_callable=AsyncMock, return_value=10_000_000)
     @patch("src.utils.aggregate_risk.fetch")
@@ -56,7 +70,7 @@ class TestExposureCheck(unittest.TestCase):
 
         from src.utils.aggregate_risk import AggregateRiskMonitor
         monitor = AggregateRiskMonitor()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             monitor.check_total_exposure("005930")
         )
 
@@ -79,7 +93,7 @@ class TestExposureCheck(unittest.TestCase):
 
         from src.utils.aggregate_risk import AggregateRiskMonitor
         monitor = AggregateRiskMonitor()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             monitor.check_total_exposure("005930")
         )
 
@@ -89,6 +103,12 @@ class TestExposureCheck(unittest.TestCase):
 
 class TestStrategyCorrelation(unittest.TestCase):
     """전략 간 종목 중복도 분석 테스트."""
+
+    def setUp(self):
+        get_settings.cache_clear()
+
+    def tearDown(self):
+        get_settings.cache_clear()
 
     @patch.dict("os.environ", ENV_PATCH)
     @patch("src.utils.aggregate_risk.fetch")
@@ -100,7 +120,7 @@ class TestStrategyCorrelation(unittest.TestCase):
 
         from src.utils.aggregate_risk import AggregateRiskMonitor
         monitor = AggregateRiskMonitor()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             monitor.check_strategy_correlation()
         )
 
@@ -120,7 +140,7 @@ class TestStrategyCorrelation(unittest.TestCase):
 
         from src.utils.aggregate_risk import AggregateRiskMonitor
         monitor = AggregateRiskMonitor()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             monitor.check_strategy_correlation()
         )
 
