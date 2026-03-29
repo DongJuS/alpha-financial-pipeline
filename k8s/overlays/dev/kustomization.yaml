@@ -6,6 +6,7 @@ resources:
 
 patches:
   - path: patches/resource-limits.yaml
+  - path: patches/storage.yaml
 
 # dev 환경: 리소스 최소화, 디버그 로그
 configMapGenerator:

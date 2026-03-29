@@ -1,4 +1,5 @@
-# dev: 리소스 줄이기 (로컬 K3s에서 가볍게)
+# dev: 리소스 줄이기 (Colima K3s에서 가볍게)
+# 인프라(postgres/redis/minio)는 Bitnami values로 관리
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,16 +37,16 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: postgres
+  name: ui
 spec:
   template:
     spec:
       containers:
-        - name: postgres
+        - name: ui
           resources:
             requests:
               cpu: 50m
-              memory: 128Mi
+              memory: 64Mi
             limits:
               cpu: 200m
-              memory: 256Mi
+              memory: 128Mi
