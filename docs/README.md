@@ -12,6 +12,10 @@
 - `USER.md` — 사용자 컨텍스트
 - `HEARTBEAT.md` — 상태 모니터링 규격
 
+기술 비교:
+
+- `airflow-comparison.md` — LangGraph+APScheduler vs Airflow 비교 분석
+
 참고:
 
 - 저장소 전체 구조는 루트 `architecture.md`

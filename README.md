@@ -8,6 +8,18 @@
 
 ---
 
+## 📊 정량 지표
+
+| 지표 | 수치 |
+|------|------|
+| **테스트** | 512개 (93% pass rate) |
+| **스케줄 잡** | 9개 (장 전/중/후 자동 운영, APScheduler + Redis 분산락) |
+| **데이터 백필** | FDR 720일 OHLCV 자동 백필 |
+| **트레이딩 전략** | 3전략(A/B/RL) N-way 블렌딩 + graceful fallback |
+| **프로덕션 배포** | K3s Helm chart 프로덕션 배포 준비 완료 |
+
+---
+
 ## 🏗️ 시스템 아키텍처
 
 ```
@@ -94,8 +106,8 @@ cp .env.example .env
 # .env 파일에 KIS/Telegram 시크릿 입력 (KIS_*, TELEGRAM_*)
 # ⚠️ LLM API 키 불필요 — Claude CLI + Gemini OAuth(ADC) 모드 사용
 
-# 2. 컨테이너 빌드 및 실행 (API/UI + Orchestrator worker)
-docker compose up -d --build postgres redis api worker ui
+# 2. 컨테이너 빌드 및 실행 (인프라 + 앱)
+docker compose up -d --build postgres redis minio api worker ui
 
 # 3. DB 스키마 초기화 (최초 1회)
 docker compose run --rm api python scripts/db/init_db.py
@@ -194,7 +206,7 @@ PYTHONPYCACHEPREFIX=/tmp/pycache python3 -m compileall src scripts test
 python3 scripts/smoke_test.py --skip-telegram
 
 # 4) Docker 런타임 기준 스모크 테스트
-docker compose up -d --build postgres redis api worker ui
+docker compose up -d --build postgres redis minio api worker ui
 docker compose run --rm api python scripts/db/init_db.py
 docker compose run --rm api python scripts/security_audit.py
 docker compose run --rm api python scripts/validate_risk_rules.py
@@ -228,6 +240,7 @@ python3 scripts/validate_rl_trading.py
 | [docs/USER.md](docs/USER.md) | 사용자 페르소나 및 대시보드 UX 기대치 |
 | [docs/REAL_TRADING_GUIDE.md](docs/REAL_TRADING_GUIDE.md) | 실거래 전환/롤백 운영 절차 |
 | [docs/api_spec.md](docs/api_spec.md) | REST API 엔드포인트 명세 |
+| [docs/airflow-comparison.md](docs/airflow-comparison.md) | LangGraph+APScheduler vs Airflow 비교 분석 |
 | [.agent/tech_stack.md](.agent/tech_stack.md) | 허용된 기술 스택 제약 |
 | [.agent/roadmap.md](.agent/roadmap.md) | 프로젝트 로드맵 |
 | [architecture.md](architecture.md) | 전체 아키텍처 설계 |
@@ -255,4 +268,4 @@ python3 scripts/validate_rl_trading.py
 | 관리/모니터링 UI | ✅ 구축 완료 | RL대시보드, 피드백, SystemHealth, DataLake, Audit, Notifications |
 | S3 Data Lake | ✅ 운영 중 | MinIO + Parquet, 피드백 결과·정책 아티팩트 저장 |
 
-*Last updated: 2026-03-16*
+*Last updated: 2026-03-29*
