@@ -33,7 +33,7 @@ Step 4   K3s 프로덕션 배포       ████████░░   80% 🔧
 ### Step 5: Alpha 안정화 + 제출 준비 (🔴 3/30 마감)
 - [x] `docker compose up -d --build` 전체 서비스 기동 확인 (PR #48)
 - [x] API / UI / worker 기본 헬스체크 통과 — 8개 서비스 전부 healthy (PR #54)
-- [x] Collector → Orchestrator 1사이클 재현 — gen 모드 주말 완주 (PR #49)
+- [x] Collector → Orchestrator 1사이클 재현 — gen 모드 주말 완주 (PR #49) + LLM 미설정 graceful degradation 검증 (수집 24건→3전략 병렬→블렌딩 fallback→S3 저장, 16초)
 - [x] smoke test 통과 — DB/Redis/API/FDR 전체 ✅ (PR #48, 로컬 재검증 완료)
 - [x] README 정량 지표 추가 (PR #53)
 - [x] Airflow 비교 문서 작성 (PR #53)
@@ -60,7 +60,7 @@ Step 4   K3s 프로덕션 배포       ████████░░   80% 🔧
 
 ### 보류
 - [ ] SearchAgent — Step 4 완료 후 재개
-- [ ] RL 에피소드 S3 저장 — `store_rl_episodes()` 구현
+- [ ] K3s 실배포 검증
 
 ---
 
