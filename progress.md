@@ -35,6 +35,8 @@ Step 4   K3s 프로덕션 배포       ████████░░   80% 🔧
 - [ ] 제출
 
 ### Step 4 잔여: K3s 프로덕션 배포
+- [x] Kustomize base 인프라 분리 + overlays dev/prod 보강 — PR #64
+- [ ] Bitnami 인프라 설치 스크립트 + deploy.sh 수정
 - [ ] K3s 클러스터 실배포 검증
 
 ### 보류
