@@ -70,6 +70,31 @@ GitHub 관련 지침은 `.github/README.md`부터 읽는다.
 
 ---
 
+## 🧪 E2E 테스트 기준
+
+> 매 작업 완료 시 아래 e2e 검증을 반드시 수행한다.
+
+### 기동 검증 (docker compose)
+1. `docker compose down -v && docker compose up -d --build` → 전체 서비스 healthy
+2. `docker compose exec api python scripts/smoke_test.py --skip-telegram` → 전체 통과
+3. `docker compose exec api python scripts/health_check.py` → DB/Redis 정상
+
+### 데이터 흐름 검증
+1. **gen 모드 (주말/장외)**: `GEN_API_URL` 설정 시 gen 서버가 랜덤 시세 생성 → gen-collector가 수집 → DB + S3 저장. 주말에도 스킵하지 않고 1사이클 완주해야 한다.
+2. **FDR 모드 (기본)**: `FinanceDataReader`로 과거 데이터 수집 → DB 저장. `scripts/rl_bootstrap.py --tickers 005930 --train-only`로 학습 파이프라인 검증.
+3. **실시간 모드 (장중)**: KIS WebSocket으로 틱 데이터 수집 → Redis pub/sub → DB + S3 저장. 장중에만 가능.
+
+### 모드 판별 기준
+- `GEN_API_URL` 환경변수가 설정되면 gen 모드 (주말/장외 시뮬레이션)
+- 미설정이면 FDR + KIS 모드 (실제 시장 데이터)
+- 주말에 gen 모드가 아니면 Orchestrator 사이클을 스킵하는 것이 **정상 동작**
+
+### 테스트 스위트
+- `python3.11 -m pytest test/ --ignore=test/test_search_pipeline.py` → 512+ passed
+- 독립 실행 시 전체 통과 확인 (전체 실행 시 event loop 오염으로 일부 실패는 알려진 이슈)
+
+---
+
 ## 🔗 빠른 참조
 
 - 개발 명령어: `docs/DEV_COMMANDS.md`
