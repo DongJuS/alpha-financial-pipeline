@@ -41,6 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
+from src.utils.config import get_settings
 from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import set_heartbeat
 
@@ -147,9 +148,9 @@ async def _run_cycle_if_weekday(
     *,
     now_kst: datetime | None = None,
 ) -> dict | None:
-    """주말에는 Orchestrator 사이클을 건너뜁니다."""
+    """주말에는 Orchestrator 사이클을 건너뜁니다. gen 모드(GEN_API_URL 설정 시)는 예외."""
     current = now_kst or datetime.now(_KST)
-    if _is_weekend_kst(current):
+    if _is_weekend_kst(current) and not get_settings().gen_api_url:
         logger.info("주말(%s)에는 Orchestrator 사이클을 건너뜁니다.", current.date().isoformat())
         return None
     return await agent.run_cycle(tickers=tickers or _DEFAULT_TICKERS)
@@ -323,7 +324,7 @@ async def main_async() -> int:
                 now_kst = datetime.now(_KST)
                 today = now_kst.date()
                 if (
-                    not _is_weekend_kst(now_kst)
+                    (not _is_weekend_kst(now_kst) or get_settings().gen_api_url)
                     and now_kst.time() >= retrain_time
                     and last_rl_retrain_date != today
                 ):
