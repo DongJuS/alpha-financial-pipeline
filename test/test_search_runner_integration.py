@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 test/test_search_runner_integration.py — SearchRunner Integration Tests
 
