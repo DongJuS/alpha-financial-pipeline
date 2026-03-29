@@ -8,7 +8,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import AsyncGenerator, Generator
+from typing import AsyncGenerator
 
 import asyncpg
 import pytest
@@ -18,15 +18,15 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
-# .env 파일이 없는 환경(worktree, CI)에서도 Settings 로드가 실패하지 않도록
-# 필수 환경변수가 미설정이면 더미값을 주입
-_REQUIRED_DEFAULTS = {
-    "DATABASE_URL": "postgresql://test:test@localhost:5432/test_db",
+# 필수 환경변수 기본값 주입 (.env 없이도 테스트 가능)
+_TEST_ENV_DEFAULTS = {
+    "DATABASE_URL": "postgresql://alpha_user:alpha_pass@localhost:5432/alpha_db",
     "JWT_SECRET": "test-secret-for-pytest",
+    "REDIS_URL": "redis://localhost:6379/0",
+    "KIS_IS_PAPER_TRADING": "true",
 }
-for _key, _default in _REQUIRED_DEFAULTS.items():
-    if not os.environ.get(_key):
-        os.environ[_key] = _default
+for key, val in _TEST_ENV_DEFAULTS.items():
+    os.environ.setdefault(key, val)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 def pytest_configure(config):
     """Pytest 초기화 훅"""
-    # Python 3.9에서 DeprecationWarning 방지
+    # 비동기 테스트 활성화
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
 
@@ -117,11 +117,10 @@ def redis_url() -> str:
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# 이벤트 루프 픽스처
+# 이벤트 루프 설정
 # ────────────────────────────────────────────────────────────────────────────
-
-# event_loop fixture 제거됨 (pytest-asyncio 0.26에서 deprecated).
-# pytest-asyncio의 auto 모드 + IsolatedAsyncioTestCase가 각자 loop를 관리.
+# pytest-asyncio 0.23+ 에서는 event_loop fixture 직접 정의 대신
+# pytest.ini의 asyncio_default_fixture_loop_scope = "session" 사용
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -143,6 +142,22 @@ def test_env() -> dict[str, str]:
 # ────────────────────────────────────────────────────────────────────────────
 # 마커 자동 설정
 # ────────────────────────────────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def _clear_settings_cache():
+    """테스트 간 Settings 캐시 오염을 방지합니다."""
+    try:
+        from src.utils.config import get_settings
+        get_settings.cache_clear()
+    except Exception:
+        pass
+    yield
+    try:
+        from src.utils.config import get_settings
+        get_settings.cache_clear()
+    except Exception:
+        pass
+
 
 @pytest.fixture(autouse=True)
 def _mark_integration_tests(request):
