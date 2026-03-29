@@ -5,10 +5,12 @@
 
 ---
 
-## Kustomize 인프라 분리 + overlays 보강 (2026-03-29)
+## Step 4 — Bitnami 인프라 전환 + Kustomize 분리 (2026-03-29)
 
-PR #64. base에서 postgres/redis/minio yaml 삭제 → Bitnami Helm으로 이관. configmap/secrets 서비스명 Bitnami 기준 변경. overlays/dev: Colima storage 패치. overlays/prod: TLS ingress, 리소스 패치.
-- **왜**: Stateful 인프라(DB/캐시/스토리지)는 커뮤니티 검증된 Bitnami chart가 직접 작성 YAML보다 안전. 앱(Stateless)과 인프라(Stateful) 관심사 분리.
+PR #63 (Helm), PR #64 (Kustomize).
+- PR #63: 커스텀 StatefulSet 삭제 → Bitnami chart values 작성 (`k8s/helm/bitnami-values/`)
+- PR #64: base에서 인프라 yaml 삭제, configmap/secrets Bitnami 서비스명 정합, overlays dev/prod 보강
+- **왜**: Stateful 인프라는 Bitnami chart가 직접 작성보다 안전. 앱과 인프라 관심사 분리.
 
 ---
 
@@ -24,31 +26,17 @@ PR #32/#33/#34. 장 전(RL 학습) → 장 중(A/B/RL 블렌딩) → 장 후(재
 PR #48/#49/#51/#52/#53/#54.
 - docker compose 8서비스 전부 healthy
 - Collector → Orchestrator 1사이클 재현: 수집 24건 → 3전략 병렬 → 블렌딩 fallback → S3 Parquet 저장 (16초)
-- LLM 미설정 시 graceful degradation 확인
 - `docker-compose.yml` — `db-init` 서비스 추가, worker healthcheck 수정, worker `GEN_API_URL` 추가
-- `CLAUDE.md` — e2e 테스트 기준 섹션 추가
-- `.github/workflows/ci.yml` — DB init 스텝, helm-lint 잡 추가
 
 ## Step 6 — 테스트 스위트 완전 정비 (2026-03-29)
 
 PR #44/#45/#50. 462 → 557 passed (+95건). 0 failed.
-- event loop 오염 근본 해결: conftest.py deprecated `event_loop` fixture 제거
-- `asyncio.run()` → `IsolatedAsyncioTestCase` + `await` 전환
-- `strategy_promotion.py` shallow copy → deepcopy 버그 수정
-- `test_search_pipeline.py` 전면 재작성
-- DB 의존 테스트 3건 `@pytest.mark.integration` 마킹
-- Python 3.11.15 환경 전환
+- event loop 오염 근본 해결, 인터페이스 불일치 수정, Python 3.11 전환
 
 ## Step 4 — K3s 프로덕션 배포 (2026-03-29, 대부분 완료)
 
-PR #38/#39/#41/#51. 잔여: K3s 실배포.
-- `k8s/helm/alpha-trading/` — Helm chart 13개 파일
-- `Dockerfile` — multi-stage (base/dev/prod), non-root user
-- `.github/workflows/ci.yml` — lint → test → helm-lint → build 4단계
-- `.github/workflows/deploy.yml` — SSH → helm upgrade
-- `k8s/scripts/deploy.sh`, `k8s/scripts/teardown.sh`
-- 모니터링 Prometheus + Grafana (PR #36)
-- Helm chart lint/template 검증 + readiness 정합 (PR #42)
+PR #38/#39/#41/#51/#63/#64. 잔여: deploy.sh 수정 + K3s 실배포.
+- Helm chart + Bitnami values + Kustomize base/overlays + CI/CD + Dockerfile multi-stage
 
 ---
 
@@ -56,42 +44,38 @@ PR #38/#39/#41/#51. 잔여: K3s 실배포.
 
 | 파일 | 내용 |
 |------|------|
-| `src/utils/blog_client.py` | BloggerClient (OAuth refresh, publish/update/find_by_title, BaseBlogClient Protocol) |
-| `src/utils/discussion_renderer.py` | MD→HTML 변환, 프론트매터 파싱, 프로젝트 컨텍스트 헤더 삽입 |
-| `scripts/post_discussion_to_blog.py` | CLI `--draft`/`--dry-run`, 중복 감지 후 업데이트 |
-| `scripts/setup_blogger_oauth.py` | 로컬 HTTP 서버 OAuth 콜백, `.env` 자동 기록 |
+| `src/utils/blog_client.py` | BloggerClient (OAuth refresh, publish/update/find_by_title) |
+| `src/utils/discussion_renderer.py` | MD→HTML 변환, 프론트매터 파싱 |
 
 ---
 
 ## Phase 11 — N-way 블렌딩 + StrategyRunner Registry (2026-03-16)
 
-- `src/agents/strategy_runner.py` — StrategyRunner Protocol + StrategyRegistry
-- `src/agents/blending.py` — BlendInput + blend_signals() N-way 일반화
-- N+1 쿼리 배치 최적화 (executemany): 2,400 RTT → 1 RTT
+- StrategyRunner Protocol + StrategyRegistry, N-way 블렌딩, N+1 쿼리 최적화
 
 ---
 
 ## Phase 10 — 피드백 루프 파이프라인 (2026-03-16)
 
-- S3 Parquet 읽기, predictions+outcomes 매칭, 오류 패턴 분석, RL 재학습 파이프라인
+- S3 Parquet 읽기, predictions+outcomes 매칭, RL 재학습 파이프라인
 
 ---
 
 ## Phase 9 — RL Trading Lane (2026-03-15)
 
-- RL V2 (상태공간 1350개, 4-action, 멀티시드), Gymnasium TradingEnv, walk-forward, shadow inference
+- RL V2, Gymnasium TradingEnv, walk-forward, shadow inference
 
 ---
 
 ## Phase 8 — Search Foundation (2026-03-15)
 
-- SearXNG → Claude 감성 분석, SearchRunner, ResearchPortfolioManager
+- SearXNG → Claude 감성 분석, SearchRunner
 
 ---
 
 ## Phase 7 — S3 Data Lake (2026-03-15)
 
-- MinIO + Parquet, 7 DataType, Hive 파티셔닝
+- MinIO + Parquet, Hive 파티셔닝
 
 ---
 
