@@ -1,4 +1,4 @@
-# prod: 리소스 넉넉하게
+# prod: 리소스 넉넉하게 (인프라는 Bitnami values로 관리)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,3 +32,20 @@ spec:
             limits:
               cpu: "2"
               memory: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui
+spec:
+  template:
+    spec:
+      containers:
+        - name: ui
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
