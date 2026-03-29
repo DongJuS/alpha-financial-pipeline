@@ -1,0 +1,75 @@
+# ================================================================
+# Prometheus Scrape Config for Alpha Trading System
+#
+# K3s에서 ConfigMap으로 마운트:
+#   kubectl create configmap prometheus-config \
+#     --from-file=prometheus.yml=k8s/monitoring/prometheus-config.yml \
+#     -n monitoring
+# ================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # ── Alpha Trading API ────────────────────────────────────────
+  - job_name: "alpha-api"
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ["alpha-trading"]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: alpha-api
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_ip]
+        target_label: __address__
+        replacement: "$1:8000"
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # ── Alpha Trading Worker ─────────────────────────────────────
+  - job_name: "alpha-worker"
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ["alpha-trading"]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: alpha-worker
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_ip]
+        target_label: __address__
+        replacement: "$1:8000"
+    metrics_path: /metrics
+    scrape_interval: 60s
+
+  # ── PostgreSQL (via postgres-exporter) ───────────────────────
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres-exporter.monitoring:9187"]
+    scrape_interval: 30s
+
+  # ── Redis ────────────────────────────────────────────────────
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis-exporter.monitoring:9121"]
+    scrape_interval: 30s
+
+  # ── MinIO ────────────────────────────────────────────────────
+  - job_name: "minio"
+    static_configs:
+      - targets: ["minio.alpha-trading:9000"]
+    metrics_path: /minio/v2/metrics/cluster
+    scrape_interval: 60s
+
+  # ── Node Exporter (K3s 호스트) ───────────────────────────────
+  - job_name: "node"
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: "(.*):10250"
+        target_label: __address__
+        replacement: "$1:9100"
+    scrape_interval: 30s
