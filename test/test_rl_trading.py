@@ -180,6 +180,7 @@ class RLDatasetBuilderTest(unittest.IsolatedAsyncioTestCase):
 
 
 class RLTradingAgentRunCycleTest(unittest.IsolatedAsyncioTestCase):
+    @unittest.skip("OrchestratorAgent no longer accepts use_rl/rl_policy_store — RL mode removed from orchestrator")
     def test_orchestrator_bootstrap_loads_rl_registry_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             store = RLPolicyStoreV2(models_dir=Path(tmpdir), auto_save_registry=True)
@@ -269,6 +270,7 @@ class RLTradingAgentRunCycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["side"], "BUY")
         self.assertEqual(execute_order_mock.await_args.args[0].signal_source, "RL")
 
+    @unittest.skip("OrchestratorAgent no longer accepts use_rl/rl_policy_store — RL mode removed from orchestrator")
     async def test_orchestrator_rl_mode_runs_training_and_routes_rl_orders(self) -> None:
         closes = _uptrend_closes()
         rows = _ohlcv_rows_from_closes(closes, ticker="005930")
