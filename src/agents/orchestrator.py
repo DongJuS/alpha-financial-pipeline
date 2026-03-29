@@ -286,6 +286,7 @@ class OrchestratorAgent:
                     "Running in blend mode with %d strategies",
                     len(all_predictions),
                 )
+                await self._maybe_update_dynamic_weights(list(all_predictions.keys()))
                 blended = self._blend_nway_predictions(all_predictions)
                 if not blended and collected_count > 0:
                     logger.warning(
@@ -388,6 +389,43 @@ class OrchestratorAgent:
             )
             logger.exception(err_msg)
             raise
+
+    # ── Dynamic Weight Optimization ────────────────────────────────────────
+
+    async def _maybe_update_dynamic_weights(self, active_strategies: list[str]) -> None:
+        """DYNAMIC_BLEND_WEIGHTS_ENABLED=true 일 때 성과 기반 가중치로 갱신한다."""
+        settings = get_settings()
+        if not settings.dynamic_blend_weights_enabled:
+            return
+
+        from src.utils.blend_weight_optimizer import BlendWeightOptimizer
+
+        optimizer = BlendWeightOptimizer(
+            base_weights=self.strategy_blend_weights,
+            lookback_days=settings.dynamic_blend_lookback_days,
+            min_weight=settings.dynamic_blend_min_weight,
+        )
+        # 활성 전략만 대상으로 최적화 (등록되지 않은 전략은 base_weight 유지)
+        base_for_active = {
+            k: v for k, v in self.strategy_blend_weights.items() if k in active_strategies
+        }
+        if not base_for_active:
+            return
+
+        active_optimizer = BlendWeightOptimizer(
+            base_weights=base_for_active,
+            lookback_days=settings.dynamic_blend_lookback_days,
+            min_weight=settings.dynamic_blend_min_weight,
+        )
+        new_weights = await active_optimizer.optimize()
+        # 비활성 전략 가중치는 0으로, 활성 전략만 동적 가중치 적용
+        updated = {k: new_weights.get(k, 0.0) for k in self.strategy_blend_weights}
+        logger.info(
+            "동적 블렌딩 가중치 적용: %s → %s",
+            self.strategy_blend_weights,
+            updated,
+        )
+        self.strategy_blend_weights = updated
 
     # ── N-way Blending ─────────────────────────────────────────────────────
 
