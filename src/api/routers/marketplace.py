@@ -169,23 +169,23 @@ async def get_sector_heatmap(
     # Cache miss fallback: compute from DB
     rows = await db_fetch(
         """
-        SELECT sm.sector,
+        SELECT i.sector,
                COUNT(*) AS stock_count,
-               COALESCE(AVG(md.change_pct), 0) AS avg_change_pct,
-               COALESCE(SUM(sm.market_cap), 0) AS total_market_cap,
-               COALESCE(SUM(md.volume), 0) AS total_volume
-        FROM stock_master sm
+               COALESCE(AVG(o.change_pct), 0) AS avg_change_pct,
+               COALESCE(SUM(i.market_cap), 0) AS total_market_cap,
+               COALESCE(SUM(o.volume), 0) AS total_volume
+        FROM instruments i
         LEFT JOIN LATERAL (
             SELECT change_pct, volume
-            FROM market_data md
-            WHERE md.ticker = sm.ticker AND md.interval = 'daily'
-            ORDER BY md.timestamp_kst DESC
+            FROM ohlcv_daily od
+            WHERE od.instrument_id = i.instrument_id
+            ORDER BY od.traded_at DESC
             LIMIT 1
-        ) md ON TRUE
-        WHERE sm.is_active = TRUE
-          AND sm.is_etf = FALSE AND sm.is_etn = FALSE
-          AND sm.sector IS NOT NULL AND sm.sector != ''
-        GROUP BY sm.sector
+        ) o ON TRUE
+        WHERE i.is_active = TRUE
+          AND i.asset_type = 'stock'
+          AND i.sector IS NOT NULL AND i.sector != ''
+        GROUP BY i.sector
         ORDER BY total_market_cap DESC
         """
     )

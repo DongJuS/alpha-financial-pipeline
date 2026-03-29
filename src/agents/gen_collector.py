@@ -2,10 +2,9 @@
 src/agents/gen_collector.py — GenCollectorAgent
 
 Gen REST API에서 랜덤 시세 데이터를 가져와
-기존 수집→저장 파이프라인(PostgreSQL, Redis, S3)에 주입합니다.
+수집→저장 파이프라인(PostgreSQL, Redis, S3)에 주입합니다.
 
-기존 CollectorAgent의 저장 함수를 그대로 재사용하여
-파이프라인 정합성을 검증합니다.
+마이그레이션 기간 동안 ohlcv_daily(신규)와 market_data(레거시) 양쪽에 듀얼 라이트합니다.
 """
 
 from __future__ import annotations
@@ -13,9 +12,9 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -27,6 +26,7 @@ load_dotenv(ROOT / ".env")
 
 from src.db.models import AgentHeartbeatRecord, MarketDataPoint
 from src.db.queries import insert_heartbeat, upsert_market_data
+from src.utils.db_client import executemany
 from src.utils.logging import get_logger, setup_logging
 
 # S3/Parquet 저장은 optional — datalake 모듈이 없으면 스킵
@@ -51,11 +51,11 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 class GenCollectorAgent:
-    """Gen API에서 데이터를 가져와 기존 파이프라인에 저장하는 에이전트.
+    """Gen API에서 데이터를 가져와 파이프라인에 저장하는 에이전트.
 
     수집 경로:
         Gen Server (/gen/*) → GenCollectorAgent
-            → PostgreSQL (market_data 테이블)
+            → PostgreSQL (ohlcv_daily 신규 + market_data 레거시 듀얼라이트)
             → Redis (latest_ticks, realtime_series, pub/sub)
             → S3/MinIO (Parquet)
     """
@@ -90,26 +90,34 @@ class GenCollectorAgent:
     async def _cache_latest_tick(self, point: MarketDataPoint, source: str) -> None:
         """Redis에 최신 틱 캐시 + 시계열 기록."""
         redis = await get_redis()
+        raw_code = point.ticker  # instrument_id에서 raw_code 추출 (@property)
         payload = {
-            "ticker": point.ticker,
+            "ticker": raw_code,
+            "instrument_id": point.instrument_id,
             "name": point.name,
             "current_price": point.close,
             "change_pct": point.change_pct,
             "volume": point.volume,
-            "updated_at": point.timestamp_kst.isoformat(),
+            "updated_at": str(point.traded_at),
             "source": source,
         }
         encoded = json.dumps(payload, ensure_ascii=False)
-        series_key = KEY_REALTIME_SERIES.format(ticker=point.ticker)
+        series_key = KEY_REALTIME_SERIES.format(ticker=raw_code)
 
         pipe = redis.pipeline(transaction=False)
-        pipe.set(KEY_LATEST_TICKS.format(ticker=point.ticker), encoded, ex=60)
+        pipe.set(KEY_LATEST_TICKS.format(ticker=raw_code), encoded, ex=60)
         pipe.lpush(series_key, encoded)
         pipe.ltrim(series_key, 0, 299)
         pipe.expire(series_key, TTL_REALTIME_SERIES)
         await pipe.execute()
 
     # ── 수집 메서드: 일봉 ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _make_instrument_id(raw_code: str, market: str) -> str:
+        """raw_code + market → instrument_id (예: 005930.KS)."""
+        suffix = "KS" if market.upper() == "KOSPI" else "KQ"
+        return f"{raw_code}.{suffix}"
 
     async def collect_daily_bars(self, lookback_days: int = 120) -> list[MarketDataPoint]:
         """Gen API에서 전 종목 일봉을 가져와 DB/Redis/S3에 저장합니다."""
@@ -121,13 +129,14 @@ class GenCollectorAgent:
         latest_points: list[MarketDataPoint] = []
 
         for t in tickers:
-            ticker = t["ticker"]
+            raw_code = t["ticker"]
             name = t["name"]
             market = t["market"]
+            instrument_id = self._make_instrument_id(raw_code, market)
 
             try:
                 ohlcv_resp = await self._client.get(
-                    f"/gen/ohlcv/{ticker}",
+                    f"/gen/ohlcv/{raw_code}",
                     params={"days": lookback_days},
                 )
                 ohlcv_resp.raise_for_status()
@@ -138,20 +147,18 @@ class GenCollectorAgent:
 
                 points: list[MarketDataPoint] = []
                 for bar in bars:
-                    ts = datetime.fromisoformat(bar["date"] + "T15:30:00")
-                    ts = ts.replace(tzinfo=KST)
+                    traded_at = date.fromisoformat(bar["date"])
                     points.append(
                         MarketDataPoint(
-                            ticker=ticker,
+                            instrument_id=instrument_id,
                             name=name,
                             market=market,
-                            timestamp_kst=ts,
-                            interval="daily",
-                            open=bar["open"],
-                            high=bar["high"],
-                            low=bar["low"],
-                            close=bar["close"],
-                            volume=bar["volume"],
+                            traded_at=traded_at,
+                            open=float(bar["open"]),
+                            high=float(bar["high"]),
+                            low=float(bar["low"]),
+                            close=float(bar["close"]),
+                            volume=int(bar["volume"]),
                             change_pct=bar["change_pct"],
                         )
                     )
@@ -161,10 +168,17 @@ class GenCollectorAgent:
                     latest_points.append(points[-1])
 
             except Exception as e:
-                logger.warning("Gen 일봉 수집 실패 [%s]: %s", ticker, e)
+                logger.warning("Gen 일봉 수집 실패 [%s]: %s", raw_code, e)
 
+        # 신규 ohlcv_daily 테이블에 저장
         saved = await upsert_market_data(all_points)
-        logger.info("GenCollector 일봉 DB 저장: %d건", saved)
+        logger.info("GenCollector 일봉 ohlcv_daily 저장: %d건", saved)
+
+        # 레거시 market_data 듀얼라이트 (마이그레이션 기간)
+        try:
+            await self._dual_write_legacy(all_points)
+        except Exception as e:
+            logger.warning("GenCollector 레거시 market_data 듀얼라이트 실패 (무시): %s", e)
 
         if _store_daily_bars is not None:
             try:
@@ -205,7 +219,11 @@ class GenCollectorAgent:
     # ── 수집 메서드: 실시간 틱 ─────────────────────────────────────────────────
 
     async def collect_realtime_ticks(self, interval_sec: float = 1.0, max_cycles: Optional[int] = None) -> int:
-        """Gen API에서 현재가 스냅샷을 주기적으로 가져와 DB/Redis에 저장합니다."""
+        """Gen API에서 현재가 스냅샷을 주기적으로 가져와 DB/Redis에 저장합니다.
+
+        ohlcv_daily는 일봉 전용이므로 실시간 틱은 당일 날짜로 upsert합니다.
+        레거시 market_data에도 듀얼라이트합니다.
+        """
         total_received = 0
         cycle = 0
 
@@ -215,26 +233,35 @@ class GenCollectorAgent:
                 resp.raise_for_status()
                 quotes = resp.json()
 
-                now_kst = datetime.now(KST)
+                today = datetime.now(KST).date()
                 points: list[MarketDataPoint] = []
 
                 for q in quotes:
+                    raw_code = q["ticker"]
+                    market = q["market"]
+                    instrument_id = self._make_instrument_id(raw_code, market)
                     point = MarketDataPoint(
-                        ticker=q["ticker"],
+                        instrument_id=instrument_id,
                         name=q["name"],
-                        market=q["market"],
-                        timestamp_kst=now_kst,
-                        interval="tick",
-                        open=q["open"],
-                        high=q["high"],
-                        low=q["low"],
-                        close=q["current_price"],
-                        volume=q["volume"],
+                        market=market,
+                        traded_at=today,
+                        open=float(q["open"]),
+                        high=float(q["high"]),
+                        low=float(q["low"]),
+                        close=float(q["current_price"]),
+                        volume=int(q["volume"]),
                         change_pct=q["change_pct"],
                     )
                     points.append(point)
 
+                # ohlcv_daily upsert (당일 날짜)
                 await upsert_market_data(points)
+
+                # 레거시 market_data 듀얼라이트
+                try:
+                    await self._dual_write_legacy_tick(points)
+                except Exception as e:
+                    logger.debug("레거시 tick 듀얼라이트 실패 (무시): %s", e)
 
                 for point in points:
                     await self._cache_latest_tick(point, source="gen_tick")
@@ -274,6 +301,77 @@ class GenCollectorAgent:
 
         logger.info("GenCollector 틱 수집 완료: %d건 (%d cycles)", total_received, cycle)
         return total_received
+
+    # ── 레거시 market_data 듀얼라이트 ──────────────────────────────────────────
+
+    async def _dual_write_legacy(self, points: list[MarketDataPoint]) -> int:
+        """마이그레이션 기간: 레거시 market_data 테이블에도 기록합니다."""
+        if not points:
+            return 0
+        query = """
+            INSERT INTO market_data (
+                ticker, name, market, timestamp_kst, interval,
+                open, high, low, close, volume, change_pct
+            ) VALUES (
+                $1, $2, $3, $4, $5,
+                $6, $7, $8, $9, $10, $11
+            )
+            ON CONFLICT (ticker, timestamp_kst, interval)
+            DO UPDATE SET
+                name = EXCLUDED.name,
+                open = EXCLUDED.open,
+                high = EXCLUDED.high,
+                low = EXCLUDED.low,
+                close = EXCLUDED.close,
+                volume = EXCLUDED.volume,
+                change_pct = EXCLUDED.change_pct
+        """
+        rows: list[tuple[Any, ...]] = []
+        for p in points:
+            ts = datetime(
+                p.traded_at.year, p.traded_at.month, p.traded_at.day,
+                15, 30, 0, tzinfo=KST,
+            )
+            rows.append((
+                p.ticker, p.name, p.market, ts, "daily",
+                int(p.open), int(p.high), int(p.low), int(p.close),
+                p.volume, p.change_pct,
+            ))
+        await executemany(query, rows)
+        logger.info("GenCollector 레거시 market_data 듀얼라이트: %d건", len(rows))
+        return len(rows)
+
+    async def _dual_write_legacy_tick(self, points: list[MarketDataPoint]) -> int:
+        """마이그레이션 기간: 실시간 틱을 레거시 market_data에 기록합니다."""
+        if not points:
+            return 0
+        query = """
+            INSERT INTO market_data (
+                ticker, name, market, timestamp_kst, interval,
+                open, high, low, close, volume, change_pct
+            ) VALUES (
+                $1, $2, $3, $4, $5,
+                $6, $7, $8, $9, $10, $11
+            )
+            ON CONFLICT (ticker, timestamp_kst, interval)
+            DO UPDATE SET
+                open = EXCLUDED.open,
+                high = EXCLUDED.high,
+                low = EXCLUDED.low,
+                close = EXCLUDED.close,
+                volume = EXCLUDED.volume,
+                change_pct = EXCLUDED.change_pct
+        """
+        now_kst = datetime.now(KST)
+        rows: list[tuple[Any, ...]] = []
+        for p in points:
+            rows.append((
+                p.ticker, p.name, p.market, now_kst, "tick",
+                int(p.open), int(p.high), int(p.low), int(p.close),
+                p.volume, p.change_pct,
+            ))
+        await executemany(query, rows)
+        return len(rows)
 
     # ── 수집 메서드: 지수/매크로 ───────────────────────────────────────────────
 
