@@ -1,0 +1,10 @@
+apiVersion: v2
+name: alpha-trading
+description: 멀티 에이전트 자동 투자 시스템 (K3s)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - trading
+  - multi-agent
+  - reinforcement-learning
