@@ -14,9 +14,9 @@ from pathlib import Path
 import random
 from typing import Literal, Optional
 
-from src.utils.market_data import compute_change_pct
+from src.utils.market_data import compute_change_pct, to_instrument_id
 
-from src.db.models import PredictionSignal
+from src.db.models import OHLCVDaily, PredictionSignal
 from src.db.queries import fetch_recent_market_data, get_position
 from src.utils.logging import get_logger
 
@@ -148,7 +148,7 @@ class RLDatasetBuilder:
                 from datetime import date, timedelta
                 from zoneinfo import ZoneInfo
 
-                KST = ZoneInfo("Asia/Seoul")
+                ZoneInfo("Asia/Seoul")
                 end_date = date.today().strftime("%Y-%m-%d")
                 start_date = (date.today() - timedelta(days=days + 30)).strftime("%Y-%m-%d")
                 df = fdr.DataReader(ticker, start_date, end_date)
@@ -165,50 +165,42 @@ class RLDatasetBuilder:
                         )
                         # 수집한 데이터를 DB에 백그라운드로 저장 (다음 요청부터 DB에서 제공)
                         try:
-                            from src.db.models import MarketDataPoint
-                            from src.db.queries import upsert_market_data
+                            from src.db.queries import upsert_ohlcv_daily
 
                             # 마켓 정보 조회 (FDR StockListing)
                             listing = fdr.StockListing("KRX")
                             found = listing.loc[listing["Code"] == ticker]
-                            name = str(found.iloc[0]["Name"]) if not found.empty else ticker
+                            str(found.iloc[0]["Name"]) if not found.empty else ticker
                             market_str = str(found.iloc[0]["Market"]).upper() if not found.empty else "KOSPI"
                             if market_str not in {"KOSPI", "KOSDAQ"}:
                                 market_str = "KOSPI"
 
-                            points = []
+                            ohlcv_points: list[OHLCVDaily] = []
                             previous_close = None
                             for idx_row, row_data in df.iterrows():
                                 trade_date = idx_row.date() if hasattr(idx_row, "date") else date.today()
-                                ts = datetime(
-                                    trade_date.year, trade_date.month, trade_date.day,
-                                    15, 30, 0, tzinfo=KST,
-                                )
                                 close_val = int(row_data.get("Close", 0))
                                 if close_val <= 0:
                                     continue
-                                points.append(MarketDataPoint(
-                                    ticker=ticker,
-                                    name=name,
-                                    market=market_str,  # type: ignore[arg-type]
-                                    timestamp_kst=ts,
-                                    interval="daily",
-                                    open=int(row_data.get("Open", close_val)),
-                                    high=int(row_data.get("High", close_val)),
-                                    low=int(row_data.get("Low", close_val)),
-                                    close=close_val,
+                                ohlcv_points.append(OHLCVDaily(
+                                    instrument_id=to_instrument_id(ticker, market_str),
+                                    traded_at=trade_date,
+                                    open=float(row_data.get("Open", close_val)),
+                                    high=float(row_data.get("High", close_val)),
+                                    low=float(row_data.get("Low", close_val)),
+                                    close=float(close_val),
                                     volume=int(row_data.get("Volume", 0)),
                                     change_pct=compute_change_pct(close_val, previous_close),
                                 ))
                                 previous_close = close_val
-                            if points:
-                                saved = await upsert_market_data(points)
+                            if ohlcv_points:
+                                saved = await upsert_ohlcv_daily(ohlcv_points)
                                 logger.info("FDR 데이터 DB 자동 저장: ticker=%s, %d건", ticker, saved)
                                 # S3(MinIO)에도 저장
                                 try:
                                     from src.services.datalake import store_daily_bars as _s3_store
-                                    await _s3_store([p.model_dump() for p in points])
-                                    logger.info("FDR 데이터 S3 자동 저장: ticker=%s, %d건", ticker, len(points))
+                                    await _s3_store([p.model_dump() for p in ohlcv_points])
+                                    logger.info("FDR 데이터 S3 자동 저장: ticker=%s, %d건", ticker, len(ohlcv_points))
                                 except Exception as s3_err:
                                     logger.warning("FDR → S3 저장 실패 (무시): %s", s3_err)
                         except Exception as save_err:
