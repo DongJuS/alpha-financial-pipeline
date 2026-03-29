@@ -5,6 +5,26 @@
 
 ---
 
+## Step 5 — Alpha 안정화 + 1사이클 재현 (2026-03-29)
+
+- docker compose 8서비스 전부 healthy (api, worker, postgres, redis, minio, gen, gen-collector, ui)
+- API health: `{"status":"healthy","scheduler":{"running":true,"job_count":9}}`
+- Collector → Orchestrator 1사이클 재현: 수집 24건 → A/B/RL 3전략 병렬 → 블렌딩 fallback(B/RL 빈→A 1전략) → S3 Parquet 저장 (16초)
+- LLM 미설정 시 graceful degradation 확인 (예측 0건이지만 파이프라인 중단 없음)
+- 120초 인터벌 반복 실행 확인
+- 상세 로그: `troubleshooting/orchestrator-1cycle-verification.md`
+
+## Step 6 — 테스트 스위트 정비 (2026-03-29)
+
+- 462 → 557 passed, 47 → 0 failed
+- event loop 오염 근본 해결: conftest.py deprecated `event_loop` fixture 제거
+- `asyncio.run()` → `IsolatedAsyncioTestCase` + `await` 전환 (5개 파일)
+- test_search_pipeline.py: SearchAgent 현재 인터페이스에 맞게 전면 재작성
+- DB 의존 테스트 3건 `@pytest.mark.integration` 마킹
+- PR: #44, #45, #50
+
+---
+
 ## Phase 12 — 블로그 자동 포스팅 (2026-03-28)
 
 | 파일 | 내용 |
