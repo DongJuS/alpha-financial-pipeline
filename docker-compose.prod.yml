@@ -1,0 +1,98 @@
+# ================================================================
+# docker-compose.prod.yml — 프로덕션 오버라이드
+#
+# 사용법:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# 주요 차이점 (vs dev):
+#   - prod 타겟 빌드 (multi-stage)
+#   - 소스 볼륨 마운트 제거 (이미지에 코드 포함)
+#   - resource limits 설정
+#   - restart: always
+#   - 불필요 서비스 비활성화 (gen, gen-collector)
+# ================================================================
+
+services:
+  postgres:
+    restart: always
+    environment:
+      POSTGRES_DB: alpha_db
+      POSTGRES_USER: ${POSTGRES_USER:-alpha_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
+  redis:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  minio:
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD required}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+    restart: always
+    volumes: []  # dev 볼륨 마운트 제거
+    environment:
+      NODE_ENV: production
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+    restart: always
+    volumes: []
+    environment:
+      NODE_ENV: production
+      ORCH_MODE: blend
+      ORCH_RUN_ONCE: "false"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+
+  # gen/gen-collector는 프로덕션에서 비활성화 (테스트 전용)
+  gen:
+    profiles:
+      - gen-testing
+
+  gen-collector:
+    profiles:
+      - gen-testing
+
+  ui:
+    build:
+      context: ./ui/web
+      dockerfile: Dockerfile
+    restart: always
+    volumes: []
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
