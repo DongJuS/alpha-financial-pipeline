@@ -1,5 +1,5 @@
 # ================================================================
-# CI Pipeline — lint → test → build → push
+# CI Pipeline — lint → test → helm-lint → build → push
 #
 # 트리거: main PR, main push
 # 레지스트리: GitHub Container Registry (ghcr.io)
@@ -87,20 +87,34 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Initialize DB schema
+        run: python scripts/db/init_db.py
+
       - name: Run tests
         run: |
           pytest test/ -v --tb=short \
-            --ignore=test/test_rl_policy_registry.py \
             --ignore=test/test_search_pipeline.py \
-            --ignore=test/test_search_runner.py \
-            --ignore=test/test_search_runner_integration.py \
-            --ignore=test/test_datalake_rl_episodes.py \
-            -x
+            -k "not integration"
+
+  # ── Helm Lint ─────────────────────────────────────────────────
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Helm lint
+        run: helm lint k8s/helm/alpha-trading/
+
+      - name: Helm template (dry render)
+        run: helm template alpha-trading k8s/helm/alpha-trading/ > /dev/null
 
   # ── Build & Push ───────────────────────────────────────────────
   build:
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, helm-lint]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     permissions:
