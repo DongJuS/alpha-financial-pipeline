@@ -1,13 +1,19 @@
-# Bitnami MinIO Helm chart values
-# 설치: helm install minio bitnami/minio -n alpha-trading -f minio-values.yaml
+# MinIO 공식 Helm chart values (Bitnami 이미지 유료화로 전환)
+# repo: helm repo add minio https://charts.min.io
+# 설치: helm install alpha-minio minio/minio -n alpha-trading -f minio-values.yaml
 
-auth:
-  rootUser: minioadmin
-  rootPassword: minioadmin
+mode: standalone
 
-defaultBuckets: alpha-lake
+rootUser: minioadmin
+rootPassword: minioadmin
+
+buckets:
+  - name: alpha-lake
+    policy: none
+    purge: false
 
 persistence:
+  enabled: true
   size: 20Gi
   storageClass: local-path
 
@@ -18,3 +24,6 @@ resources:
   limits:
     cpu: 500m
     memory: 512Mi
+
+consoleIngress:
+  enabled: false
