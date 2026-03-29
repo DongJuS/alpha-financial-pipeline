@@ -9,8 +9,8 @@ data:
   # 인프라 서비스 연결 — Bitnami Helm release명 기준
   # deploy.sh에서 release명을 변경하면 여기도 맞춰야 함
   DATABASE_URL: postgresql://alpha_user:alpha_pass@alpha-pg-postgresql:5432/alpha_db
-  REDIS_URL: redis://alpha-redis-redis-master:6379/0
-  S3_ENDPOINT_URL: http://alpha-minio:9000
+  REDIS_URL: redis://alpha-redis-master:6379/0
+  S3_ENDPOINT_URL: http://minio:9000
   S3_BUCKET_NAME: alpha-lake
   LOG_LEVEL: INFO
   MARKET_HOURS_ENFORCED: "true"
