@@ -64,7 +64,7 @@ class RLRunner:
                 logger.debug("RLRunner: %s에 활성 정책 없음, 건너뜁니다.", ticker)
                 continue
 
-            # DB 조회용 raw 코드 (market_data는 plain 코드 사용)
+            # DB 조회용 raw 코드 (ohlcv_daily는 instrument_id/raw_code 양방향 매칭)
             db_ticker = to_raw(ticker)
 
             try:

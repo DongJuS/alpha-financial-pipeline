@@ -30,20 +30,21 @@ def _flat_closes(length: int = 90) -> list[float]:
 
 
 def _ohlcv_rows_from_closes(closes: list[float], ticker: str = "005930") -> list[dict]:
-    start = datetime(2026, 1, 2, tzinfo=timezone.utc)
+    start = date(2026, 1, 2)
+    suffix = ".KS"
     rows: list[dict] = []
     for idx, close in enumerate(closes):
-        timestamp = start + timedelta(days=idx)
-        close_int = int(round(close))
+        traded = start + timedelta(days=idx)
         rows.append(
             {
+                "instrument_id": f"{ticker}{suffix}",
                 "ticker": ticker,
                 "name": "삼성전자",
-                "timestamp_kst": timestamp,
-                "open": close_int - 1,
-                "high": close_int + 2,
-                "low": close_int - 2,
-                "close": close_int,
+                "traded_at": traded,
+                "open": round(close - 1.0, 4),
+                "high": round(close + 2.0, 4),
+                "low": round(close - 2.0, 4),
+                "close": round(close, 4),
                 "volume": 1_000_000 + idx,
                 "change_pct": 0.5,
             }
@@ -52,20 +53,21 @@ def _ohlcv_rows_from_closes(closes: list[float], ticker: str = "005930") -> list
 
 
 def _tick_rows_from_closes(closes: list[float], ticker: str = "005930") -> list[dict]:
-    start = datetime(2026, 3, 13, 6, 0, tzinfo=timezone.utc)
+    start = date(2026, 3, 13)
+    suffix = ".KS"
     rows: list[dict] = []
     for idx, close in enumerate(closes):
-        timestamp = start + timedelta(seconds=idx)
-        close_int = int(round(close))
+        traded = start + timedelta(days=idx)
         rows.append(
             {
+                "instrument_id": f"{ticker}{suffix}",
                 "ticker": ticker,
                 "name": "삼성전자",
-                "timestamp_kst": timestamp,
-                "open": close_int,
-                "high": close_int,
-                "low": close_int,
-                "close": close_int,
+                "traded_at": traded,
+                "open": round(close, 4),
+                "high": round(close, 4),
+                "low": round(close, 4),
+                "close": round(close, 4),
                 "volume": 100 + idx,
                 "change_pct": None,
             }
@@ -112,11 +114,13 @@ def _market_data_fetch_side_effect(
     tick_rows: list[dict] | None = None,
     latest_tick_rows: list[dict] | None = None,
 ):
-    async def _side_effect(ticker: str, *, interval: str = "daily", **kwargs):
-        if interval == "tick":
-            if kwargs.get("limit") == 1 and latest_tick_rows is not None:
-                return latest_tick_rows
-            return tick_rows or []
+    async def _side_effect(ticker: str, **kwargs):
+        # limit=1 은 _build_inference_closes 에서 최신 1건 조회
+        if kwargs.get("limit") == 1 and latest_tick_rows is not None:
+            return latest_tick_rows
+        # tick_rows가 있으면 우선 반환 (tick interval 테스트 케이스)
+        if tick_rows is not None:
+            return tick_rows
         return daily_rows or []
 
     return _side_effect
@@ -172,10 +176,8 @@ class RLDatasetBuilderTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(len(dataset.closes), len(closes))
-        self.assertEqual(dataset.timestamps[0], str(rows[0]["timestamp_kst"]))
-        self.assertEqual(dataset.timestamps[-1], str(rows[-1]["timestamp_kst"]))
-        self.assertEqual(fetch_mock.await_args.kwargs["interval"], "tick")
-        self.assertEqual(fetch_mock.await_args.kwargs["seconds"], 3600)
+        self.assertEqual(dataset.timestamps[0], str(rows[0]["traded_at"]))
+        self.assertEqual(dataset.timestamps[-1], str(rows[-1]["traded_at"]))
         self.assertEqual(fetch_mock.await_args.kwargs["limit"], 500)
 
 
