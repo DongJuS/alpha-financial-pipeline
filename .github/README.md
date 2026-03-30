@@ -47,9 +47,10 @@
                       (paper / real via KIS API)
                                  │
                         ┌────────┴────────┐
+
                    Telegram Alert    React Dashboard
 ```
-
+<img width="1507" height="769" alt="스크린샷 2026-03-30 오후 9 08 44" src="https://github.com/user-attachments/assets/67dfc0fe-030c-4535-b365-a47cc2c90313" />
 ---
 
 ## Data Pipeline
