@@ -18,7 +18,6 @@ import argparse
 import asyncio
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,7 +27,7 @@ from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
 
 import FinanceDataReader as fdr
-from src.utils.db_client import execute, executemany, fetchval, get_pool
+from src.utils.db_client import executemany, get_pool
 from src.utils.logging import get_logger, setup_logging
 
 setup_logging()
