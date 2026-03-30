@@ -60,3 +60,17 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
           command: ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          volumeMounts:
+            - name: rl-data
+              mountPath: /app/artifacts/rl/models
+              subPath: models
+            - name: rl-data
+              mountPath: /app/artifacts/rl/profiles
+              subPath: profiles
+            - name: rl-data
+              mountPath: /app/artifacts/rl/experiments
+              subPath: experiments
+      volumes:
+        - name: rl-data
+          persistentVolumeClaim:
+            claimName: rl-data-pvc
