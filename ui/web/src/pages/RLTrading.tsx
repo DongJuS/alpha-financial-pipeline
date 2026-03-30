@@ -4,6 +4,7 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { api } from "@/utils/api";
 import {
   usePolicies,
   useActivePolicies,
@@ -328,11 +329,10 @@ function TickerPickerModal({
   const { data: tickersPayload, isLoading } = useQuery({
     queryKey: ["market", "tickers-all"],
     queryFn: async () => {
-      const { api } = await import("@/utils/api");
-      const { data } = await api.get<{
+      const resp = await api.get<{
         data: { ticker: string; name: string; market: string }[];
       }>("/market/tickers", { params: { per_page: 200 } });
-      return data;
+      return resp.data;
     },
     enabled: open,
   });
