@@ -18,7 +18,11 @@ import {
   usePromoteShadowToPaper,
   usePromotePaperToReal,
   usePolicyMode,
+  useRLTickers,
+  useAddRLTickers,
+  useRemoveRLTicker,
   type RLPolicy,
+  type RLTickerInfo,
   type TrainingJob,
   type TrainingJobRequest,
 } from "@/hooks/useRL";
@@ -39,8 +43,9 @@ function useCollectMarketData() {
 }
 
 /* ── 탭 정의 ───────────────────────────────────────────────────────────── */
-type Tab = "policies" | "experiments" | "shadow" | "promotion";
+type Tab = "tickers" | "policies" | "experiments" | "shadow" | "promotion";
 const TABS: { key: Tab; label: string; desc: string }[] = [
+  { key: "tickers", label: "종목 관리", desc: "RL 대상 종목 추가/제거" },
   { key: "policies", label: "정책 관리", desc: "활성 정책 및 평가" },
   { key: "experiments", label: "학습 실험", desc: "트레이닝 잡 실행" },
   { key: "shadow", label: "섀도우 추론", desc: "가상 시그널 성과" },
@@ -60,6 +65,132 @@ function ModeBadge({ mode }: { mode: string }) {
     <span className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" style={style}>
       {m.toUpperCase()}
     </span>
+  );
+}
+
+/* ── 종목 관리 탭 ──────────────────────────────────────────────────────── */
+function TickersTab() {
+  const { data: tickers, isLoading } = useRLTickers();
+  const addTickers = useAddRLTickers();
+  const removeTicker = useRemoveRLTicker();
+  const [newTicker, setNewTicker] = useState("");
+
+  const handleAdd = () => {
+    const codes = newTicker.split(",").map((s) => s.trim()).filter(Boolean);
+    if (codes.length === 0) return;
+    addTickers.mutate(codes, { onSuccess: () => setNewTicker("") });
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* 종목 추가 */}
+      <div className="card">
+        <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>종목 추가</h3>
+        <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+          RL 학습 대상 종목을 추가합니다. 쉼표로 여러 종목을 입력할 수 있습니다.
+        </p>
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="text"
+            value={newTicker}
+            onChange={(e) => setNewTicker(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+            placeholder="005930.KS, 000660.KS, AAPL.US"
+            className="flex-1 rounded-xl border px-3 py-2 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
+          />
+          <button
+            onClick={handleAdd}
+            disabled={addTickers.isPending || !newTicker.trim()}
+            className="btn-primary whitespace-nowrap px-4 py-2 text-sm"
+            style={{ background: "linear-gradient(135deg, var(--brand-500), #4b9dff)" }}
+          >
+            {addTickers.isPending ? "추가 중..." : "추가"}
+          </button>
+        </div>
+        {addTickers.data && (
+          <p className="mt-2 text-xs font-semibold" style={{ color: "var(--green)" }}>
+            {addTickers.data.added.length > 0
+              ? `${addTickers.data.added.join(", ")} 추가 완료 (총 ${addTickers.data.total}종목)`
+              : `이미 등록된 종목입니다 (총 ${addTickers.data.total}종목)`}
+          </p>
+        )}
+      </div>
+
+      {/* 등록된 종목 목록 */}
+      <div className="card">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
+            RL 대상 종목 ({tickers?.length ?? 0})
+          </h3>
+        </div>
+        {isLoading ? (
+          <p className="py-4 text-center text-sm" style={{ color: "var(--text-secondary)" }}>로딩 중...</p>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ color: "var(--text-secondary)" }}>
+                  <th className="pb-2 text-left font-semibold">종목</th>
+                  <th className="pb-2 text-left font-semibold">활성 정책</th>
+                  <th className="pb-2 text-center font-semibold">상태</th>
+                  <th className="pb-2 text-right font-semibold">작업</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(tickers ?? []).map((t: RLTickerInfo) => (
+                  <tr key={t.ticker} className="border-t" style={{ borderColor: "var(--border)" }}>
+                    <td className="py-2 font-mono text-xs font-bold" style={{ color: "var(--text-primary)" }}>
+                      {t.ticker}
+                    </td>
+                    <td className="py-2 font-mono text-xs" style={{ color: "var(--text-secondary)" }}>
+                      {t.active_policy_id ?? "-"}
+                    </td>
+                    <td className="py-2 text-center">
+                      <span
+                        className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                        style={
+                          t.has_policy
+                            ? { background: "var(--green-bg)", color: "var(--green)" }
+                            : { background: "var(--bg-secondary)", color: "var(--text-secondary)" }
+                        }
+                      >
+                        {t.has_policy ? "활성" : "미학습"}
+                      </span>
+                    </td>
+                    <td className="py-2 text-right">
+                      <button
+                        onClick={() => {
+                          if (confirm(`${t.ticker}을(를) RL 대상에서 제거하시겠습니까?`))
+                            removeTicker.mutate(t.ticker);
+                        }}
+                        disabled={removeTicker.isPending}
+                        className="rounded-lg px-2 py-1 text-xs font-semibold transition-colors hover:bg-red-50"
+                        style={{ color: "var(--red)" }}
+                      >
+                        제거
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {(tickers ?? []).length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-6 text-center text-sm" style={{ color: "var(--text-secondary)" }}>
+                      등록된 RL 종목이 없습니다. 위에서 종목을 추가하세요.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {removeTicker.data && (
+          <p className="mt-2 text-xs font-semibold" style={{ color: "var(--red)" }}>
+            {removeTicker.data.removed} 제거 완료 (남은 종목: {removeTicker.data.total})
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -737,7 +868,7 @@ function PromotionTab() {
 
 /* ── 메인 페이지 ───────────────────────────────────────────────────────── */
 export default function RLTrading() {
-  const [activeTab, setActiveTab] = useState<Tab>("policies");
+  const [activeTab, setActiveTab] = useState<Tab>("tickers");
 
   return (
     <div className="page-shell space-y-5">
@@ -779,6 +910,7 @@ export default function RLTrading() {
       </div>
 
       {/* 탭 콘텐츠 */}
+      {activeTab === "tickers" && <TickersTab />}
       {activeTab === "policies" && <PoliciesTab />}
       {activeTab === "experiments" && <ExperimentsTab />}
       {activeTab === "shadow" && <ShadowTab />}
