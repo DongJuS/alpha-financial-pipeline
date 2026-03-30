@@ -328,7 +328,8 @@ function TickerPickerModal({
   const { data: tickersPayload, isLoading } = useQuery({
     queryKey: ["market", "tickers-all"],
     queryFn: async () => {
-      const { data } = await (await import("@/utils/api")).default.get<{
+      const { api } = await import("@/utils/api");
+      const { data } = await api.get<{
         data: { ticker: string; name: string; market: string }[];
       }>("/market/tickers", { params: { per_page: 200 } });
       return data;
