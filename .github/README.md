@@ -56,7 +56,9 @@
 <img width="764" height="385" alt="스크린샷 2026-03-30 오후 9 11 49" src="https://github.com/user-attachments/assets/972d31dd-e3bd-42c7-9ac2-961a16e3057d" />
 <img width="767" height="385" alt="스크린샷 2026-03-30 오후 9 12 00" src="https://github.com/user-attachments/assets/c74950e9-a903-47d9-848f-f78f82bf55db" />
 <img width="765" height="385" alt="스크린샷 2026-03-30 오후 9 27 09" src="https://github.com/user-attachments/assets/dff71671-663e-4d6d-ac97-edcd5c03682c" />
-<img width="771" height="382" alt="스크린샷 2026-03-30 오후 9 27 47" src="https://github.com/user-attachments/assets/ae951078-dd9e-4e98-9752-37af619ce1e3" />
+<img width="762" height="384" alt="스크린샷 2026-03-30 오후 9 30 35" src="https://github.com/user-attachments/assets/ed9ca0a0-cc9e-4497-831b-505124ddde32" />
+<img width="806" height="385" alt="스크린샷 2026-03-30 오후 9 30 49" src="https://github.com/user-attachments/assets/6f0ee3f3-a7ac-4244-af50-53405896c597" />
+
 
 
 
