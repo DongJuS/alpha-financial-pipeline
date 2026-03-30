@@ -96,7 +96,7 @@ async def fetch_recent_market_data(
     params: list[Any] = [ticker]
 
     params.append(days)
-    conditions.append(f"o.traded_at >= CURRENT_DATE - ${len(params)}")
+    conditions.append(f"o.traded_at >= CURRENT_DATE - ${len(params)} * INTERVAL '1 day'")
 
     limit_sql = ""
     if limit is not None:
