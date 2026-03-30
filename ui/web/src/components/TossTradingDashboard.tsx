@@ -139,6 +139,7 @@ function formatCompactNumber(value: number | null | undefined): string {
 }
 
 function compactDate(value: string): string {
+  if (!value) return "—";
   return value.slice(5);
 }
 
