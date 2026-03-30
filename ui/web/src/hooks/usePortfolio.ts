@@ -351,3 +351,43 @@ export function useUpdateTradingMode() {
     },
   });
 }
+
+/* ── KIS 실계좌 보유종목 조회 ──────────────────────────────────── */
+
+interface RealHoldingPosition {
+  ticker: string;
+  name: string;
+  quantity: number;
+  avg_price: number;
+  current_price: number;
+  eval_amount: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
+}
+
+interface RealHoldingsResponse {
+  account_number_masked: string;
+  fetched_at: string;
+  summary: {
+    cash_balance: number;
+    total_eval_amount: number;
+    total_equity: number;
+    total_unrealized_pnl: number;
+    total_unrealized_pnl_pct: number;
+  };
+  positions: RealHoldingPosition[];
+}
+
+export function useRealHoldings() {
+  return useQuery({
+    queryKey: ["portfolio", "real-holdings"],
+    queryFn: async () => {
+      const { data } = await api.get<RealHoldingsResponse>("/portfolio/account-overview", {
+        params: { mode: "real" },
+      });
+      return data;
+    },
+    retry: 1,
+    refetchInterval: 30_000,
+  });
+}
