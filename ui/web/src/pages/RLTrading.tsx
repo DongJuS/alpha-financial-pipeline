@@ -3,7 +3,7 @@
  * RL Trading 대시보드 — 정책 관리, 실험, 섀도우 추론, 승격
  */
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   usePolicies,
   useActivePolicies,
@@ -182,6 +182,133 @@ function PolicyRow({ policy: p, onActivate }: { policy: RLPolicy; onActivate: ()
   );
 }
 
+/* ── 종목 선택 모달 ──────────────────────────────────────────────────── */
+function TickerPickerModal({
+  open,
+  onClose,
+  onSelect,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSelect: (ticker: string, name: string) => void;
+}) {
+  const [tab, setTab] = useState<string>("KOSPI");
+  const [search, setSearch] = useState("");
+  const { data: tickersPayload, isLoading } = useQuery({
+    queryKey: ["market", "tickers-all"],
+    queryFn: async () => {
+      const { data } = await (await import("@/utils/api")).default.get<{
+        data: { ticker: string; name: string; market: string }[];
+      }>("/market/tickers", { params: { per_page: 200 } });
+      return data;
+    },
+    enabled: open,
+  });
+
+  if (!open) return null;
+
+  const allTickers = tickersPayload?.data ?? [];
+  const markets = [...new Set(allTickers.map((t) => t.market))].sort();
+  const filtered = allTickers
+    .filter((t) => t.market === tab)
+    .filter(
+      (t) =>
+        !search ||
+        t.ticker.includes(search) ||
+        t.name.toLowerCase().includes(search.toLowerCase())
+    );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.5)" }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl p-5"
+        style={{ background: "var(--bg-primary)", maxHeight: "80vh" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
+            종목 선택
+          </h3>
+          <button onClick={onClose} className="text-xl" style={{ color: "var(--text-tertiary)" }}>
+            ✕
+          </button>
+        </div>
+
+        {/* 검색 */}
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="종목명 또는 코드 검색..."
+          className="mt-3 w-full rounded-xl border px-3 py-2 text-sm"
+          style={{ borderColor: "var(--border)", background: "var(--bg-secondary)", color: "var(--text-primary)" }}
+          autoFocus
+        />
+
+        {/* 마켓 탭 */}
+        <div className="mt-3 flex gap-2">
+          {markets.map((m) => (
+            <button
+              key={m}
+              onClick={() => setTab(m)}
+              className="rounded-full px-3 py-1 text-xs font-semibold"
+              style={{
+                background: tab === m ? "var(--brand-500)" : "var(--bg-secondary)",
+                color: tab === m ? "white" : "var(--text-secondary)",
+              }}
+            >
+              {m} ({allTickers.filter((t) => t.market === m).length})
+            </button>
+          ))}
+        </div>
+
+        {/* 종목 리스트 */}
+        <div className="mt-3 overflow-y-auto" style={{ maxHeight: "50vh" }}>
+          {isLoading && <div className="h-40 skeleton" />}
+          {filtered.map((t) => (
+            <button
+              key={t.ticker}
+              onClick={() => {
+                onSelect(t.ticker, t.name);
+                onClose();
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left hover:opacity-80"
+              style={{ borderBottom: "1px solid var(--border)" }}
+            >
+              <div>
+                <span className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
+                  {t.name}
+                </span>
+                <span className="ml-2 text-xs" style={{ color: "var(--text-tertiary)" }}>
+                  {t.ticker}
+                </span>
+              </div>
+              <span
+                className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                style={{
+                  background: t.market === "KOSPI" ? "var(--blue-bg)" : "var(--purple-bg)",
+                  color: t.market === "KOSPI" ? "var(--blue)" : "var(--purple)",
+                }}
+              >
+                {t.market}
+              </span>
+            </button>
+          ))}
+          {filtered.length === 0 && !isLoading && (
+            <p className="py-8 text-center text-sm" style={{ color: "var(--text-tertiary)" }}>
+              검색 결과가 없습니다.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── 학습 실험 탭 ──────────────────────────────────────────────────────── */
 function ExperimentsTab() {
   const { data: experiments, isLoading } = useExperiments();
@@ -189,8 +316,10 @@ function ExperimentsTab() {
   const createJob = useCreateTrainingJob();
   const runWF = useRunWalkForward();
   const [ticker, setTicker] = useState("");
+  const [tickerName, setTickerName] = useState("");
   const [episodes, setEpisodes] = useState(500);
   const [formError, setFormError] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   function handleTrain() {
     setFormError("");
@@ -209,26 +338,41 @@ function ExperimentsTab() {
     const payload: TrainingJobRequest = { ticker: ticker.trim(), episodes };
     createJob.mutate(payload);
     setTicker("");
+    setTickerName("");
   }
 
   if (isLoading && isJobsLoading) return <div className="card"><div className="h-40 skeleton" /></div>;
 
   return (
     <div className="space-y-4">
+      {/* 종목 선택 모달 */}
+      <TickerPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(code, name) => {
+          setTicker(code);
+          setTickerName(name);
+        }}
+      />
+
       {/* 새 트레이닝 잡 */}
       <div className="card">
         <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>새 트레이닝 실행</h3>
         <div className="mt-3 flex flex-wrap items-end gap-3">
           <div>
             <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>종목 코드</label>
-            <input
-              type="text"
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value)}
-              placeholder="005930"
-              className="mt-1 block w-32 rounded-xl border px-3 py-2 text-sm"
-              style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
-            />
+            <button
+              onClick={() => setPickerOpen(true)}
+              className="mt-1 flex w-44 items-center justify-between rounded-xl border px-3 py-2 text-sm text-left"
+              style={{ borderColor: "var(--border)", background: "var(--bg-secondary)", color: ticker ? "var(--text-primary)" : "var(--text-tertiary)" }}
+            >
+              {ticker ? (
+                <span>{tickerName} <span style={{ color: "var(--text-tertiary)" }}>({ticker})</span></span>
+              ) : (
+                <span>종목 선택...</span>
+              )}
+              <span style={{ color: "var(--text-tertiary)" }}>▾</span>
+            </button>
           </div>
           <div>
             <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
