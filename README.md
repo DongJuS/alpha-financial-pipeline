@@ -15,6 +15,19 @@
 | **6 pods on K3s** | Colima + Helm(infra) + Kustomize(app), verified deployment |
 | **16-second cycle** | Collector → Orchestrator → Blending → S3 storage end-to-end |
 
+## RL Trading Performance (Backtest)
+
+Strategy RL (Tabular Q-Learning V2) trained on **real historical data** for 크래프톤(259960.KS):
+
+| Policy | Return | Baseline (Buy&Hold) | Excess Return | Trades | Win Rate | Status |
+|--------|--------|---------------------|---------------|--------|----------|--------|
+| **Best** | **+47.84%** | -26.58% | **+74.41%p** | 178 | 50.6% | ✅ Approved |
+| **2nd** | **+28.73%** | -26.58% | **+55.30%p** | 156 | 51.3% | ✅ Approved |
+
+> In a **-26.58% bear market**, the RL agent achieved +47.84% return (74.41%p excess return).
+> Trained with 5-seed multi-learning, holdout validation (335 steps), walk-forward cross-validation.
+> ⚠️ Backtest results only. Slippage, execution delay, and market impact are not reflected.
+
 ---
 
 ## Architecture
