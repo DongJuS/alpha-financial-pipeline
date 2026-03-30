@@ -138,7 +138,7 @@ class RLDatasetBuilder:
                 from datetime import date, timedelta
                 from zoneinfo import ZoneInfo
 
-                KST = ZoneInfo("Asia/Seoul")
+                ZoneInfo("Asia/Seoul")
                 end_date = date.today().strftime("%Y-%m-%d")
                 start_date = (date.today() - timedelta(days=days + 30)).strftime("%Y-%m-%d")
                 df = fdr.DataReader(ticker, start_date, end_date)

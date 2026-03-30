@@ -562,15 +562,15 @@ class CollectorAgent:
                 for item in output2:
                     o = float(item.get("stck_oprc", 0))
                     h = float(item.get("stck_hgpr", 0))
-                    l = float(item.get("stck_lwpr", 0))
+                    lo = float(item.get("stck_lwpr", 0))
                     c = float(item.get("stck_prpr", 0))
                     v = int(item.get("cntg_vol", 0))
 
                     if day_open is None:
                         day_open = o
                     day_high = max(day_high, h)
-                    if l > 0:
-                        day_low = min(day_low, l)
+                    if lo > 0:
+                        day_low = min(day_low, lo)
                     day_close = c
                     day_volume += v
 
