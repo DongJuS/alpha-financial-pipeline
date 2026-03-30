@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -62,7 +63,7 @@ class GenCollectorAgent:
 
     def __init__(
         self,
-        gen_api_url: str = "http://localhost:9999",
+        gen_api_url: str = os.environ.get("GEN_API_URL", "http://localhost:9999"),
         agent_id: str = "gen_collector_agent",
     ) -> None:
         self.gen_api_url = gen_api_url.rstrip("/")
@@ -433,7 +434,7 @@ async def _main_async() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description="GenCollectorAgent")
-    parser.add_argument("--gen-url", default="http://localhost:9999", help="Gen API 서버 URL")
+    parser.add_argument("--gen-url", default=os.environ.get("GEN_API_URL", "http://localhost:9999"), help="Gen API 서버 URL")
     parser.add_argument("--mode", choices=["daily", "tick", "full", "continuous"], default="full", help="수집 모드")
     parser.add_argument("--lookback-days", type=int, default=120, help="일봉 lookback 기간")
     parser.add_argument("--tick-interval", type=float, default=1.0, help="틱 수집 주기 (초)")
