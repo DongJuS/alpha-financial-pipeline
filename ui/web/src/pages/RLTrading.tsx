@@ -58,7 +58,7 @@ function ModeBadge({ mode }: { mode: string }) {
         : { background: "var(--blue-bg)", color: "var(--blue)" };
   return (
     <span className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" style={style}>
-      {m.toUpperCase()}
+      {(m ?? "unknown").toUpperCase()}
     </span>
   );
 }
@@ -487,7 +487,7 @@ function StatusBadge({ status }: { status: string }) {
   const c = colors[status] ?? colors.queued;
   return (
     <span className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: c.bg, color: c.fg }}>
-      {status.toUpperCase()}
+      {(status ?? "unknown").toUpperCase()}
     </span>
   );
 }
@@ -723,7 +723,7 @@ function PromotionTab() {
         {policyMode && (
           <div className="mt-3 rounded-2xl p-3" style={{ background: "var(--bg-secondary)" }}>
             <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              현재 모드: <strong style={{ color: "var(--text-primary)" }}>{policyMode.current_mode.toUpperCase()}</strong>
+              현재 모드: <strong style={{ color: "var(--text-primary)" }}>{(policyMode.current_mode ?? "unknown").toUpperCase()}</strong>
               {policyMode.can_promote_to && (
                 <> → 다음 승격: <strong style={{ color: "var(--brand-500)" }}>{policyMode.can_promote_to.toUpperCase()}</strong></>
               )}
