@@ -1,6 +1,6 @@
-# Alpha — Multi-Agent Automated Trading System for Korean Stock Market
+# Alpha — 실시간 금융 데이터 파이프라인
 
-> Real-time data collection → 3-strategy parallel execution → N-way signal blending → automated order execution
+> Real-time financial data pipeline — FDR/KIS data collection → multi-strategy parallel execution → N-way signal blending → automated paper trading on K3s
 
 [![CI](https://github.com/DongJuS/alpha-financial-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/DongJuS/alpha-financial-pipeline/actions/workflows/ci.yml)
 

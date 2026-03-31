@@ -30,13 +30,21 @@ spec:
               value: "120"
             - name: ORCH_RUN_ONCE
               value: "false"
+            - name: ORCH_ENABLE_RL_AUTO_RETRAIN
+              value: "true"
+            - name: CLAUDE_CODE_OAUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llm-credentials
+                  key: CLAUDE_CODE_OAUTH_TOKEN
+                  optional: true
           resources:
             requests:
               cpu: 200m
               memory: 512Mi
             limits:
               cpu: "1"
-              memory: 1Gi
+              memory: 2Gi
           livenessProbe:
             exec:
               command: ["python", "-c", "import sys; sys.exit(0)"]
@@ -46,11 +54,21 @@ spec:
           volumeMounts:
             - name: rl-data
               mountPath: /app/artifacts/rl
+            - name: gcloud-adc
+              mountPath: /root/.config/gcloud
+              readOnly: true
           command: ["python", "scripts/run_orchestrator_worker.py"]
       volumes:
         - name: rl-data
           persistentVolumeClaim:
             claimName: rl-data-pvc
+        - name: gcloud-adc
+          secret:
+            secretName: llm-credentials
+            items:
+              - key: gcloud-adc
+                path: gcloud-adc
+            optional: true
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

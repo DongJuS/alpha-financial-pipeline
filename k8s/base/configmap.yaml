@@ -17,6 +17,9 @@ data:
   S3_REGION: ap-northeast-2
   GEN_API_URL: http://gen:9999
   LOG_LEVEL: INFO
+  # LLM CLI 인증
+  ANTHROPIC_CLI_COMMAND: claude
+  GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/gcloud-adc
   MARKET_HOURS_ENFORCED: "true"
   # 전략 설정
   STRATEGY_BLEND_WEIGHTS: '{"A": 0.33, "B": 0.33, "RL": 0.34}'
