@@ -12,19 +12,42 @@ from src.utils.market_data import sanitize_change_pct
 
 
 class MarketDataPoint(BaseModel):
-    ticker: str = Field(..., min_length=1, max_length=10)
+    """ohlcv_daily 테이블 대응 모델.
+
+    instrument_id: CODE.SUFFIX 형식 (예: 005930.KS)
+    traded_at: 거래일 (DATE, timezone 없음)
+    가격 필드: float (NUMERIC(15,4))
+    adj_close: 수정종가 (optional)
+
+    하위 호환: ticker/timestamp_kst/interval 별칭을 유지합니다.
+    """
+    instrument_id: str = Field(..., min_length=1, max_length=20)
     name: str = Field(..., min_length=1)
     market: Literal["KOSPI", "KOSDAQ"]
-    timestamp_kst: datetime
-    interval: Literal["daily", "tick"] = "daily"
-    open: int = Field(..., ge=0)
-    high: int = Field(..., ge=0)
-    low: int = Field(..., ge=0)
-    close: int = Field(..., ge=0)
+    traded_at: date
+    open: float = Field(..., ge=0)
+    high: float = Field(..., ge=0)
+    low: float = Field(..., ge=0)
+    close: float = Field(..., ge=0)
     volume: int = Field(..., ge=0)
     change_pct: Optional[float] = None
-    market_cap: Optional[int] = None
-    foreigner_ratio: Optional[float] = None
+    adj_close: Optional[float] = None
+
+    # ── 하위 호환 프로퍼티 ───────────────────────────────────────────
+    @property
+    def ticker(self) -> str:
+        """instrument_id 의 raw_code 부분 반환 (하위 호환)."""
+        return self.instrument_id.split(".")[0] if "." in self.instrument_id else self.instrument_id
+
+    @property
+    def timestamp_kst(self) -> datetime:
+        """traded_at → datetime 변환 (하위 호환)."""
+        return datetime(self.traded_at.year, self.traded_at.month, self.traded_at.day, 15, 30)
+
+    @property
+    def interval(self) -> str:
+        """ohlcv_daily 전용이므로 항상 'daily' 반환 (하위 호환)."""
+        return "daily"
 
     @field_validator("change_pct", mode="before")
     @classmethod
