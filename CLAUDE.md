@@ -6,7 +6,7 @@
 
 ## 📌 프로젝트 개요
 
-- **프로젝트명:** agents-investing
+- **프로젝트명:** alpha-financial-pipeline
 - **목표:** 한국 KOSPI/KOSDAQ 시장 대상 멀티 에이전트 자동 투자 시스템을 운영하고, 기존 Strategy A/B 구조를 유지한 채 RL Trading과 Search/Scraping pipeline을 구조적으로 확장한다.
 - **기술 스택:** Python 3.11+, FastAPI, LangGraph, PostgreSQL, Redis, React 18 + TypeScript + Vite, KIS Developers API, FinanceDataReader, Claude/OpenAI/Gemini
 

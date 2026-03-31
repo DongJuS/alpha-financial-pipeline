@@ -77,13 +77,13 @@ class TestParseFrontmatter:
 class TestGenerateLabels:
     def test_with_slug_and_status(self) -> None:
         labels = _generate_labels({"topic_slug": "my-topic", "status": "closed"})
-        assert "agents-investing" in labels
+        assert "alpha-financial-pipeline" in labels
         assert "my-topic" in labels
         assert "closed" in labels
 
     def test_minimal(self) -> None:
         labels = _generate_labels({})
-        assert labels == ["agents-investing"]
+        assert labels == ["alpha-financial-pipeline"]
 
 
 class TestGenerateTitle:
@@ -92,13 +92,13 @@ class TestGenerateTitle:
             {"topic_slug": "rl-experiment-management", "created_at": "2026-03-14"},
             Path("20260314-rl-experiment-management.md"),
         )
-        assert "[agents-investing]" in title
+        assert "[alpha-financial-pipeline]" in title
         assert "Rl Experiment Management" in title
         assert "(2026-03-14)" in title
 
     def test_without_slug_uses_filename(self) -> None:
         title = _generate_title({}, Path("20260314-my-topic.md"))
-        assert "[agents-investing]" in title
+        assert "[alpha-financial-pipeline]" in title
         assert "My Topic" in title
 
     def test_no_date(self) -> None:
@@ -112,12 +112,12 @@ class TestRenderDiscussionToBlogPost:
         md_file.write_text(SAMPLE_DISCUSSION, encoding="utf-8")
 
         post = render_discussion_to_blog_post(md_file)
-        assert "[agents-investing]" in post.title
-        assert "agents-investing" in post.labels
+        assert "[alpha-financial-pipeline]" in post.title
+        assert "alpha-financial-pipeline" in post.labels
         assert post.is_draft is False
 
         # HTML 내용 확인
-        assert "agents-investing" in post.content_html
+        assert "alpha-financial-pipeline" in post.content_html
         assert "closed" in post.content_html  # status badge
         assert "RL 하이퍼파라미터" in post.content_html
 

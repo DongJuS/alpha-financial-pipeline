@@ -1,4 +1,4 @@
-name: agents-investing
+name: alpha-financial-pipeline
 
 services:
   postgres:
