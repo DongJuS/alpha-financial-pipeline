@@ -152,12 +152,19 @@ class OrchestratorAgent:
     async def run_cycle(self, tickers: list[str]) -> dict:
         """한 사이클 실행: 수집 -> 전략 실행 -> 블렌딩/독립 처리 -> 주문 실행.
 
+        장외 시간에는 cycle을 스킵합니다 (LLM 호출 낭비 방지).
+        GEN_API_URL이 설정된 경우(gen 모드)에는 장외에도 실행합니다.
+
         Args:
             tickers: 분석할 티커 목록
 
         Returns:
             사이클 실행 결과 dict
         """
+        from src.utils.market_hours import is_market_open_now
+        if not await is_market_open_now():
+            return {"collected": 0, "predicted": 0, "orders": 0, "skipped": "market_closed"}
+
         started = datetime.now(timezone.utc)
         try:
             # ── 전략 병렬 실행 ──
