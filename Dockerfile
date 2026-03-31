@@ -55,16 +55,20 @@ FROM base AS prod
 RUN apt-get purge -y --auto-remove gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# non-root 사용자 생성
-RUN groupadd -r alpha && useradd -r -g alpha -d /app -s /sbin/nologin alpha
+# Node.js + Claude CLI 설치 (LLM CLI 모드 지원)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g @anthropic-ai/claude-code \
+    || echo "Claude CLI npm 설치 실패 — Secret 마운트로 대체"
+ENV PATH="/root/.claude/bin:/usr/lib/node_modules/.bin:${PATH}"
 
-# 앱 코드 복사 (테스트/개발 도구 제외)
+# LLM 인증 디렉토리 사전 생성 (K8s Secret 마운트용)
+RUN mkdir -p /root/.config/gcloud /root/.claude
+
+# 앱 코드 복사
 COPY src ./src
 COPY scripts ./scripts
-# 소유권 변경
-RUN chown -R alpha:alpha /app
-
-USER alpha
 
 EXPOSE 8000
 
