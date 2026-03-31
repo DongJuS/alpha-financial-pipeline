@@ -19,7 +19,7 @@
 
 ### 실시간 금융 데이터 파이프라인 설계 및 K8s 배포 자동화 (2026.03)
 
-> GitHub: github.com/DongJuS/agents-investing | 266커밋 · 66 PR
+> GitHub: github.com/DongJuS/alpha-financial-pipeline | 266커밋 · 66 PR
 
 한국+미국 9,363종목의 일봉 데이터를 수집·적재·분석하는 엔드-투-엔드 데이터 파이프라인을 설계하고 운영했습니다.
 
