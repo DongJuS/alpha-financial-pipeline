@@ -14,7 +14,7 @@ with open(".env") as f:
         if m:
             token = m.group(1).strip()
 if token:
-    url = f"https://{token}@github.com/DongJuS/agents-investing.git"
+    url = f"https://{token}@github.com/DongJuS/alpha-financial-pipeline.git"
     subprocess.run(["git", "remote", "set-url", "origin", url])
     print("remote URL updated with token")
 ```
@@ -24,7 +24,7 @@ if token:
 ```python
 import subprocess
 subprocess.run(["git", "remote", "set-url", "origin",
-                "https://github.com/DongJuS/agents-investing.git"])
+                "https://github.com/DongJuS/alpha-financial-pipeline.git"])
 print("remote URL cleaned")
 ```
 

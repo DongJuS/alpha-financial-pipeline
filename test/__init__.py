@@ -1,1 +1,1 @@
-"""Test package for agents-investing"""
+"""Test package for alpha-financial-pipeline"""
