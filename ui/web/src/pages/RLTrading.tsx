@@ -3,8 +3,7 @@
  * RL Trading 대시보드 — 정책 관리, 실험, 섀도우 추론, 승격
  */
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { api } from "@/utils/api";
+import { useMutation } from "@tanstack/react-query";
 import {
   usePolicies,
   useActivePolicies,
@@ -22,6 +21,7 @@ import {
   useRLTickers,
   useAddRLTickers,
   useRemoveRLTicker,
+  useMarketTickers,
   type RLPolicy,
   type RLTickerInfo,
   type TrainingJob,
@@ -326,20 +326,9 @@ function TickerPickerModal({
 }) {
   const [tab, setTab] = useState<string>("KOSPI");
   const [search, setSearch] = useState("");
-  const { data: tickersPayload, isLoading } = useQuery({
-    queryKey: ["market", "tickers-all"],
-    queryFn: async () => {
-      const resp = await api.get<{
-        data: { ticker: string; name: string; market: string }[];
-      }>("/market/tickers", { params: { per_page: 200 } });
-      return resp.data;
-    },
-    enabled: open,
-  });
+  const { data: allTickers = [], isLoading } = useMarketTickers(open);
 
   if (!open) return null;
-
-  const allTickers = tickersPayload?.data ?? [];
   const markets = [...new Set(allTickers.map((t) => t.market))].sort();
   const filtered = allTickers
     .filter((t) => t.market === tab)
