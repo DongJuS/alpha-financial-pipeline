@@ -73,7 +73,7 @@ class OHLCVDaily(BaseModel):
 class PredictionSignal(BaseModel):
     agent_id: str
     llm_model: str
-    strategy: Literal["A", "B", "RL", "S", "L", "BLEND"] = "A"
+    strategy: Literal["A", "B", "RL", "S", "L", "BLEND", "EXIT"] = "A"
     ticker: str
     signal: Literal["BUY", "SELL", "HOLD"]
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
