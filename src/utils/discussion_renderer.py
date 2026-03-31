@@ -16,7 +16,7 @@ import markdown
 from src.utils.blog_client import BlogPost
 
 # 프로젝트 컨텍스트 (고정)
-PROJECT_NAME = "agents-investing"
+PROJECT_NAME = "alpha-financial-pipeline"
 PROJECT_DESCRIPTION = (
     "한국 KOSPI/KOSDAQ 시장 대상 멀티 에이전트 자동 투자 시스템. "
     "Strategy A(Tournament) / B(Consensus) / RL / S(Search) 4-way 블렌딩."
