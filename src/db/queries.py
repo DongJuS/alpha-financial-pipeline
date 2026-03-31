@@ -12,56 +12,15 @@ from src.db.models import (
     AgentHeartbeatRecord,
     MarketDataPoint,
     NotificationRecord,
-    OHLCVDaily,
     PaperOrderRequest,
     PredictionSignal,
 )
 from src.utils.account_scope import AccountScope, normalize_account_scope, scope_from_is_paper
 from src.utils.db_client import execute, executemany, fetch, fetchrow, fetchval
-from src.utils.market_data import to_instrument_id
 
 
 async def upsert_market_data(points: list[MarketDataPoint]) -> int:
-    """market_data를 upsert하고 반영 건수를 반환합니다 (틱 데이터 전용)."""
-    if not points:
-        return 0
-
-    query = """
-        INSERT INTO market_data (
-            ticker, name, market, timestamp_kst, interval,
-            open, high, low, close, volume,
-            change_pct, market_cap, foreigner_ratio
-        ) VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7, $8, $9, $10,
-            $11, $12, $13
-        )
-        ON CONFLICT (ticker, timestamp_kst, interval)
-        DO UPDATE SET
-            name = EXCLUDED.name,
-            market = EXCLUDED.market,
-            open = EXCLUDED.open,
-            high = EXCLUDED.high,
-            low = EXCLUDED.low,
-            close = EXCLUDED.close,
-            volume = EXCLUDED.volume,
-            change_pct = EXCLUDED.change_pct,
-            market_cap = EXCLUDED.market_cap,
-            foreigner_ratio = EXCLUDED.foreigner_ratio
-    """
-    await executemany(query, [
-        (
-            p.ticker, p.name, p.market, p.timestamp_kst, p.interval,
-            p.open, p.high, p.low, p.close, p.volume,
-            p.change_pct, p.market_cap, p.foreigner_ratio,
-        )
-        for p in points
-    ])
-    return len(points)
-
-
-async def upsert_ohlcv_daily(points: list[OHLCVDaily]) -> int:
-    """ohlcv_daily 테이블에 일봉 데이터를 upsert합니다."""
+    """ohlcv_daily를 upsert하고 반영 건수를 반환합니다."""
     if not points:
         return 0
 
@@ -69,11 +28,11 @@ async def upsert_ohlcv_daily(points: list[OHLCVDaily]) -> int:
         INSERT INTO ohlcv_daily (
             instrument_id, traded_at,
             open, high, low, close, volume,
-            change_pct, market_cap, foreign_ratio, adj_close
+            change_pct, adj_close
         ) VALUES (
             $1, $2,
             $3, $4, $5, $6, $7,
-            $8, $9, $10, $11
+            $8, $9
         )
         ON CONFLICT (instrument_id, traded_at)
         DO UPDATE SET
@@ -83,15 +42,13 @@ async def upsert_ohlcv_daily(points: list[OHLCVDaily]) -> int:
             close = EXCLUDED.close,
             volume = EXCLUDED.volume,
             change_pct = EXCLUDED.change_pct,
-            market_cap = EXCLUDED.market_cap,
-            foreign_ratio = EXCLUDED.foreign_ratio,
             adj_close = EXCLUDED.adj_close
     """
     await executemany(query, [
         (
             p.instrument_id, p.traded_at,
             p.open, p.high, p.low, p.close, p.volume,
-            p.change_pct, p.market_cap, p.foreign_ratio, p.adj_close,
+            p.change_pct, p.adj_close,
         )
         for p in points
     ])
@@ -101,9 +58,10 @@ async def upsert_ohlcv_daily(points: list[OHLCVDaily]) -> int:
 async def list_tickers(limit: int = 30) -> list[dict]:
     rows = await fetch(
         """
-        SELECT DISTINCT ON (i.raw_code) i.raw_code AS ticker, i.name, i.market_id AS market
-        FROM instruments i
-        ORDER BY i.raw_code
+        SELECT instrument_id, raw_code AS ticker, name, market_id AS market
+        FROM instruments
+        WHERE is_active = TRUE
+        ORDER BY instrument_id
         LIMIT $1
         """,
         limit,
@@ -112,100 +70,72 @@ async def list_tickers(limit: int = 30) -> list[dict]:
 
 
 async def fetch_recent_ohlcv(ticker: str, days: int = 30) -> list[dict]:
-    return await fetch_recent_market_data(ticker, interval="daily", days=days)
+    """최근 N일 OHLCV를 반환합니다.
+
+    ticker는 instrument_id(005930.KS) 또는 raw_code(005930) 모두 허용합니다.
+    """
+    return await fetch_recent_market_data(ticker, days=days)
 
 
 async def fetch_recent_market_data(
     ticker: str,
     *,
-    interval: str = "daily",
     days: int | None = None,
-    seconds: int | None = None,
     limit: int | None = None,
+    # interval/seconds 인자는 하위 호환을 위해 유지하되 무시합니다
+    interval: str = "daily",
+    seconds: int | None = None,
 ) -> list[dict]:
-    if interval not in {"daily", "tick"}:
-        raise ValueError(f"지원하지 않는 interval입니다: {interval}")
-
-    # ── tick 데이터: 기존 market_data 테이블 사용 ──
-    if interval == "tick":
-        if days is None and seconds is None:
-            seconds = 86_400
-        conditions = ["ticker = $1", "interval = $2"]
-        params: list[Any] = [ticker, interval]
-        if days is not None:
-            params.append(days)
-            conditions.append(f"timestamp_kst >= NOW() - (${len(params)} * INTERVAL '1 day')")
-        if seconds is not None:
-            params.append(seconds)
-            conditions.append(f"timestamp_kst >= NOW() - (${len(params)} * INTERVAL '1 second')")
-        limit_sql = ""
-        if limit is not None:
-            params.append(limit)
-            limit_sql = f" LIMIT ${len(params)}"
-        rows = await fetch(
-            f"""
-            SELECT
-                ticker, name, timestamp_kst, open, high, low, close, volume, change_pct
-            FROM market_data
-            WHERE {' AND '.join(conditions)}
-            ORDER BY timestamp_kst DESC
-            {limit_sql}
-            """,
-            *params,
-        )
-        return [dict(r) for r in rows]
-
-    # ── daily 데이터: ohlcv_daily + instruments 테이블 사용 ──
     if days is None:
         days = 30
 
-    # ticker -> instrument_id 후보 생성 (KS, KQ 둘 다 시도)
-    candidates = [
-        to_instrument_id(ticker, "KOSPI"),
-        to_instrument_id(ticker, "KOSDAQ"),
+    # instrument_id 또는 raw_code 모두 허용
+    conditions = [
+        "(o.instrument_id = $1 OR i.raw_code = $1)",
     ]
-    params_daily: list[Any] = [candidates, days]
+    params: list[Any] = [ticker]
+
+    params.append(days)
+    conditions.append(f"o.traded_at >= CURRENT_DATE - ${len(params)} * INTERVAL '1 day'")
+
     limit_sql = ""
     if limit is not None:
-        params_daily.append(limit)
-        limit_sql = f" LIMIT ${len(params_daily)}"
+        params.append(limit)
+        limit_sql = f" LIMIT ${len(params)}"
 
     rows = await fetch(
         f"""
         SELECT
-            i.raw_code AS ticker,
-            i.name,
-            od.traded_at AS timestamp_kst,
-            od.open, od.high, od.low, od.close, od.volume,
-            od.change_pct
-        FROM ohlcv_daily od
-        JOIN instruments i ON od.instrument_id = i.instrument_id
-        WHERE od.instrument_id = ANY($1)
-          AND od.traded_at >= CURRENT_DATE - ($2 * INTERVAL '1 day')
-        ORDER BY od.traded_at DESC
+            o.instrument_id, i.raw_code AS ticker, i.name,
+            o.traded_at, o.open, o.high, o.low, o.close, o.volume,
+            o.change_pct, o.adj_close
+        FROM ohlcv_daily o
+        JOIN instruments i ON o.instrument_id = i.instrument_id
+        WHERE {' AND '.join(conditions)}
+        ORDER BY o.traded_at DESC
         {limit_sql}
         """,
-        *params_daily,
+        *params,
     )
     return [dict(r) for r in rows]
 
 
-async def latest_close_price(ticker: str) -> Optional[int]:
-    candidates = [
-        to_instrument_id(ticker, "KOSPI"),
-        to_instrument_id(ticker, "KOSDAQ"),
-    ]
-    val = await fetchval(
+async def latest_close_price(ticker: str) -> Optional[float]:
+    """최근 종가를 반환합니다.
+
+    ticker는 instrument_id(005930.KS) 또는 raw_code(005930) 모두 허용합니다.
+    """
+    return await fetchval(
         """
-        SELECT close
-        FROM ohlcv_daily
-        WHERE instrument_id = ANY($1)
-        ORDER BY traded_at DESC
+        SELECT o.close
+        FROM ohlcv_daily o
+        JOIN instruments i ON o.instrument_id = i.instrument_id
+        WHERE o.instrument_id = $1 OR i.raw_code = $1
+        ORDER BY o.traded_at DESC
         LIMIT 1
         """,
-        candidates,
+        ticker,
     )
-    return int(val) if val is not None else None
 
 
 async def insert_prediction(signal: PredictionSignal) -> int:
