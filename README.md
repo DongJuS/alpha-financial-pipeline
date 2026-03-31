@@ -2,7 +2,7 @@
 
 > Real-time financial data pipeline — FDR/KIS data collection → multi-strategy parallel execution → N-way signal blending → automated paper trading on K3s
 
-[![CI](https://github.com/DongJuS/agents-investing/actions/workflows/ci.yml/badge.svg)](https://github.com/DongJuS/agents-investing/actions/workflows/ci.yml)
+[![CI](https://github.com/DongJuS/alpha-financial-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/DongJuS/alpha-financial-pipeline/actions/workflows/ci.yml)
 
 ## Key Metrics
 
