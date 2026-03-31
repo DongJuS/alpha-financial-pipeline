@@ -33,9 +33,9 @@ def client() -> BloggerClient:
 @pytest.fixture
 def sample_post() -> BlogPost:
     return BlogPost(
-        title="[agents-investing] Test Post",
+        title="[alpha-financial-pipeline] Test Post",
         content_html="<p>Hello World</p>",
-        labels=["agents-investing", "test"],
+        labels=["alpha-financial-pipeline", "test"],
         is_draft=False,
     )
 
