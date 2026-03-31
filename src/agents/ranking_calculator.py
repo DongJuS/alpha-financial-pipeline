@@ -1,7 +1,7 @@
 """
 src/agents/ranking_calculator.py — 일별 랭킹 계산기
 
-매일 장 마감 후 ohlcv_daily + instruments + stock_master를 기반으로
+매일 장 마감 후 ohlcv_daily + instruments를 기반으로
 시가총액, 거래량, 거래대금, 상승률, 하락률 랭킹을 계산합니다.
 
 사용법:
@@ -73,21 +73,20 @@ class RankingCalculator:
 
         rows = await fetch(
             """
-            SELECT sm.ticker, sm.name, sm.market_cap,
-                   COALESCE(od.change_pct, 0) AS change_pct
-            FROM stock_master sm
+            SELECT i.raw_code AS ticker, i.name, i.market_cap,
+                   COALESCE(o.change_pct, 0) AS change_pct
+            FROM instruments i
             LEFT JOIN LATERAL (
-                SELECT od.change_pct
-                FROM ohlcv_daily od
-                JOIN instruments i ON od.instrument_id = i.instrument_id
-                WHERE i.raw_code = sm.ticker
-                ORDER BY od.traded_at DESC
+                SELECT change_pct
+                FROM ohlcv_daily o
+                WHERE o.instrument_id = i.instrument_id
+                ORDER BY o.traded_at DESC
                 LIMIT 1
-            ) od ON TRUE
-            WHERE sm.is_active = TRUE
-              AND sm.is_etf = FALSE AND sm.is_etn = FALSE
-              AND sm.market_cap IS NOT NULL AND sm.market_cap > 0
-            ORDER BY sm.market_cap DESC
+            ) o ON TRUE
+            WHERE i.is_active = TRUE
+              AND i.is_etf = FALSE AND i.is_etn = FALSE
+              AND i.market_cap IS NOT NULL AND i.market_cap > 0
+            ORDER BY i.market_cap DESC
             LIMIT $1
             """,
             limit,
@@ -121,16 +120,15 @@ class RankingCalculator:
 
         rows = await fetch(
             """
-            SELECT i.raw_code AS ticker, sm.name,
-                   SUM(od.volume) AS total_volume,
-                   COALESCE(od.change_pct, 0) AS change_pct
-            FROM ohlcv_daily od
-            JOIN instruments i ON od.instrument_id = i.instrument_id
-            LEFT JOIN stock_master sm ON i.raw_code = sm.ticker
-            WHERE od.traded_at = $1
-              AND sm.is_active = TRUE
-              AND sm.is_etf = FALSE AND sm.is_etn = FALSE
-            GROUP BY i.raw_code, sm.name, od.change_pct
+            SELECT i.raw_code AS ticker, i.name,
+                   SUM(o.volume) AS total_volume,
+                   COALESCE(o.change_pct, 0) AS change_pct
+            FROM ohlcv_daily o
+            JOIN instruments i ON o.instrument_id = i.instrument_id
+            WHERE o.traded_at = $1
+              AND i.is_active = TRUE
+              AND i.is_etf = FALSE AND i.is_etn = FALSE
+            GROUP BY i.raw_code, i.name, o.change_pct
             ORDER BY total_volume DESC
             LIMIT $2
             """,
@@ -166,16 +164,15 @@ class RankingCalculator:
 
         rows = await fetch(
             """
-            SELECT i.raw_code AS ticker, sm.name,
-                   SUM(od.close * od.volume) AS total_turnover,
-                   COALESCE(od.change_pct, 0) AS change_pct
-            FROM ohlcv_daily od
-            JOIN instruments i ON od.instrument_id = i.instrument_id
-            LEFT JOIN stock_master sm ON i.raw_code = sm.ticker
-            WHERE od.traded_at = $1
-              AND sm.is_active = TRUE
-              AND sm.is_etf = FALSE AND sm.is_etn = FALSE
-            GROUP BY i.raw_code, sm.name, od.change_pct
+            SELECT i.raw_code AS ticker, i.name,
+                   SUM(o.close * o.volume) AS total_turnover,
+                   COALESCE(o.change_pct, 0) AS change_pct
+            FROM ohlcv_daily o
+            JOIN instruments i ON o.instrument_id = i.instrument_id
+            WHERE o.traded_at = $1
+              AND i.is_active = TRUE
+              AND i.is_etf = FALSE AND i.is_etn = FALSE
+            GROUP BY i.raw_code, i.name, o.change_pct
             ORDER BY total_turnover DESC
             LIMIT $2
             """,
@@ -211,15 +208,14 @@ class RankingCalculator:
 
         rows = await fetch(
             """
-            SELECT i.raw_code AS ticker, sm.name, od.change_pct
-            FROM ohlcv_daily od
-            JOIN instruments i ON od.instrument_id = i.instrument_id
-            LEFT JOIN stock_master sm ON i.raw_code = sm.ticker
-            WHERE od.traded_at = $1
-              AND od.change_pct > 0
-              AND sm.is_active = TRUE
-              AND sm.is_etf = FALSE AND sm.is_etn = FALSE
-            ORDER BY od.change_pct DESC
+            SELECT i.raw_code AS ticker, i.name, o.change_pct
+            FROM ohlcv_daily o
+            JOIN instruments i ON o.instrument_id = i.instrument_id
+            WHERE o.traded_at = $1
+              AND o.change_pct > 0
+              AND i.is_active = TRUE
+              AND i.is_etf = FALSE AND i.is_etn = FALSE
+            ORDER BY o.change_pct DESC
             LIMIT $2
             """,
             ranking_date,
@@ -253,15 +249,14 @@ class RankingCalculator:
 
         rows = await fetch(
             """
-            SELECT i.raw_code AS ticker, sm.name, od.change_pct
-            FROM ohlcv_daily od
-            JOIN instruments i ON od.instrument_id = i.instrument_id
-            LEFT JOIN stock_master sm ON i.raw_code = sm.ticker
-            WHERE od.traded_at = $1
-              AND od.change_pct < 0
-              AND sm.is_active = TRUE
-              AND sm.is_etf = FALSE AND sm.is_etn = FALSE
-            ORDER BY od.change_pct ASC
+            SELECT i.raw_code AS ticker, i.name, o.change_pct
+            FROM ohlcv_daily o
+            JOIN instruments i ON o.instrument_id = i.instrument_id
+            WHERE o.traded_at = $1
+              AND o.change_pct < 0
+              AND i.is_active = TRUE
+              AND i.is_etf = FALSE AND i.is_etn = FALSE
+            ORDER BY o.change_pct ASC
             LIMIT $2
             """,
             ranking_date,
@@ -340,24 +335,23 @@ class RankingCalculator:
 
         rows = await fetch(
             """
-            SELECT sm.sector,
+            SELECT i.sector,
                    COUNT(*) AS stock_count,
-                   COALESCE(AVG(od.change_pct), 0) AS avg_change_pct,
-                   COALESCE(SUM(sm.market_cap), 0) AS total_market_cap,
-                   COALESCE(SUM(od.volume), 0) AS total_volume
-            FROM stock_master sm
+                   COALESCE(AVG(o.change_pct), 0) AS avg_change_pct,
+                   COALESCE(SUM(i.market_cap), 0) AS total_market_cap,
+                   COALESCE(SUM(o.volume), 0) AS total_volume
+            FROM instruments i
             LEFT JOIN LATERAL (
-                SELECT od.change_pct, od.volume
-                FROM ohlcv_daily od
-                JOIN instruments i ON od.instrument_id = i.instrument_id
-                WHERE i.raw_code = sm.ticker
-                ORDER BY od.traded_at DESC
+                SELECT change_pct, volume
+                FROM ohlcv_daily o
+                WHERE o.instrument_id = i.instrument_id
+                ORDER BY o.traded_at DESC
                 LIMIT 1
-            ) od ON TRUE
-            WHERE sm.is_active = TRUE
-              AND sm.is_etf = FALSE AND sm.is_etn = FALSE
-              AND sm.sector IS NOT NULL AND sm.sector != ''
-            GROUP BY sm.sector
+            ) o ON TRUE
+            WHERE i.is_active = TRUE
+              AND i.is_etf = FALSE AND i.is_etn = FALSE
+              AND i.sector IS NOT NULL AND i.sector != ''
+            GROUP BY i.sector
             ORDER BY total_market_cap DESC
             """
         )

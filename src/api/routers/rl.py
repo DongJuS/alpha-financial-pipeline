@@ -640,3 +640,81 @@ async def get_policy_mode(
     engine = _get_shadow_engine()
     mode = engine.get_policy_mode(policy_id, ticker)
     return {"policy_id": policy_id, "ticker": ticker, "mode": mode}
+
+
+# ── RL 종목 관리 API ───────────────────────────────────────────────────
+
+
+class RLTickerUpdate(BaseModel):
+    tickers: list[str] = Field(..., min_length=1, description="RL 대상 종목 목록")
+
+
+@router.get("/tickers", summary="RL 대상 종목 목록 조회")
+async def get_rl_tickers() -> dict:
+    """레지스트리에 등록된 RL 대상 종목과 활성 정책 상태를 반환합니다."""
+    store = _get_store()
+    try:
+        registry = store.load_registry()
+        active = registry.list_active_policies()
+        all_tickers = registry.list_all_tickers()
+    except Exception:
+        active = {}
+        all_tickers = []
+
+    return {
+        "tickers": [
+            {
+                "ticker": t,
+                "active_policy_id": active.get(t),
+                "has_policy": active.get(t) is not None,
+            }
+            for t in sorted(all_tickers)
+        ],
+        "total": len(all_tickers),
+    }
+
+
+@router.put("/tickers", summary="RL 대상 종목 추가/제거")
+async def update_rl_tickers(req: RLTickerUpdate) -> dict:
+    """RL 레지스트리에 종목을 추가합니다. 기존 종목의 정책은 유지됩니다."""
+    store = _get_store()
+    try:
+        registry = store.load_registry()
+    except Exception:
+        from src.agents.rl_policy_registry import RLPolicyRegistry
+        registry = RLPolicyRegistry()
+
+    existing = set(registry.list_all_tickers())
+    requested = set(req.tickers)
+    added = requested - existing
+
+    for ticker in added:
+        registry.get_ticker(ticker)  # 없으면 자동 생성
+
+    store.save_registry(registry)
+
+    return {
+        "tickers": sorted(registry.list_all_tickers()),
+        "added": sorted(added),
+        "total": len(registry.list_all_tickers()),
+    }
+
+
+@router.delete("/tickers/{ticker}", summary="RL 대상 종목 제거")
+async def remove_rl_ticker(ticker: str) -> dict:
+    """RL 레지스트리에서 종목을 제거합니다. 활성 정책도 함께 제거됩니다."""
+    store = _get_store()
+    registry = store.load_registry()
+
+    if ticker not in registry.tickers:
+        raise HTTPException(status_code=404, detail=f"종목 '{ticker}'이(가) RL 레지스트리에 없습니다.")
+
+    del registry.tickers[ticker]
+    registry.last_updated = datetime.now(timezone.utc)
+    store.save_registry(registry)
+
+    return {
+        "removed": ticker,
+        "remaining": sorted(registry.list_all_tickers()),
+        "total": len(registry.list_all_tickers()),
+    }
