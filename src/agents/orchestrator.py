@@ -389,6 +389,17 @@ class OrchestratorAgent:
             )
             logger.info("Orchestrator cycle 완료: %s", result)
 
+            # KIS PENDING 주문 체결 동기화
+            try:
+                from src.brokers.kis import KISPaperBroker
+                kis_broker = KISPaperBroker()
+                if kis_broker.client.is_configured():
+                    synced = await kis_broker.sync_pending_orders()
+                    if synced:
+                        logger.info("KIS 체결 동기화: %d건 FILLED", synced)
+            except Exception as e:
+                logger.debug("KIS 체결 동기화 스킵: %s", e)
+
             # DB 이벤트 로그
             try:
                 from src.utils.db_logger import log_event
