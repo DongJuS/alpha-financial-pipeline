@@ -5,6 +5,7 @@ src/api/main.py — FastAPI 애플리케이션 진입점
     uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 """
 
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -112,12 +113,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("✅ S3 Data Lake 버킷 준비 완료")
     except Exception as e:
         logger.warning("⚠️ S3 버킷 초기화 실패 (비필수): %s", e)
-    # 티커 마스터 캐시 워밍업
+    # 티커 마스터 캐시 워밍업 (instruments 테이블 사용)
     try:
         from src.utils.db_client import fetch
         from src.utils.ticker import build_cache
-        rows = await fetch("SELECT raw_code, canonical FROM ticker_master WHERE is_active = TRUE")
-        build_cache([(r["raw_code"], r["canonical"]) for r in rows])
+        rows = await fetch("SELECT raw_code, instrument_id FROM instruments WHERE is_active = TRUE")
+        build_cache([(r["raw_code"], r["instrument_id"]) for r in rows])
         logger.info("✅ 티커 마스터 캐시 로드 완료 (%d건)", len(rows))
     except Exception as e:
         logger.warning("⚠️ 티커 마스터 캐시 로드 실패 (비필수): %s", e)
@@ -169,7 +170,9 @@ app = FastAPI(
 # ─── CORS ────────────────────────────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=os.environ.get(
+        "CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"
+    ).split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
