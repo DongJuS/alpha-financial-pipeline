@@ -388,6 +388,14 @@ class OrchestratorAgent:
                 )
             )
             logger.info("Orchestrator cycle 완료: %s", result)
+
+            # DB 이벤트 로그
+            try:
+                from src.utils.db_logger import log_event
+                await log_event("cycle_complete", result)
+            except Exception:
+                pass
+
             return result
 
         except Exception as e:
