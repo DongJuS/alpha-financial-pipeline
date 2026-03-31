@@ -5,6 +5,7 @@ src/api/main.py — FastAPI 애플리케이션 진입점
     uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 """
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator

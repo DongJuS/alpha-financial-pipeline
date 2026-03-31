@@ -61,11 +61,15 @@ def load_gemini_oauth_credentials() -> tuple[Any | None, str | None]:
     cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
     if cred_path and os.path.isfile(cred_path):
         logger.info("GOOGLE_APPLICATION_CREDENTIALS 파일 발견: %s", cred_path)
+    elif cred_path:
+        logger.warning("GOOGLE_APPLICATION_CREDENTIALS 경로가 파일이 아님 (무시): %s", cred_path)
+        cred_path = ""
 
     # ADC 탐색 경로: 로컬 + Docker/K8s 마운트 경로
     adc_paths = [
         os.path.expanduser("~/.config/gcloud/application_default_credentials.json"),
         "/root/.config/gcloud/application_default_credentials.json",
+        "/root/.config/gcloud/gcloud-adc",            # K8s Secret mount (secretGenerator key)
         "/var/secrets/google/credentials.json",       # K8s secret mount
         "/etc/google/auth/application_default_credentials.json",  # GKE workload identity
     ]
