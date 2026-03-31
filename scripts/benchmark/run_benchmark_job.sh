@@ -32,7 +32,7 @@ metadata:
   name: $JOB_NAME
   namespace: $NAMESPACE
 spec:
-  ttlSecondsAfterFinished: 120
+  ttlSecondsAfterFinished: 600
   backoffLimit: 0
   template:
     spec:
@@ -76,18 +76,42 @@ kubectl wait --for=condition=complete "job/$JOB_NAME" -n "$NAMESPACE" --timeout=
 echo ""
 kubectl logs "job/$JOB_NAME" -n "$NAMESPACE" 2>/dev/null || echo "(로그 없음)"
 
-# ── 보고서 회수 ──────────────────────────────────────────────────
-POD=$(kubectl get pods -n "$NAMESPACE" -l "job-name=$JOB_NAME" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+# ── 보고서 회수 (로그에서 JSON 추출) ──────────────────────────────
 REPORT_FILE="$REPORT_DIR/benchmark_${TIMESTAMP}.json"
+LOGS=$(kubectl logs "job/$JOB_NAME" -n "$NAMESPACE" 2>/dev/null || echo "")
 
-if [ -n "$POD" ]; then
-    kubectl cp "$NAMESPACE/$POD:/tmp/benchmark_report.json" "$REPORT_FILE" 2>/dev/null && \
-        echo "" && echo "📊 보고서: $REPORT_FILE" || \
-        echo "⚠️ 보고서 회수 실패"
-fi
+# 로그에서 Summary 이후 JSON 블록 추출
+echo "$LOGS" | python3 -c "
+import sys, json
+lines = sys.stdin.read()
+# 'Report saved' 직전의 JSON 출력을 찾아 전체 report 재구성
+# Summary 블록 추출
+try:
+    start = lines.index('{', lines.index('Summary'))
+    depth = 0
+    end = start
+    for i, c in enumerate(lines[start:], start):
+        if c == '{': depth += 1
+        elif c == '}': depth -= 1
+        if depth == 0:
+            end = i + 1
+            break
+    summary = json.loads(lines[start:end])
+    # 전체 로그를 파싱하여 보고서 생성
+    report = {'timestamp': '$TIMESTAMP', 'summary': summary, 'raw_log_length': len(lines)}
+    with open('$REPORT_FILE', 'w') as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    print(f'📊 보고서: $REPORT_FILE')
+except Exception as e:
+    print(f'⚠️ JSON 추출 실패: {e}')
+    # 로그 전체를 텍스트로 저장
+    with open('${REPORT_FILE%.json}.log', 'w') as f:
+        f.write(lines)
+    print(f'📝 로그 저장: ${REPORT_FILE%.json}.log')
+" 2>/dev/null || echo "⚠️ 보고서 생성 실패"
 
-# ── 정리 ─────────────────────────────────────────────────────────
-kubectl delete job "$JOB_NAME" -n "$NAMESPACE" 2>/dev/null || true
+# ── 정리 (보고서 회수 후 삭제) ────────────────────────────────────
+kubectl delete job "$JOB_NAME" -n "$NAMESPACE" --wait=false 2>/dev/null || true
 kubectl delete configmap bench-script -n "$NAMESPACE" 2>/dev/null || true
 
 echo ""
