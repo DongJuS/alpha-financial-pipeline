@@ -379,13 +379,13 @@ async def get_performance(
     benchmark_task = fetch(
         """
         SELECT
-            od.traded_at AS trade_date,
-            AVG(od.close)::float AS avg_close
-        FROM ohlcv_daily od
-        JOIN instruments i ON od.instrument_id = i.instrument_id
+            o.traded_at AS trade_date,
+            AVG(o.close)::float AS avg_close
+        FROM ohlcv_daily o
+        JOIN instruments i ON i.instrument_id = o.instrument_id
         WHERE i.market_id = 'KOSPI'
-          AND od.traded_at >= CURRENT_DATE - ($1 * INTERVAL '1 day')
-        GROUP BY od.traded_at
+          AND o.traded_at >= (CURRENT_DATE - ($1 * INTERVAL '1 day'))::date
+        GROUP BY o.traded_at
         ORDER BY trade_date
         """,
         days,
@@ -438,13 +438,13 @@ async def get_performance_series(
     benchmark_rows = await fetch(
         """
         SELECT
-            od.traded_at AS trade_date,
-            AVG(od.close)::float AS avg_close
-        FROM ohlcv_daily od
-        JOIN instruments i ON od.instrument_id = i.instrument_id
+            o.traded_at AS trade_date,
+            AVG(o.close)::float AS avg_close
+        FROM ohlcv_daily o
+        JOIN instruments i ON i.instrument_id = o.instrument_id
         WHERE i.market_id = 'KOSPI'
-          AND od.traded_at >= CURRENT_DATE - ($1 * INTERVAL '1 day')
-        GROUP BY od.traded_at
+          AND o.traded_at >= (CURRENT_DATE - ($1 * INTERVAL '1 day'))::date
+        GROUP BY o.traded_at
         ORDER BY trade_date
         """,
         days,

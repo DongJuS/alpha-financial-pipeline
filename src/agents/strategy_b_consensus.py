@@ -155,7 +155,7 @@ class StrategyBConsensus:
         proposer_role = await self._role_config("strategy_b_proposer")
 
         compact = [
-            {"c": int(c["close"]), "v": int(c["volume"]), "ts": str(c["timestamp_kst"])}
+            {"c": float(c["close"]), "v": int(c["volume"]), "ts": str(c.get("traded_at", c.get("timestamp_kst", "")))}
             for c in candles[:20]
         ]
         prior = f"\n이전 라운드 요약: {prior_context}\n" if prior_context else "\n"
