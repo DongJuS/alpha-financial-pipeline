@@ -1,6 +1,6 @@
 # Swagger / OpenAPI Guide
 
-이 문서는 `agents-investing` 프로젝트에서 Swagger(OpenAPI)를 어떻게 이해하고 사용하는지 정리한 운영 메모입니다.
+이 문서는 `alpha-financial-pipeline` 프로젝트에서 Swagger(OpenAPI)를 어떻게 이해하고 사용하는지 정리한 운영 메모입니다.
 
 ## 기본 주소
 
