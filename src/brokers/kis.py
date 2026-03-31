@@ -161,16 +161,23 @@ class KISApiClient:
 
         cano, account_product = self._account_parts()
         tr_id = self._tr_id("BUY" if order.signal == "BUY" else "SELL")
+        # 모의투자는 시장가(06) 미지원 → 지정가(00)로 현재가 주문
+        # 실거래는 시장가(06) 사용 가능
+        if self.account_scope == "paper":
+            ord_dvsn = "00"
+            ord_unpr = str(order.price)
+        else:
+            is_market = getattr(order, "order_type", "MARKET") == "MARKET" or order.price <= 0
+            ord_dvsn = "06" if is_market else "00"
+            ord_unpr = "0" if is_market else str(order.price)
+
         payload = {
             "CANO": cano,
             "ACNT_PRDT_CD": account_product,
             "PDNO": order.ticker,
-            "ORD_DVSN": "01",
+            "ORD_DVSN": ord_dvsn,
             "ORD_QTY": str(order.quantity),
-            "ORD_UNPR": "0",
-            "EXCG_ID_DVSN_CD": "KRX",
-            "SLL_TYPE": "",
-            "CNDT_PRIC": "",
+            "ORD_UNPR": ord_unpr,
         }
 
         data = await self._request_json(

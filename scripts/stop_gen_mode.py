@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
 
-from src.utils.db_client import execute, fetchval, get_pool
+from src.utils.db_client import get_pool
 from src.utils.logging import get_logger, setup_logging
 
 setup_logging()
