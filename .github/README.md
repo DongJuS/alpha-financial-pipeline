@@ -2,7 +2,7 @@
 
 > Real-time data collection → 3-strategy parallel execution → N-way signal blending → automated order execution
 
-[![CI](https://github.com/DongJuS/agents-investing/actions/workflows/ci.yml/badge.svg)](https://github.com/DongJuS/agents-investing/actions/workflows/ci.yml)
+[![CI](https://github.com/DongJuS/alpha-financial-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/DongJuS/alpha-financial-pipeline/actions/workflows/ci.yml)
 
 ## Key Metrics
 
