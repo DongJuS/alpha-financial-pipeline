@@ -3,6 +3,7 @@
 !.env.example
 
 .DS_Store
+k8s/base/.secrets/
 
 .agent/
 .mcp/

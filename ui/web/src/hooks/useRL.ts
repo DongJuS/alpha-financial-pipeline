@@ -514,3 +514,25 @@ export function usePromotePaperToReal() {
     },
   });
 }
+
+/* ── 종목 선택용 마켓 종목 조회 ─────────────────────────────────────── */
+
+export interface MarketTickerItem {
+  ticker: string;
+  name: string;
+  market: string;
+}
+
+export function useMarketTickers(enabled = true) {
+  return useQuery({
+    queryKey: ["market", "tickers-all"],
+    queryFn: async (): Promise<MarketTickerItem[]> => {
+      const { data } = await api.get<{ data: MarketTickerItem[] }>("/market/tickers", {
+        params: { per_page: 200 },
+      });
+      return data?.data ?? [];
+    },
+    enabled,
+    staleTime: 60_000,
+  });
+}
