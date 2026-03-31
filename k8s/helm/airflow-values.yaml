@@ -1,0 +1,95 @@
+# Airflow Helm chart values — K3s 부하 테스트용
+# Alpha 인프라(PostgreSQL/Redis)와 분리된 자체 metadata DB 사용
+
+executor: LocalExecutor
+
+# Airflow 이미지에 Alpha 의존성 설치
+defaultAirflowRepository: apache/airflow
+defaultAirflowTag: 2.10.4-python3.11
+
+# DAG 동기화 — git-sync로 feature 브랜치에서
+dags:
+  gitSync:
+    enabled: true
+    repo: https://github.com/DongJuS/alpha-financial-pipeline.git
+    branch: feature/airflow-workflow-spike
+    subPath: dags
+    wait: 30
+
+# 웹서버
+webserver:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  service:
+    type: NodePort
+    ports:
+      - port: 8080
+        nodePort: 30080
+
+# 스케줄러
+scheduler:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# 메타데이터 DB — Alpha의 PostgreSQL 재활용 (airflow DB)
+postgresql:
+  enabled: false
+
+data:
+  metadataConnection:
+    user: alpha_user
+    pass: alpha_pass
+    protocol: postgresql
+    host: alpha-pg-postgresql.alpha-trading.svc.cluster.local
+    port: 5432
+    db: airflow
+
+# Redis (CeleryExecutor용이지만 LocalExecutor에서는 사용 안 함)
+redis:
+  enabled: false
+
+# 초기 유저
+createUserJob:
+  useHelmHooks: false
+
+# 환경변수 — Alpha DB 접속 (DAG에서 사용)
+env:
+  - name: DATABASE_URL
+    value: "postgresql://alpha_user:alpha_pass@alpha-pg-postgresql.alpha-trading.svc.cluster.local:5432/alpha_db"
+  - name: REDIS_URL
+    value: "redis://alpha-redis-master.alpha-trading.svc.cluster.local:6379/0"
+  - name: S3_ENDPOINT_URL
+    value: "http://minio.alpha-trading.svc.cluster.local:9000"
+  - name: S3_BUCKET_NAME
+    value: "alpha-lake"
+  - name: S3_ACCESS_KEY_ID
+    value: "minioadmin"
+  - name: S3_SECRET_ACCESS_KEY
+    value: "minioadmin"
+  - name: JWT_SECRET
+    value: "airflow-load-test"
+  - name: PYTHONPATH
+    value: "/opt/airflow/dags/repo"
+
+# Alpha 패키지 설치
+extraPipPackages:
+  - pydantic-settings>=2.0
+  - asyncpg>=0.29
+  - aioredis>=2.0
+  - boto3>=1.34
+  - pyarrow>=15.0
+  - FinanceDataReader>=0.9
+  - apscheduler>=3.10
+  - python-dotenv>=1.0
