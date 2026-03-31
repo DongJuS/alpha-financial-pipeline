@@ -1,0 +1,11 @@
+{
+  "benchmark": "fdr_throughput",
+  "target_tickers": 100,
+  "success": 100,
+  "failed": 0,
+  "total_rows": 53653,
+  "elapsed_seconds": 37.43,
+  "rows_per_second": 1433.6,
+  "tickers_per_minute": 160.3,
+  "summary": "100종목 53,653행을 37.4초(0.6분)에 적재. 1,434행/초"
+}
