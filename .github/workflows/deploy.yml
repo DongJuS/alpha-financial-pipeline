@@ -21,7 +21,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: dongjus/agents-investing
+  IMAGE_NAME: dongjus/alpha-financial-pipeline
 
 jobs:
   deploy:
@@ -56,9 +56,9 @@ jobs:
             echo "=== Deploying ${IMAGE}:${IMAGE_TAG} ==="
 
             # Helm이 설치되어 있으면 Helm으로, 아니면 kubectl로 배포
-            if command -v helm &> /dev/null && [ -d ~/agents-investing/k8s/helm/alpha-trading ]; then
+            if command -v helm &> /dev/null && [ -d ~/alpha-financial-pipeline/k8s/helm/alpha-trading ]; then
               echo "--- Helm upgrade ---"
-              helm upgrade --install alpha-trading ~/agents-investing/k8s/helm/alpha-trading \
+              helm upgrade --install alpha-trading ~/alpha-financial-pipeline/k8s/helm/alpha-trading \
                 --set image.repository="${REGISTRY}/${IMAGE}" \
                 --set image.tag="${IMAGE_TAG}" \
                 --namespace alpha-trading \
