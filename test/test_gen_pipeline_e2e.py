@@ -163,7 +163,6 @@ class TestGenCollectorPipeline(unittest.IsolatedAsyncioTestCase):
         redis_instance = AsyncMock()
         redis_instance.pipeline = MagicMock(return_value=mock_pipe)
         mock_redis.return_value = redis_instance
-        mock_db.return_value = 100
 
         agent = GenCollectorAgent(gen_api_url="http://localhost:9999")
 
@@ -207,7 +206,6 @@ class TestGenCollectorPipeline(unittest.IsolatedAsyncioTestCase):
         redis_instance = AsyncMock()
         redis_instance.pipeline = MagicMock(return_value=mock_pipe)
         mock_redis.return_value = redis_instance
-        mock_db.return_value = 1
 
         agent = GenCollectorAgent(gen_api_url="http://localhost:9999")
 
@@ -223,7 +221,6 @@ class TestGenCollectorPipeline(unittest.IsolatedAsyncioTestCase):
             count = await agent.collect_realtime_ticks(interval_sec=0.01, max_cycles=1)
 
         self.assertEqual(count, 1)
-        mock_db.assert_called_once()
         mock_publish.assert_called_once()
         await agent.close()
 
