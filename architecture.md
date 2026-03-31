@@ -15,7 +15,7 @@
 ## 📂 디렉터리 구조
 
 ```
-agents-investing/
+alpha-financial-pipeline/
 ├── CLAUDE.md              # 에이전트 행동 강령 (최우선 진입점)
 ├── MEMORY.md              # 활성 운영 규칙 및 미해결 이슈
 ├── MEMORY-archive.md      # 완료된 기술적 결정 이력 (원문 보존)
