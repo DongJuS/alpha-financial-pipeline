@@ -251,6 +251,7 @@ async def save_position(
     current_price: int,
     is_paper: bool,
     account_scope: AccountScope | None = None,
+    strategy_id: str | None = None,
 ) -> None:
     scope = normalize_account_scope(account_scope or scope_from_is_paper(is_paper))
     if quantity <= 0:
@@ -264,9 +265,9 @@ async def save_position(
     await execute(
         """
         INSERT INTO portfolio_positions (
-            ticker, name, quantity, avg_price, current_price, is_paper, account_scope, opened_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-        ON CONFLICT (ticker, account_scope)
+            ticker, name, quantity, avg_price, current_price, is_paper, account_scope, strategy_id, opened_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        ON CONFLICT (ticker, account_scope, COALESCE(strategy_id, ''))
         DO UPDATE SET
             name = EXCLUDED.name,
             quantity = EXCLUDED.quantity,
@@ -282,6 +283,7 @@ async def save_position(
         current_price,
         scope == "paper",
         scope,
+        strategy_id or "",
     )
 
 
