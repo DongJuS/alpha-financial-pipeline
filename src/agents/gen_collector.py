@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
 from src.db.models import AgentHeartbeatRecord, MarketDataPoint
-from src.db.queries import insert_heartbeat, upsert_market_data
+from src.db.queries import insert_heartbeat
 from src.utils.db_client import executemany
 from src.utils.logging import get_logger, setup_logging
 
