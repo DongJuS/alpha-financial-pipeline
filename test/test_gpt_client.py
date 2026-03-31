@@ -44,12 +44,20 @@ class GPTClientCircuitBreakerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_codex_cli_fallback_uses_mapped_model(self) -> None:
         GPTClient._global_quota_exhausted = False
-        with patch("src.llm.gpt_client._build_codex_cli_command", return_value=["codex", "exec", "-m", "gpt-5.4-mini"]), patch(
+        client = GPTClient.__new__(GPTClient)
+        client.model = "gpt-4o-mini"
+        client.api_key = ""
+        client._client = None
+        client._quota_exhausted = False
+        client._cli_command = ["codex", "exec", "-m", "gpt-5.4-mini"]
+        client._auth_mode = "codex_cli"
+        client._effective_model = "gpt-5.4-mini"
+        client.cli_timeout_seconds = 90
+
+        with patch(
             "src.llm.gpt_client.run_cli_prompt_with_output_file",
             new=AsyncMock(return_value="OK"),
         ) as run_mock, patch("src.llm.gpt_client.reserve_provider_call", new=AsyncMock()) as reserve_mock:
-            client = GPTClient(model="gpt-4o-mini")
-
             self.assertTrue(client.is_configured)
             self.assertEqual(client.auth_mode, "codex_cli")
             self.assertEqual(client.effective_model, "gpt-5.4-mini")
