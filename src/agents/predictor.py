@@ -83,7 +83,7 @@ class PredictorAgent:
     async def _llm_signal(self, ticker: str, candles: list[dict], position: dict | None = None) -> dict[str, Any]:
         compact = [
             {
-                "ts": str(c["timestamp_kst"]),
+                "ts": str(c.get("timestamp_kst") or c.get("traded_at", "")),
                 "o": int(c["open"]),
                 "h": int(c["high"]),
                 "l": int(c["low"]),
