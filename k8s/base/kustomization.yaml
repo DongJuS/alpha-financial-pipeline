@@ -15,6 +15,19 @@ resources:
   - gen.yaml
   - ingress.yaml
 
+# LLM 인증 Secret — .secrets/ 폴더에서 자동 생성
+# 초기화: k8s/scripts/init-llm.sh (최초 1회)
+# 이후: kubectl apply -k 시 자동 포함
+generatorOptions:
+  disableNameSuffixHash: true
+
+secretGenerator:
+  - name: llm-credentials
+    files:
+      - gcloud-adc=.secrets/gcloud-adc.json
+      - CLAUDE_CODE_OAUTH_TOKEN=.secrets/claude-token
+    type: Opaque
+
 labels:
   - pairs:
       app.kubernetes.io/part-of: alpha-trading
