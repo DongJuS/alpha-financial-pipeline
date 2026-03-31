@@ -42,7 +42,7 @@ class KISPaperClientTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(args[2], "VTTC0802U")
         self.assertEqual(kwargs["json_body"]["CANO"], "50012345")
         self.assertEqual(kwargs["json_body"]["ACNT_PRDT_CD"], "01")
-        self.assertEqual(kwargs["json_body"]["ORD_DVSN"], "01")
+        self.assertEqual(kwargs["json_body"]["ORD_DVSN"], "00")
         self.assertEqual(kwargs["json_body"]["ORD_QTY"], "2")
 
     async def test_inquire_balance_uses_paper_balance_tr_id(self) -> None:
