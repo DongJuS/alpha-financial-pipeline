@@ -16,10 +16,13 @@ from src.db.models import PaperOrderRequest
 from src.db.queries import (
     attach_broker_order_reference,
     fetch,
+    get_position,
     get_trading_account,
     insert_broker_order,
+    save_position,
     update_broker_order_status,
     upsert_trading_account,
+    upsert_trade_fill,
 )
 from src.services.kis_session import ensure_kis_token
 from src.utils.account_scope import AccountScope, normalize_account_scope
@@ -452,6 +455,64 @@ class KISBroker:
                 avg_fill_price=avg_price,
                 broker_order_id=order_no,
             )
+
+            # trade_history에 체결 기록
+            try:
+                ticker = row["ticker"]
+                side = row["side"]
+                name = str(matched.get("prdt_name", "") or ticker)
+                signal_source = str(matched.get("ord_gno_brno", "") or "BLEND")
+                await upsert_trade_fill(
+                    account_scope=self.account_scope,
+                    ticker=ticker,
+                    name=name,
+                    side=side,
+                    quantity=tot_ccld_qty,
+                    price=avg_price,
+                    signal_source=signal_source,
+                    agent_id="kis_broker",
+                    kis_order_id=order_no,
+                )
+            except Exception as e:
+                logger.warning("KIS 체결 → trade_history 기록 실패: %s", e)
+
+            # portfolio_positions 업데이트
+            try:
+                ticker = row["ticker"]
+                side = row["side"]
+                name = str(matched.get("prdt_name", "") or ticker)
+                position = await get_position(ticker, account_scope=self.account_scope)
+
+                if side == "BUY":
+                    prev_qty = int(position["quantity"]) if position else 0
+                    prev_avg = int(position["avg_price"]) if position else 0
+                    new_qty = prev_qty + tot_ccld_qty
+                    new_avg = int(((prev_qty * prev_avg) + (tot_ccld_qty * avg_price)) / new_qty) if new_qty > 0 else avg_price
+                    await save_position(
+                        ticker=ticker,
+                        name=name,
+                        quantity=new_qty,
+                        avg_price=new_avg,
+                        current_price=avg_price,
+                        is_paper=self.account_scope == "paper",
+                        account_scope=self.account_scope,
+                    )
+                else:  # SELL
+                    held_qty = int(position["quantity"]) if position else 0
+                    remaining_qty = max(held_qty - tot_ccld_qty, 0)
+                    prev_avg = int(position["avg_price"]) if position else 0
+                    await save_position(
+                        ticker=ticker,
+                        name=name,
+                        quantity=remaining_qty,
+                        avg_price=prev_avg if remaining_qty > 0 else 0,
+                        current_price=avg_price,
+                        is_paper=self.account_scope == "paper",
+                        account_scope=self.account_scope,
+                    )
+            except Exception as e:
+                logger.warning("KIS 체결 → portfolio_positions 업데이트 실패: %s", e)
+
             logger.info(
                 "KIS 체결 동기화: %s %s %d주 @ %s원",
                 row["ticker"], row["side"], tot_ccld_qty, f"{avg_price:,}",
