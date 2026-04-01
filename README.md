@@ -134,6 +134,19 @@ Airflow를 사용하지 않고, 동일한 문제를 직접 설계했습니다.
 
 > 상세 비교: [docs/airflow-comparison.md](docs/airflow-comparison.md)
 
+### Airflow 비교 벤치마크
+
+동일한 장 전 수집 파이프라인(stock_master → macro → index → daily_bars)을 Airflow DAG로 이식하여 1:1 성능 비교를 수행했습니다.
+
+| | Alpha (APScheduler) | Airflow (KubernetesExecutor) |
+|---|---|---|
+| **전체 파이프라인** | **4.12초** | **23초** |
+| 스케줄링 오버헤드 | 0ms (in-process) | ~13초 (57%) |
+| 배포 컴포넌트 | 1개 (worker) | 4개 (scheduler+webserver+worker+DB) |
+| 최소 간격 | 밀리초 (30초 운용) | 1분 (권장 5분+) |
+
+**결론:** 실시간 트레이딩(장중 사이클)은 Alpha, 배치 파이프라인(RL 재학습, 백필)은 Airflow 부분 도입 전략.
+
 ---
 
 ## Infrastructure
