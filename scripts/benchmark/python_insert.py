@@ -40,11 +40,11 @@ def generate_rows(n: int) -> list[tuple]:
         traded = base_date + timedelta(days=i // 500)
         o = round(50000 + random.random() * 50000, 4)
         h = round(o + random.random() * 5000, 4)
-        l = round(o - random.random() * 5000, 4)
+        low = round(o - random.random() * 5000, 4)
         c = round(o + (random.random() - 0.5) * 3000, 4)
         v = random.randint(1000, 10_000_000)
         chg = round((random.random() - 0.5) * 10, 4)
-        rows.append((ticker, traded, o, h, l, c, v, chg, None))
+        rows.append((ticker, traded, o, h, low, c, v, chg, None))
     return rows
 
 
