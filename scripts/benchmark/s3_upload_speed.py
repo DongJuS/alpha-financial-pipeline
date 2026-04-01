@@ -112,7 +112,7 @@ def benchmark_s3(sizes_mb: list[float]) -> dict:
         },
     }
 
-    print(f"\n=== 결과 ===")
+    print("\n=== 결과 ===")
     print(json.dumps(output, ensure_ascii=False, indent=2))
 
     # 결과 저장
