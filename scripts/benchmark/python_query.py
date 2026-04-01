@@ -105,8 +105,8 @@ async def bench_a_single_ticker_30d(
 
     # 파티션 프루닝 확인
     if "Seq Scan on ohlcv_daily_" in plan or "Index Scan" in plan:
-        pruned = [l for l in plan.split("\n") if "ohlcv_daily_" in l]
-        n_partitions = len(set(l.strip().split()[-1] for l in pruned if "ohlcv_daily_" in l))
+        pruned = [line for line in plan.split("\n") if "ohlcv_daily_" in line]
+        n_partitions = len(set(line.strip().split()[-1] for line in pruned if "ohlcv_daily_" in line))
         print(f"  파티션 프루닝: {n_partitions}개 파티션만 스캔")
     else:
         print("  파티션 프루닝: 확인 필요 (위 EXPLAIN 출력 참고)")
@@ -187,7 +187,7 @@ async def bench_c_n_plus_one_vs_batch(
     print(f"  속도 개선: {speedup:.1f}x")
 
     # 배치 쿼리 EXPLAIN
-    print(f"\n  배치 쿼리 EXPLAIN:")
+    print("\n  배치 쿼리 EXPLAIN:")
     plan, _ = await explain_query(conn, batch_query, test_tickers)
     print(plan)
 
