@@ -1,49 +1,54 @@
-# Airflow Helm chart values — K3s 부하 테스트용
-# Alpha 인프라(PostgreSQL/Redis)와 분리된 자체 metadata DB 사용
+# Airflow Helm chart values — KubernetesExecutor 부하 테스트
+# Task마다 임시 Pod 생성 → 실행 → 삭제
 
-executor: LocalExecutor
+executor: KubernetesExecutor
 
-# Airflow 이미지에 Alpha 의존성 설치
-defaultAirflowRepository: apache/airflow
-defaultAirflowTag: 2.10.4-python3.11
+# 커스텀 이미지 (Alpha 의존성 포함)
+defaultAirflowRepository: airflow-alpha
+defaultAirflowTag: latest
+images:
+  airflow:
+    repository: airflow-alpha
+    tag: latest
+    pullPolicy: IfNotPresent
 
-# DAG 동기화 — git-sync로 feature 브랜치에서
+# DAG 동기화 — git-sync
 dags:
   gitSync:
     enabled: true
-    repo: https://github.com/DongJuS/alpha-financial-pipeline.git
+    repo: https://github.com/DongJuS/agents-investing.git
     branch: feature/airflow-workflow-spike
     subPath: dags
     wait: 30
 
-# 웹서버
+# Webserver
 webserver:
   replicas: 1
   resources:
     requests:
-      cpu: 200m
-      memory: 512Mi
+      cpu: 100m
+      memory: 256Mi
     limits:
       cpu: 500m
-      memory: 1Gi
+      memory: 512Mi
   service:
     type: NodePort
     ports:
       - port: 8080
         nodePort: 30080
 
-# 스케줄러
+# Scheduler
 scheduler:
   replicas: 1
   resources:
     requests:
-      cpu: 500m
-      memory: 1Gi
+      cpu: 200m
+      memory: 512Mi
     limits:
       cpu: "1"
-      memory: 2Gi
+      memory: 1Gi
 
-# 메타데이터 DB — Alpha의 PostgreSQL 재활용 (airflow DB)
+# 자체 PostgreSQL 비활성화 — Alpha PostgreSQL 재활용
 postgresql:
   enabled: false
 
@@ -56,15 +61,34 @@ data:
     port: 5432
     db: airflow
 
-# Redis (CeleryExecutor용이지만 LocalExecutor에서는 사용 안 함)
+# Redis 비활성화 (KubernetesExecutor는 Redis 불필요)
 redis:
   enabled: false
 
-# 초기 유저
+# Triggerer 비활성화
+triggerer:
+  enabled: false
+
+# StatsD 비활성화 (리소스 절약)
+statsd:
+  enabled: false
+
+# create-user Job
 createUserJob:
   useHelmHooks: false
 
-# 환경변수 — Alpha DB 접속 (DAG에서 사용)
+# KubernetesExecutor Worker Pod 템플릿
+# Task마다 이 스펙으로 임시 Pod가 생성됨
+workers:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# 환경변수 — Alpha 인프라 접속 (Scheduler + 모든 임시 Worker Pod에 주입)
 env:
   - name: DATABASE_URL
     value: "postgresql://alpha_user:alpha_pass@alpha-pg-postgresql.alpha-trading.svc.cluster.local:5432/alpha_db"
@@ -82,14 +106,3 @@ env:
     value: "airflow-load-test"
   - name: PYTHONPATH
     value: "/opt/airflow/dags/repo"
-
-# Alpha 패키지 설치
-extraPipPackages:
-  - pydantic-settings>=2.0
-  - asyncpg>=0.29
-  - aioredis>=2.0
-  - boto3>=1.34
-  - pyarrow>=15.0
-  - FinanceDataReader>=0.9
-  - apscheduler>=3.10
-  - python-dotenv>=1.0
