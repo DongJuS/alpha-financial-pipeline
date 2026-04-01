@@ -41,3 +41,4 @@ artifacts/rl/models/ppo/*
 .vite/
 
 test/archive/
+.claude/worktrees/
