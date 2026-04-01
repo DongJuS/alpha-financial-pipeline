@@ -44,7 +44,7 @@ async def get_pool() -> asyncpg.Pool:
 
 async def benchmark_fdr(ticker_count: int | str) -> dict:
     # 종목 목록 준비
-    print(f"[1/3] 종목 목록 조회 중...")
+    print("[1/3] 종목 목록 조회 중...")
     kospi = fdr.StockListing("KOSPI")
     kosdaq = fdr.StockListing("KOSDAQ")
     all_tickers = [(r["Code"], "KOSPI") for _, r in kospi.iterrows()] + \
@@ -98,7 +98,7 @@ async def benchmark_fdr(ticker_count: int | str) -> dict:
 
             await asyncio.sleep(0.2)  # FDR rate limit
 
-        except Exception as e:
+        except Exception:
             failed += 1
 
     elapsed = time.monotonic() - started
@@ -116,7 +116,7 @@ async def benchmark_fdr(ticker_count: int | str) -> dict:
         "summary": f"{success}종목 {total_rows:,}행을 {elapsed:.1f}초({elapsed/60:.1f}분)에 적재. {total_rows/elapsed:,.0f}행/초",
     }
 
-    print(f"\n[3/3] 완료")
+    print("\n[3/3] 완료")
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
     # 결과 저장
