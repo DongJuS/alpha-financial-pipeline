@@ -110,10 +110,12 @@ function useRealtimeSeries(ticker: string | null) {
 }
 
 function shortTime(ts: string): string {
+  if (!ts) return "—";
   return ts.slice(5, 16).replace("T", " ");
 }
 
 function shortClock(ts: string): string {
+  if (!ts) return "—";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return ts.slice(11, 19);
   return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });

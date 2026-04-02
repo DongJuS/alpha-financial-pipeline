@@ -1,0 +1,368 @@
+================================================================
+  asyncpg 쿼리 벤치마크 — ohlcv_daily
+================================================================
+
+  행 수      : 11,513,963
+  종목 수    : 4,383
+  테이블 크기: 0 bytes
+
+────────────────────────────────────────────────────────────────
+  [A] 단일 종목 30일 조회 (ticker: 439580.KQ)
+────────────────────────────────────────────────────────────────
+Sort  (cost=215.62..215.72 rows=38 width=50) (actual time=0.473..0.474 rows=21.00 loops=1)
+  Sort Key: ohlcv_daily.traded_at DESC
+  Sort Method: quicksort  Memory: 26kB
+  Buffers: shared hit=7 read=3
+  ->  Append  (cost=0.42..214.62 rows=38 width=50) (actual time=0.425..0.458 rows=21.00 loops=1)
+        Buffers: shared hit=4 read=3
+        Subplans Removed: 16
+        ->  Index Scan Backward using ohlcv_daily_2026_pkey on ohlcv_daily_2026 ohlcv_daily_1  (cost=0.42..71.08 rows=20 width=44) (actual time=0.424..0.427 rows=21.00 loops=1)
+              Index Cond: (((instrument_id)::text = '439580.KQ'::text) AND (traded_at >= (CURRENT_DATE - '30 days'::interval)))
+              Index Searches: 1
+              Buffers: shared hit=2 read=3
+        ->  Index Scan Backward using ohlcv_daily_2027_pkey on ohlcv_daily_2027 ohlcv_daily_2  (cost=0.15..8.17 rows=1 width=142) (actual time=0.003..0.003 rows=0.00 loops=1)
+              Index Cond: (((instrument_id)::text = '439580.KQ'::text) AND (traded_at >= (CURRENT_DATE - '30 days'::interval)))
+              Index Searches: 1
+              Buffers: shared hit=2
+        ->  Seq Scan on ohlcv_daily_default ohlcv_daily_3  (cost=0.00..0.00 rows=1 width=142) (actual time=0.026..0.026 rows=0.00 loops=1)
+              Filter: (((instrument_id)::text = '439580.KQ'::text) AND (traded_at >= (CURRENT_DATE - '30 days'::interval)))
+Planning:
+  Buffers: shared hit=262 read=73
+Planning Time: 9.385 ms
+Execution Time: 0.523 ms
+
+  5회 실행: avg=1.72ms  min=1.20ms  max=2.97ms
+  파티션 프루닝: 1개 파티션만 스캔
+
+────────────────────────────────────────────────────────────────
+  [B] 전체 종목 최신 종가 집계 (TOP 50)
+────────────────────────────────────────────────────────────────
+Limit  (cost=434350.46..434356.29 rows=50 width=22) (actual time=3256.992..3258.009 rows=50.00 loops=1)
+  Buffers: shared hit=7790 read=155420
+  InitPlan 1
+    ->  Finalize Aggregate  (cost=244783.62..244783.63 rows=1 width=4) (actual time=3175.257..3175.349 rows=1.00 loops=1)
+          Buffers: shared hit=4584 read=155116
+          ->  Gather  (cost=244783.41..244783.62 rows=2 width=4) (actual time=3174.560..3175.308 rows=3.00 loops=1)
+                Workers Planned: 2
+                Workers Launched: 2
+                Buffers: shared hit=4584 read=155116
+                ->  Partial Aggregate  (cost=243783.41..243783.42 rows=1 width=4) (actual time=3162.231..3162.238 rows=1.00 loops=3)
+                      Buffers: shared hit=4584 read=155116
+                      ->  Parallel Append  (cost=0.00..231773.00 rows=4804163 width=4) (actual time=0.256..2618.786 rows=3837987.67 loops=3)
+                            Buffers: shared hit=4584 read=155116
+                            ->  Parallel Seq Scan on ohlcv_daily_2025 ohlcv_daily_36  (cost=0.00..18760.66 rows=434766 width=4) (actual time=0.154..339.053 rows=1043681.00 loops=1)
+                                  Buffers: shared hit=192 read=14221
+                            ->  Parallel Seq Scan on ohlcv_daily_2024 ohlcv_daily_35  (cost=0.00..18230.00 rows=421200 width=4) (actual time=0.157..316.482 rows=1011114.00 loops=1)
+                                  Buffers: shared hit=191 read=13827
+                            ->  Parallel Seq Scan on ohlcv_daily_2023 ohlcv_daily_34  (cost=0.00..17585.65 rows=403865 width=4) (actual time=0.250..803.759 rows=969497.00 loops=1)
+                                  Buffers: shared read=13547
+                            ->  Parallel Seq Scan on ohlcv_daily_2022 ohlcv_daily_33  (cost=0.00..17200.40 rows=393840 width=4) (actual time=71.445..703.575 rows=945451.00 loops=1)
+                                  Buffers: shared read=13262
+                            ->  Parallel Seq Scan on ohlcv_daily_2021 ohlcv_daily_32  (cost=0.00..16527.92 rows=381592 width=4) (actual time=0.517..707.015 rows=915821.00 loops=1)
+                                  Buffers: shared hit=1 read=12711
+                            ->  Parallel Seq Scan on ohlcv_daily_2020 ohlcv_daily_31  (cost=0.00..15718.88 rows=362788 width=4) (actual time=0.676..687.634 rows=870940.00 loops=1)
+                                  Buffers: shared read=12091
+                            ->  Parallel Seq Scan on ohlcv_daily_2019 ohlcv_daily_30  (cost=0.00..15050.56 rows=346256 width=4) (actual time=0.276..442.133 rows=831014.00 loops=1)
+                                  Buffers: shared read=11588
+                            ->  Parallel Seq Scan on ohlcv_daily_2018 ohlcv_daily_29  (cost=0.00..14436.46 rows=330246 width=4) (actual time=0.165..428.799 rows=792591.00 loops=1)
+                                  Buffers: shared read=11134
+                            ->  Parallel Seq Scan on ohlcv_daily_2017 ohlcv_daily_28  (cost=0.00..13663.31 rows=317131 width=4) (actual time=0.127..92.137 rows=253776.67 loops=3)
+                                  Buffers: shared read=10492
+                            ->  Parallel Seq Scan on ohlcv_daily_2016 ohlcv_daily_27  (cost=0.00..13324.59 rows=307759 width=4) (actual time=0.101..292.752 rows=738852.00 loops=1)
+                                  Buffers: shared read=10247
+                            ->  Parallel Seq Scan on ohlcv_daily_2015 ohlcv_daily_26  (cost=0.00..12892.19 rows=296919 width=4) (actual time=0.562..440.564 rows=712605.00 loops=1)
+                                  Buffers: shared hit=1 read=9922
+                            ->  Parallel Seq Scan on ohlcv_daily_2014 ohlcv_daily_25  (cost=0.00..12084.10 rows=278310 width=4) (actual time=0.537..429.231 rows=667945.00 loops=1)
+                                  Buffers: shared hit=1 read=9300
+                            ->  Parallel Seq Scan on ohlcv_daily_2013 ohlcv_daily_24  (cost=0.00..4682.80 rows=110080 width=4) (actual time=0.703..174.338 rows=264193.00 loops=1)
+                                  Buffers: shared hit=12 read=3570
+                            ->  Parallel Seq Scan on ohlcv_daily_2026 ohlcv_daily_37  (cost=0.00..4566.00 rows=107000 width=4) (actual time=0.016..16.376 rows=257735.00 loops=1)
+                                  Buffers: shared hit=3496
+                            ->  Parallel Seq Scan on ohlcv_daily_2012 ohlcv_daily_23  (cost=0.00..4440.18 rows=104518 width=4) (actual time=0.946..171.073 rows=250842.00 loops=1)
+                                  Buffers: shared hit=10 read=3385
+                            ->  Parallel Seq Scan on ohlcv_daily_2011 ohlcv_daily_22  (cost=0.00..4341.43 rows=102143 width=4) (actual time=0.069..262.256 rows=245143.00 loops=1)
+                                  Buffers: shared read=3320
+                            ->  Parallel Seq Scan on ohlcv_daily_2010 ohlcv_daily_21  (cost=0.00..4235.12 rows=105612 width=4) (actual time=0.452..51.845 rows=235209.00 loops=1)
+                                  Buffers: shared hit=680 read=2499
+                            ->  Parallel Seq Scan on ohlcv_daily_2027 ohlcv_daily_38  (cost=0.00..11.94 rows=194 width=4) (actual time=0.000..0.000 rows=0.00 loops=1)
+                            ->  Parallel Seq Scan on ohlcv_daily_default ohlcv_daily_39  (cost=0.00..0.00 rows=1 width=4) (actual time=0.001..0.001 rows=0.00 loops=1)
+  ->  Gather Merge  (cost=189566.83..195116.46 rows=47650 width=22) (actual time=3256.988..3257.911 rows=50.00 loops=1)
+        Workers Planned: 2
+        Workers Launched: 2
+        Buffers: shared hit=7790 read=155420
+        ->  Sort  (cost=188566.81..188616.44 rows=19854 width=22) (actual time=76.035..76.043 rows=49.00 loops=3)
+              Sort Key: ohlcv_daily.close DESC
+              Sort Method: top-N heapsort  Memory: 30kB
+              Buffers: shared hit=3206 read=304
+              Worker 0:  Sort Method: top-N heapsort  Memory: 30kB
+              Worker 1:  Sort Method: top-N heapsort  Memory: 31kB
+              ->  Parallel Append  (cost=7984.69..187907.27 rows=19854 width=22) (actual time=0.101..75.703 rows=923.67 loops=3)
+                    Buffers: shared hit=3192 read=304
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2025 ohlcv_daily_16  (cost=8319.01..17227.95 rows=1679 width=22) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2025_pkey  (cost=0.00..8318.00 rows=4029 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2024 ohlcv_daily_15  (cost=7984.69..16608.28 rows=1620 width=22) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2024_pkey  (cost=0.00..7983.72 rows=3888 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2023 ohlcv_daily_14  (cost=7637.50..15970.87 rows=1565 width=22) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2023_pkey  (cost=0.00..7636.56 rows=3757 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2022 ohlcv_daily_13  (cost=7447.47..15545.38 rows=1515 width=22) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2022_pkey  (cost=0.00..7446.56 rows=3635 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2021 ohlcv_daily_12  (cost=7203.72..15018.81 rows=1468 width=22) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2021_pkey  (cost=0.00..7202.84 rows=3522 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2020 ohlcv_daily_11  (cost=6842.76..14281.73 rows=1970 width=22) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2020_pkey  (cost=0.00..6841.92 rows=3349 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2019 ohlcv_daily_10  (cost=6481.80..13610.21 rows=1888 width=22) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2019_pkey  (cost=0.00..6481.00 rows=3209 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2018 ohlcv_daily_9  (cost=6147.48..12965.12 rows=1800 width=22) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2018_pkey  (cost=0.00..6146.72 rows=3060 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2017 ohlcv_daily_8  (cost=5931.25..12431.18 rows=1729 width=22) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2017_pkey  (cost=0.00..5930.52 rows=2939 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2016 ohlcv_daily_7  (cost=5732.35..12041.60 rows=1671 width=22) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2016_pkey  (cost=0.00..5731.64 rows=2841 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2015 ohlcv_daily_6  (cost=5506.81..11630.72 rows=1625 width=22) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2015_pkey  (cost=0.00..5506.12 rows=2762 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2014 ohlcv_daily_5  (cost=5118.76..10844.53 rows=1517 width=22) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2014_pkey  (cost=0.00..5118.12 rows=2579 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2013 ohlcv_daily_4  (cost=1628.45..3887.87 rows=607 width=21) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2013_pkey  (cost=0.00..1628.19 rows=1032 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2012 ohlcv_daily_3  (cost=1550.68..3708.11 rows=583 width=21) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2012_pkey  (cost=0.00..1550.44 rows=991 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2011 ohlcv_daily_2  (cost=1509.89..3625.05 rows=572 width=20) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2011_pkey  (cost=0.00..1509.65 rows=973 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2010 ohlcv_daily_1  (cost=1449.75..3565.13 rows=589 width=20) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2010_pkey  (cost=0.00..1449.49 rows=1002 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Bitmap Heap Scan on ohlcv_daily_2027 ohlcv_daily_18  (cost=6.62..11.95 rows=1 width=84) (never executed)
+                          Recheck Cond: (traded_at = (InitPlan 1).col1)
+                          ->  Bitmap Index Scan on ohlcv_daily_2027_pkey  (cost=0.00..6.62 rows=2 width=0) (never executed)
+                                Index Cond: (traded_at = (InitPlan 1).col1)
+                                Index Searches: 0
+                    ->  Parallel Seq Scan on ohlcv_daily_2026 ohlcv_daily_17  (cost=0.00..4833.49 rows=1698 width=22) (actual time=0.095..75.612 rows=923.67 loops=3)
+                          Filter: (traded_at = (InitPlan 1).col1)
+                          Rows Removed by Filter: 84988
+                          Buffers: shared hit=3192 read=304
+                    ->  Parallel Seq Scan on ohlcv_daily_default ohlcv_daily_19  (cost=0.00..0.00 rows=1 width=84) (never executed)
+                          Filter: (traded_at = (InitPlan 1).col1)
+Planning:
+  Buffers: shared hit=16 read=3
+Planning Time: 0.626 ms
+Execution Time: 3258.617 ms
+
+  5회 실행: avg=1427.40ms  min=1221.90ms  max=1807.15ms
+  반환 행 수: 50
+
+────────────────────────────────────────────────────────────────
+  [C] N+1 패턴 vs 배치 패턴 비교 (20개 종목)
+────────────────────────────────────────────────────────────────
+
+  N+1 패턴   (20개 개별 쿼리): avg=20.67ms
+  배치 패턴  (ANY 1회 쿼리)  : avg=1.95ms
+  속도 개선: 10.6x
+
+  배치 쿼리 EXPLAIN:
+Sort  (cost=2762.27..2763.34 rows=428 width=27) (actual time=0.195..0.204 rows=411.00 loops=1)
+  Sort Key: ohlcv_daily.instrument_id, ohlcv_daily.traded_at DESC
+  Sort Method: quicksort  Memory: 44kB
+  Buffers: shared hit=89
+  ->  Append  (cost=0.42..2743.57 rows=428 width=27) (actual time=0.047..0.094 rows=411.00 loops=1)
+        Buffers: shared hit=89
+        Subplans Removed: 16
+        ->  Bitmap Heap Scan on ohlcv_daily_2026 ohlcv_daily_1  (cost=92.55..1243.19 rows=400 width=26) (actual time=0.047..0.075 rows=411.00 loops=1)
+              Recheck Cond: (((instrument_id)::text = ANY ('{439580.KQ,DOCN.US,33637L.KS,380550.KQ,AFGC.US,BEN.US,EAT.US,OGE.US,264850.KQ,056700.KQ,ENJ.US,007690.KS,MUA.US,003090.KS,241790.KQ,225530.KQ,OWLT.US,BB.US,079430.KS,175330.KS}'::text[])) AND (traded_at >= (CURRENT_DATE - '30 days'::interval)))
+              Heap Blocks: exact=27
+              Buffers: shared hit=87
+              ->  Bitmap Index Scan on ohlcv_daily_2026_pkey  (cost=0.00..92.41 rows=400 width=0) (actual time=0.043..0.043 rows=411.00 loops=1)
+                    Index Cond: (((instrument_id)::text = ANY ('{439580.KQ,DOCN.US,33637L.KS,380550.KQ,AFGC.US,BEN.US,EAT.US,OGE.US,264850.KQ,056700.KQ,ENJ.US,007690.KS,MUA.US,003090.KS,241790.KQ,225530.KQ,OWLT.US,BB.US,079430.KS,175330.KS}'::text[])) AND (traded_at >= (CURRENT_DATE - '30 days'::interval)))
+                    Index Searches: 20
+                    Buffers: shared hit=60
+        ->  Bitmap Heap Scan on ohlcv_daily_2027 ohlcv_daily_2  (cost=4.32..15.10 rows=11 width=88) (actual time=0.004..0.004 rows=0.00 loops=1)
+              Recheck Cond: (((instrument_id)::text = ANY ('{439580.KQ,DOCN.US,33637L.KS,380550.KQ,AFGC.US,BEN.US,EAT.US,OGE.US,264850.KQ,056700.KQ,ENJ.US,007690.KS,MUA.US,003090.KS,241790.KQ,225530.KQ,OWLT.US,BB.US,079430.KS,175330.KS}'::text[])) AND (traded_at >= (CURRENT_DATE - '30 days'::interval)))
+              Buffers: shared hit=2
+              ->  Bitmap Index Scan on ohlcv_daily_2027_pkey  (cost=0.00..4.26 rows=11 width=0) (actual time=0.003..0.003 rows=0.00 loops=1)
+                    Index Cond: (((instrument_id)::text = ANY ('{439580.KQ,DOCN.US,33637L.KS,380550.KQ,AFGC.US,BEN.US,EAT.US,OGE.US,264850.KQ,056700.KQ,ENJ.US,007690.KS,MUA.US,003090.KS,241790.KQ,225530.KQ,OWLT.US,BB.US,079430.KS,175330.KS}'::text[])) AND (traded_at >= (CURRENT_DATE - '30 days'::interval)))
+                    Index Searches: 1
+                    Buffers: shared hit=2
+        ->  Seq Scan on ohlcv_daily_default ohlcv_daily_3  (cost=0.05..0.05 rows=1 width=88) (actual time=0.001..0.001 rows=0.00 loops=1)
+              Filter: (((instrument_id)::text = ANY ('{439580.KQ,DOCN.US,33637L.KS,380550.KQ,AFGC.US,BEN.US,EAT.US,OGE.US,264850.KQ,056700.KQ,ENJ.US,007690.KS,MUA.US,003090.KS,241790.KQ,225530.KQ,OWLT.US,BB.US,079430.KS,175330.KS}'::text[])) AND (traded_at >= (CURRENT_DATE - '30 days'::interval)))
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.315 ms
+Execution Time: 0.222 ms
+
+────────────────────────────────────────────────────────────────
+  [D] 파티션 프루닝 vs 전체 스캔 (ticker: 439580.KQ)
+────────────────────────────────────────────────────────────────
+
+  --- 파티션 프루닝 (2025년만) ---
+Index Scan Backward using ohlcv_daily_2025_pkey on ohlcv_daily_2025 ohlcv_daily  (cost=0.42..838.40 rows=241 width=26) (actual time=0.540..1.132 rows=242.00 loops=1)
+  Index Cond: (((instrument_id)::text = '439580.KQ'::text) AND (traded_at >= '2025-01-01'::date) AND (traded_at < '2026-01-01'::date))
+  Index Searches: 1
+  Buffers: shared hit=198 read=12
+Planning:
+  Buffers: shared hit=17 read=3
+Planning Time: 0.596 ms
+Execution Time: 1.142 ms
+
+  --- 전체 스캔 (날짜 조건 없음) ---
+Sort  (cost=13414.14..13424.06 rows=3968 width=26) (actual time=6.276..6.291 rows=556.00 loops=1)
+  Sort Key: ohlcv_daily.traded_at DESC
+  Sort Method: quicksort  Memory: 51kB
+  Buffers: shared hit=317 read=54
+  ->  Append  (cost=10.47..13176.97 rows=3968 width=26) (actual time=5.335..6.216 rows=556.00 loops=1)
+        Buffers: shared hit=317 read=54
+        ->  Bitmap Heap Scan on ohlcv_daily_2010 ohlcv_daily_1  (cost=10.47..817.12 rows=265 width=24) (actual time=0.388..0.388 rows=0.00 loops=1)
+              Recheck Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Buffers: shared read=3
+              ->  Bitmap Index Scan on ohlcv_daily_2010_pkey  (cost=0.00..10.41 rows=265 width=0) (actual time=0.387..0.387 rows=0.00 loops=1)
+                    Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+                    Index Searches: 1
+                    Buffers: shared read=3
+        ->  Bitmap Heap Scan on ohlcv_daily_2011 ohlcv_daily_2  (cost=10.34..779.86 rows=248 width=24) (actual time=0.334..0.334 rows=0.00 loops=1)
+              Recheck Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Buffers: shared read=3
+              ->  Bitmap Index Scan on ohlcv_daily_2011_pkey  (cost=0.00..10.28 rows=248 width=0) (actual time=0.333..0.333 rows=0.00 loops=1)
+                    Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+                    Index Searches: 1
+                    Buffers: shared read=3
+        ->  Bitmap Heap Scan on ohlcv_daily_2012 ohlcv_daily_3  (cost=10.30..767.86 rows=243 width=25) (actual time=0.172..0.172 rows=0.00 loops=1)
+              Recheck Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Buffers: shared read=3
+              ->  Bitmap Index Scan on ohlcv_daily_2012_pkey  (cost=0.00..10.24 rows=243 width=0) (actual time=0.171..0.171 rows=0.00 loops=1)
+                    Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+                    Index Searches: 1
+                    Buffers: shared read=3
+        ->  Bitmap Heap Scan on ohlcv_daily_2013 ohlcv_daily_4  (cost=10.31..775.63 rows=244 width=25) (actual time=0.336..0.336 rows=0.00 loops=1)
+              Recheck Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Buffers: shared read=3
+              ->  Bitmap Index Scan on ohlcv_daily_2013_pkey  (cost=0.00..10.25 rows=244 width=0) (actual time=0.335..0.335 rows=0.00 loops=1)
+                    Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+                    Index Searches: 1
+                    Buffers: shared read=3
+        ->  Index Scan Backward using ohlcv_daily_2014_pkey on ohlcv_daily_2014 ohlcv_daily_5  (cost=0.42..774.16 rows=241 width=26) (actual time=0.426..0.426 rows=0.00 loops=1)
+              Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Index Searches: 1
+              Buffers: shared read=3
+        ->  Index Scan Backward using ohlcv_daily_2015_pkey on ohlcv_daily_2015 ohlcv_daily_6  (cost=0.42..797.12 rows=243 width=26) (actual time=0.438..0.438 rows=0.00 loops=1)
+              Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Index Searches: 1
+              Buffers: shared read=3
+        ->  Index Scan Backward using ohlcv_daily_2016_pkey on ohlcv_daily_2016 ohlcv_daily_7  (cost=0.42..794.33 rows=242 width=26) (actual time=0.452..0.452 rows=0.00 loops=1)
+              Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Index Searches: 1
+              Buffers: shared read=3
+        ->  Index Scan Backward using ohlcv_daily_2017_pkey on ohlcv_daily_2017 ohlcv_daily_8  (cost=0.42..791.97 rows=241 width=26) (actual time=0.408..0.408 rows=0.00 loops=1)
+              Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Index Searches: 1
+              Buffers: shared read=3
+        ->  Index Scan Backward using ohlcv_daily_2018_pkey on ohlcv_daily_2018 ohlcv_daily_9  (cost=0.42..818.05 rows=241 width=26) (actual time=0.420..0.420 rows=0.00 loops=1)
+              Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Index Searches: 1
+              Buffers: shared read=3
+        ->  Index Scan Backward using ohlcv_daily_2019_pkey on ohlcv_daily_2019 ohlcv_daily_10  (cost=0.42..828.21 rows=243 width=26) (actual time=0.379..0.379 rows=0.00 loops=1)
+              Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Index Searches: 1
+              Buffers: shared read=3
+        ->  Index Scan Backward using ohlcv_daily_2020_pkey on ohlcv_daily_2020 ohlcv_daily_11  (cost=0.42..828.22 rows=244 width=26) (actual time=0.365..0.365 rows=0.00 loops=1)
+              Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Index Searches: 1
+              Buffers: shared read=3
+        ->  Index Scan Backward using ohlcv_daily_2021_pkey on ohlcv_daily_2021 ohlcv_daily_12  (cost=0.42..821.73 rows=243 width=26) (actual time=0.339..0.339 rows=0.00 loops=1)
+              Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Index Searches: 1
+              Buffers: shared read=3
+        ->  Index Scan Backward using ohlcv_daily_2022_pkey on ohlcv_daily_2022 ohlcv_daily_13  (cost=0.42..844.48 rows=244 width=26) (actual time=0.438..0.438 rows=0.00 loops=1)
+              Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Index Searches: 1
+              Buffers: shared read=3
+        ->  Index Scan Backward using ohlcv_daily_2023_pkey on ohlcv_daily_2023 ohlcv_daily_14  (cost=0.42..829.69 rows=241 width=26) (actual time=0.439..0.440 rows=11.00 loops=1)
+              Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Index Searches: 1
+              Buffers: shared read=4
+        ->  Index Scan Backward using ohlcv_daily_2024_pkey on ohlcv_daily_2024 ohlcv_daily_15  (cost=0.42..842.51 rows=242 width=26) (actual time=0.359..0.788 rows=244.00 loops=1)
+              Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Index Searches: 1
+              Buffers: shared hit=99 read=11
+        ->  Index Scan Backward using ohlcv_daily_2025_pkey on ohlcv_daily_2025 ohlcv_daily_16  (cost=0.42..837.19 rows=241 width=26) (actual time=0.004..0.055 rows=242.00 loops=1)
+              Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Index Searches: 1
+              Buffers: shared hit=210
+        ->  Index Scan Backward using ohlcv_daily_2026_pkey on ohlcv_daily_2026 ohlcv_daily_17  (cost=0.42..199.49 rows=59 width=26) (actual time=0.004..0.010 rows=59.00 loops=1)
+              Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Index Searches: 1
+              Buffers: shared hit=6
+        ->  Bitmap Heap Scan on ohlcv_daily_2027 ohlcv_daily_18  (cost=4.16..9.50 rows=2 width=88) (actual time=0.002..0.002 rows=0.00 loops=1)
+              Recheck Cond: ((instrument_id)::text = '439580.KQ'::text)
+              Buffers: shared hit=2
+              ->  Bitmap Index Scan on ohlcv_daily_2027_pkey  (cost=0.00..4.16 rows=2 width=0) (actual time=0.000..0.000 rows=0.00 loops=1)
+                    Index Cond: ((instrument_id)::text = '439580.KQ'::text)
+                    Index Searches: 1
+                    Buffers: shared hit=2
+        ->  Seq Scan on ohlcv_daily_default ohlcv_daily_19  (cost=0.00..0.00 rows=1 width=88) (actual time=0.001..0.001 rows=0.00 loops=1)
+              Filter: ((instrument_id)::text = '439580.KQ'::text)
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.119 ms
+Execution Time: 6.326 ms
+
+  프루닝 쿼리 : avg=0.84ms
+  전체 스캔   : avg=1.27ms
+  속도 개선   : 1.5x
+
+================================================================
+  최종 요약
+================================================================
+
+  쿼리 패턴                                  평균 (ms) 비고
+  ─────────────────────────────────── ────────── ─────────────────────────
+  단일 종목 30일                                 2.68 파티션 프루닝
+  전체 최신 종가 TOP50                         1570.37 서브쿼리
+  배치 IN 20종목 30일                            3.50 ANY 연산자
+  전체 스캔 (프루닝 없음)                            3.32 모든 파티션
+
+================================================================

@@ -25,7 +25,7 @@
   - `K3S_SSH_KEY` — SSH 프라이빗 키
 - **리스크:**
   - `appleboy/ssh-action@v1` 버전 고정 — 향후 breaking change 가능
-  - Helm 경로 `~/agents-investing/k8s/helm/alpha-trading`가 K3s 호스트에 존재해야 함
+  - Helm 경로 `~/alpha-financial-pipeline/k8s/helm/alpha-trading`가 K3s 호스트에 존재해야 함
 
 ## 3. Dockerfile prod 타겟 런타임 미검증
 

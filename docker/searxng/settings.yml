@@ -2,7 +2,7 @@ use_default_settings: true
 
 general:
   debug: false
-  instance_name: "agents-investing search"
+  instance_name: "alpha-financial-pipeline search"
   privacylevel: 2
   enable_doi_resolver: false
   donation_url: ""
@@ -18,7 +18,7 @@ search:
 server:
   port: 8888
   bind_address: "0.0.0.0"
-  secret_key: "agents-investing-searxng-secret-key-change-in-production"
+  secret_key: "alpha-financial-pipeline-searxng-secret-key-change-in-production"
   base_url: "http://localhost:8888/"
   image_proxy: true
   proxy_auth: ""
