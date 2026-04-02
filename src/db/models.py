@@ -55,10 +55,25 @@ class MarketDataPoint(BaseModel):
         return sanitize_change_pct(value)
 
 
+class OHLCVDaily(BaseModel):
+    """ohlcv_daily 테이블 모델 — 일봉 전용."""
+    instrument_id: str
+    traded_at: date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    change_pct: Optional[float] = None
+    market_cap: Optional[int] = None
+    foreign_ratio: Optional[float] = None
+    adj_close: Optional[float] = None
+
+
 class PredictionSignal(BaseModel):
     agent_id: str
     llm_model: str
-    strategy: Literal["A", "B", "RL", "S", "L", "BLEND"] = "A"
+    strategy: Literal["A", "B", "RL", "S", "L", "BLEND", "EXIT"] = "A"
     ticker: str
     signal: Literal["BUY", "SELL", "HOLD"]
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)

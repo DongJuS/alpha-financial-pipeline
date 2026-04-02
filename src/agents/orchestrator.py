@@ -30,7 +30,10 @@ from src.brokers import build_virtual_broker
 from src.brokers.virtual_broker import VirtualBroker
 from src.db.models import AgentHeartbeatRecord, PredictionSignal
 from src.db.queries import (
+    insert_daily_rankings_batch,
     insert_heartbeat,
+    insert_operational_audit,
+    insert_paper_trading_run,
 )
 from src.agents.strategy_runner import StrategyRegistry, StrategyRunner
 from src.services.datalake import store_blend_results, store_orders
@@ -152,12 +155,19 @@ class OrchestratorAgent:
     async def run_cycle(self, tickers: list[str]) -> dict:
         """한 사이클 실행: 수집 -> 전략 실행 -> 블렌딩/독립 처리 -> 주문 실행.
 
+        장외 시간에는 cycle을 스킵합니다 (LLM 호출 낭비 방지).
+        GEN_API_URL이 설정된 경우(gen 모드)에는 장외에도 실행합니다.
+
         Args:
             tickers: 분석할 티커 목록
 
         Returns:
             사이클 실행 결과 dict
         """
+        from src.utils.market_hours import is_market_open_now
+        if not await is_market_open_now():
+            return {"collected": 0, "predicted": 0, "orders": 0, "skipped": "market_closed"}
+
         started = datetime.now(timezone.utc)
         try:
             # ── 전략 병렬 실행 ──
@@ -388,6 +398,58 @@ class OrchestratorAgent:
                 )
             )
             logger.info("Orchestrator cycle 완료: %s", result)
+
+
+            # KIS PENDING 주문 체결 동기화
+            try:
+                from src.brokers.kis import KISPaperBroker
+                kis_broker = KISPaperBroker()
+                if kis_broker.client.is_configured():
+                    synced = await kis_broker.sync_pending_orders()
+                    if synced:
+                        logger.info("KIS 체결 동기화: %d건 FILLED", synced)
+            except Exception as e:
+                logger.debug("KIS 체결 동기화 스킵: %s", e)
+
+            # DB 이벤트 로그
+            try:
+                from src.utils.db_logger import log_event
+                await log_event("cycle_complete", result)
+            except Exception:
+                pass
+
+            # operational_audits에 사이클 감사 기록
+            try:
+                await insert_operational_audit(
+                    audit_type="cycle_complete",
+                    passed=True,
+                    summary=f"사이클 완료: 예측 {result['predicted']}건, 주문 {result['orders']}건",
+                    details=result,
+                    executed_by=self.agent_id,
+                )
+            except Exception as e:
+                logger.debug("operational_audits 기록 스킵: %s", e)
+
+            # aggregate_risk_snapshots에 리스크 스냅샷 기록 (blend 모드에서도)
+            if not self.independent_portfolio:
+                try:
+                    risk_monitor = AggregateRiskMonitor()
+                    await risk_monitor.record_risk_snapshot()
+                except Exception as e:
+                    logger.debug("aggregate_risk_snapshots 기록 스킵: %s", e)
+
+            # daily_rankings 생성 (ohlcv_daily 기반 당일 거래량/등락률 TOP)
+            try:
+                await self._record_daily_rankings()
+            except Exception as e:
+                logger.debug("daily_rankings 기록 스킵: %s", e)
+
+            # paper_trading_runs 일일 성과 기록
+            try:
+                await self._record_paper_trading_run()
+            except Exception as e:
+                logger.debug("paper_trading_runs 기록 스킵: %s", e)
+
             return result
 
         except Exception as e:
@@ -583,6 +645,123 @@ class OrchestratorAgent:
         from src.agents.notifier import NotifierAgent
 
         return NotifierAgent(agent_id="notifier_agent")
+
+    # ── Daily Rankings Recording ──────────────────────────────────────────
+
+    async def _record_daily_rankings(self) -> None:
+        """ohlcv_daily 테이블에서 당일 거래량/등락률 TOP 종목을 daily_rankings에 저장합니다."""
+        from src.utils.db_client import fetch as db_fetch
+
+        today = datetime.now(timezone.utc).date()
+
+        # 거래량 TOP 20
+        volume_rows = await db_fetch(
+            """
+            SELECT o.instrument_id AS ticker, i.name,
+                   o.volume AS value, o.change_pct
+            FROM ohlcv_daily o
+            JOIN instruments i ON o.instrument_id = i.instrument_id
+            WHERE o.traded_at = CURRENT_DATE
+              AND o.volume > 0
+            ORDER BY o.volume DESC
+            LIMIT 20
+            """
+        )
+        rankings = []
+        for rank_idx, row in enumerate(volume_rows, start=1):
+            r = dict(row)
+            rankings.append({
+                "ranking_date": today,
+                "ranking_type": "volume",
+                "rank": rank_idx,
+                "ticker": r["ticker"],
+                "name": r.get("name") or r["ticker"],
+                "value": float(r.get("value") or 0),
+                "change_pct": float(r["change_pct"]) if r.get("change_pct") is not None else None,
+            })
+
+        # 상승률 TOP 20
+        gainer_rows = await db_fetch(
+            """
+            SELECT o.instrument_id AS ticker, i.name,
+                   o.close AS value, o.change_pct
+            FROM ohlcv_daily o
+            JOIN instruments i ON o.instrument_id = i.instrument_id
+            WHERE o.traded_at = CURRENT_DATE
+              AND o.change_pct IS NOT NULL
+            ORDER BY o.change_pct DESC
+            LIMIT 20
+            """
+        )
+        for rank_idx, row in enumerate(gainer_rows, start=1):
+            r = dict(row)
+            rankings.append({
+                "ranking_date": today,
+                "ranking_type": "gainer",
+                "rank": rank_idx,
+                "ticker": r["ticker"],
+                "name": r.get("name") or r["ticker"],
+                "value": float(r.get("value") or 0),
+                "change_pct": float(r["change_pct"]) if r.get("change_pct") is not None else None,
+            })
+
+        # 하락률 TOP 20
+        loser_rows = await db_fetch(
+            """
+            SELECT o.instrument_id AS ticker, i.name,
+                   o.close AS value, o.change_pct
+            FROM ohlcv_daily o
+            JOIN instruments i ON o.instrument_id = i.instrument_id
+            WHERE o.traded_at = CURRENT_DATE
+              AND o.change_pct IS NOT NULL
+            ORDER BY o.change_pct ASC
+            LIMIT 20
+            """
+        )
+        for rank_idx, row in enumerate(loser_rows, start=1):
+            r = dict(row)
+            rankings.append({
+                "ranking_date": today,
+                "ranking_type": "loser",
+                "rank": rank_idx,
+                "ticker": r["ticker"],
+                "name": r.get("name") or r["ticker"],
+                "value": float(r.get("value") or 0),
+                "change_pct": float(r["change_pct"]) if r.get("change_pct") is not None else None,
+            })
+
+        if rankings:
+            count = await insert_daily_rankings_batch(rankings)
+            logger.info("daily_rankings 기록 완료: %d건", count)
+
+    # ── Paper Trading Run Recording ───────────────────────────────────────
+
+    async def _record_paper_trading_run(self) -> None:
+        """당일 모의투자 성과를 paper_trading_runs에 기록합니다."""
+        from src.db.queries import fetch_trade_rows_for_date
+        from src.utils.performance import compute_trade_performance
+
+        today = datetime.now(timezone.utc).date()
+        rows_today = await fetch_trade_rows_for_date(today, is_paper=True)
+        if not rows_today:
+            return
+
+        perf = compute_trade_performance(rows_today)
+        await insert_paper_trading_run(
+            scenario="daily_cycle",
+            simulated_days=1,
+            start_date=today,
+            end_date=today,
+            trade_count=perf.get("total_trades", 0),
+            return_pct=perf.get("return_pct", 0.0),
+            benchmark_return_pct=None,
+            max_drawdown_pct=perf.get("max_drawdown_pct"),
+            sharpe_ratio=perf.get("sharpe_ratio"),
+            passed=perf.get("return_pct", 0.0) >= 0.0,
+            summary=f"일일 사이클 ({today}): {perf.get('total_trades', 0)}건 거래, 수익률 {perf.get('return_pct', 0.0):.2f}%",
+            report=perf,
+        )
+        logger.info("paper_trading_runs 일일 기록 완료: %s", today)
 
 
 async def _main_async(args: argparse.Namespace) -> None:
