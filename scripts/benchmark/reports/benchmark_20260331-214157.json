@@ -1,0 +1,14 @@
+{
+  "timestamp": "20260331-214157",
+  "summary": {
+    "total_rows": 11513963,
+    "distinct_tickers": 4383,
+    "query_single_30d_ms": 2.36,
+    "query_count_all_ms": 1355.0,
+    "insert_executemany_50k_rps": 89656,
+    "insert_copy_50k_rps": 110008,
+    "s3_upload_50mb_mbps": 193.6,
+    "s3_download_50mb_mbps": 241.4
+  },
+  "raw_log_length": 2562
+}

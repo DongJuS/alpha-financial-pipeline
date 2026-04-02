@@ -1,8 +1,8 @@
-# Alpha — Multi-Agent Automated Trading System for Korean Stock Market
+# Alpha — 실시간 금융 데이터 파이프라인
 
-> Real-time data collection → 3-strategy parallel execution → N-way signal blending → automated order execution
+> Real-time financial data pipeline — FDR/KIS data collection → multi-strategy parallel execution → N-way signal blending → automated paper trading on K3s
 
-[![CI](https://github.com/DongJuS/agents-investing/actions/workflows/ci.yml/badge.svg)](https://github.com/DongJuS/agents-investing/actions/workflows/ci.yml)
+[![CI](https://github.com/DongJuS/alpha-financial-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/DongJuS/alpha-financial-pipeline/actions/workflows/ci.yml)
 
 ## Key Metrics
 
@@ -10,10 +10,23 @@
 |---|---|
 | **557 tests** | 100% pass rate, 0 failures |
 | **9 scheduled jobs** | Pre-market / Intraday / Post-market automated operations |
-| **720-day backfill** | FDR historical data auto-seeding pipeline |
+| **9,363 instruments** | KR 2,772 + US 6,591 stocks, 21M+ daily OHLCV rows (12-year history) |
 | **3 strategies** | A(Tournament) / B(Consensus) / RL(Q-Learning) with N-way blending |
 | **6 pods on K3s** | Colima + Helm(infra) + Kustomize(app), verified deployment |
 | **16-second cycle** | Collector → Orchestrator → Blending → S3 storage end-to-end |
+
+## RL Trading Performance (Backtest)
+
+Strategy RL (Tabular Q-Learning V2) trained on **real historical data** for 크래프톤(259960.KS):
+
+| Policy | Return | Baseline (Buy&Hold) | Excess Return | Trades | Win Rate | Status |
+|--------|--------|---------------------|---------------|--------|----------|--------|
+| **Best** | **+47.84%** | -26.58% | **+74.41%p** | 178 | 50.6% | ✅ Approved |
+| **2nd** | **+28.73%** | -26.58% | **+55.30%p** | 156 | 51.3% | ✅ Approved |
+
+> In a **-26.58% bear market**, the RL agent achieved +47.84% return (74.41%p excess return).
+> Trained with 5-seed multi-learning, holdout validation (335 steps), walk-forward cross-validation.
+> ⚠️ Backtest results only. Slippage, execution delay, and market impact are not reflected.
 
 ---
 
@@ -83,6 +96,26 @@
 16:30  blend_weight_adj   성과 기반 블렌딩 가중치 동적 조정
 ```
 
+### Daily Learning Cycle
+
+매일 장 마감 후 최신 일봉 데이터를 기준으로 RL 모델을 재학습합니다. 고정된 과거 데이터가 아니라, **매일 누적되는 실제 시장 데이터**로 모델이 업데이트됩니다.
+
+```
+Day 1: 720일 일봉으로 학습 → Q-table v1 생성
+Day 2: 721일 일봉으로 재학습 → Q-table v2 생성 (어제 종가 반영)
+Day 3: 722일 일봉으로 재학습 → Q-table v3 생성 (그제+어제 반영)
+...
+```
+
+| 단계 | 시점 | 동작 |
+|---|---|---|
+| **수집** | 08:30 KST | FDR API로 전 종목 최신 일봉 수집 → `ohlcv_daily` 테이블에 upsert |
+| **추론** | 09:00~15:30 | 기존 Q-table로 BUY/SELL/HOLD 시그널 생성 (학습 없이 추론만) |
+| **재학습** | 16:00 | 오늘까지의 최신 720일 일봉으로 Q-table 재학습 + walk-forward 검증 |
+| **가중치 조정** | 16:30 | A/B/RL 3전략의 블렌딩 가중치를 최근 성과 기반으로 재계산 |
+
+walk-forward 검증을 통과한 정책만 활성화되므로, 성능이 나빠진 모델은 자동으로 교체됩니다.
+
 ---
 
 ## Workflow Orchestration
@@ -100,6 +133,19 @@ Airflow를 사용하지 않고, 동일한 문제를 직접 설계했습니다.
 | DAG 시각화 | React Dashboard | 에이전트 상태 + 실행 이력 |
 
 > 상세 비교: [docs/airflow-comparison.md](docs/airflow-comparison.md)
+
+### Airflow 비교 벤치마크
+
+동일한 장 전 수집 파이프라인(stock_master → macro → index → daily_bars)을 Airflow DAG로 이식하여 1:1 성능 비교를 수행했습니다.
+
+| | Alpha (APScheduler) | Airflow (KubernetesExecutor) |
+|---|---|---|
+| **전체 파이프라인** | **4.12초** | **23초** |
+| 스케줄링 오버헤드 | 0ms (in-process) | ~13초 (57%) |
+| 배포 컴포넌트 | 1개 (worker) | 4개 (scheduler+webserver+worker+DB) |
+| 최소 간격 | 밀리초 (30초 운용) | 1분 (권장 5분+) |
+
+**결론:** 실시간 트레이딩(장중 사이클)은 Alpha, 배치 파이프라인(RL 재학습, 백필)은 Airflow 부분 도입 전략.
 
 ---
 
