@@ -228,7 +228,6 @@ async def get_strategy_a_signals(
     date: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
 ) -> StrategyAResponse:
     """Strategy A (Tournament) 최신 시그널을 반환합니다."""
-    date_filter = date or "CURRENT_DATE"
 
     rows = await fetch(
         f"""

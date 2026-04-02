@@ -242,18 +242,18 @@ def find_in_map(
     >>> find_in_map("005930.KS", {"005930": "policy_123"})
     'policy_123'
     """
-    # 직접 매칭
-    if ticker in lookup:
+    # 직접 매칭 (None이 아닌 값만)
+    if ticker in lookup and lookup[ticker] is not None:
         return lookup[ticker]
 
     # 정규화 후 매칭
     canonical = normalize(ticker)
-    if canonical in lookup:
+    if canonical in lookup and lookup[canonical] is not None:
         return lookup[canonical]
 
     # raw 코드로 매칭
     raw = to_raw(ticker)
-    if raw in lookup:
+    if raw in lookup and lookup[raw] is not None:
         return lookup[raw]
 
     # 딕셔너리 키를 raw로 변환하여 비교

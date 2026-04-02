@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -25,7 +26,7 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
 from src.db.models import AgentHeartbeatRecord, MarketDataPoint
-from src.db.queries import insert_heartbeat, upsert_market_data
+from src.db.queries import insert_heartbeat
 from src.utils.db_client import executemany
 from src.utils.logging import get_logger, setup_logging
 
@@ -62,7 +63,7 @@ class GenCollectorAgent:
 
     def __init__(
         self,
-        gen_api_url: str = "http://localhost:9999",
+        gen_api_url: str = os.environ.get("GEN_API_URL", "http://localhost:9999"),
         agent_id: str = "gen_collector_agent",
     ) -> None:
         self.gen_api_url = gen_api_url.rstrip("/")
@@ -170,15 +171,14 @@ class GenCollectorAgent:
             except Exception as e:
                 logger.warning("Gen 일봉 수집 실패 [%s]: %s", raw_code, e)
 
-        # 신규 ohlcv_daily 테이블에 저장
-        saved = await upsert_market_data(all_points)
-        logger.info("GenCollector 일봉 ohlcv_daily 저장: %d건", saved)
-
-        # 레거시 market_data 듀얼라이트 (마이그레이션 기간)
+        # Gen 데이터는 ohlcv_daily(실제 시세)를 덮어쓰지 않음.
+        # 레거시 market_data에만 저장 (Gen 테스트용)
         try:
             await self._dual_write_legacy(all_points)
+            logger.info("GenCollector 일봉 market_data 저장: %d건", len(all_points))
         except Exception as e:
-            logger.warning("GenCollector 레거시 market_data 듀얼라이트 실패 (무시): %s", e)
+            logger.warning("GenCollector market_data 저장 실패: %s", e)
+        saved = len(all_points)
 
         if _store_daily_bars is not None:
             try:
@@ -254,14 +254,12 @@ class GenCollectorAgent:
                     )
                     points.append(point)
 
-                # ohlcv_daily upsert (당일 날짜)
-                await upsert_market_data(points)
-
-                # 레거시 market_data 듀얼라이트
+                # Gen 틱 데이터는 ohlcv_daily(실제 시세)를 덮어쓰지 않음.
+                # 레거시 market_data에만 저장
                 try:
                     await self._dual_write_legacy_tick(points)
                 except Exception as e:
-                    logger.debug("레거시 tick 듀얼라이트 실패 (무시): %s", e)
+                    logger.debug("레거시 tick 저장 실패 (무시): %s", e)
 
                 for point in points:
                     await self._cache_latest_tick(point, source="gen_tick")
@@ -433,7 +431,7 @@ async def _main_async() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description="GenCollectorAgent")
-    parser.add_argument("--gen-url", default="http://localhost:9999", help="Gen API 서버 URL")
+    parser.add_argument("--gen-url", default=os.environ.get("GEN_API_URL", "http://localhost:9999"), help="Gen API 서버 URL")
     parser.add_argument("--mode", choices=["daily", "tick", "full", "continuous"], default="full", help="수집 모드")
     parser.add_argument("--lookback-days", type=int, default=120, help="일봉 lookback 기간")
     parser.add_argument("--tick-interval", type=float, default=1.0, help="틱 수집 주기 (초)")

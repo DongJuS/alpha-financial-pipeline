@@ -1,0 +1,107 @@
+# docker-compose.airflow.yml — Airflow 비교 스파이크 환경
+#
+# 사용법:
+#   docker compose -f docker-compose.airflow.yml up -d
+#   브라우저: http://localhost:8080 (admin / admin)
+#
+# Alpha(docker compose up)와 동시 실행 가능. 포트 충돌 없음.
+# Alpha 소스를 읽기 전용 마운트하여 DAG에서 기존 코드를 그대로 호출.
+
+name: airflow-spike
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+    # Alpha DB 접속 — K3s 포트포워딩 경유 (Colima 호스트 IP)
+    DATABASE_URL: postgresql://alpha_user:alpha_pass@192.168.5.2:5432/alpha_db
+    REDIS_URL: redis://192.168.5.2:6379/0
+    S3_ENDPOINT_URL: http://192.168.5.2:9000
+    S3_BUCKET_NAME: alpha-lake
+    S3_ACCESS_KEY_ID: minioadmin
+    S3_SECRET_ACCESS_KEY: minioadmin
+    JWT_SECRET: airflow-spike-dummy
+    PYTHONPATH: /opt/airflow
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./src:/opt/airflow/src:ro
+    - ./scripts:/opt/airflow/scripts:ro
+    - ./requirements.txt:/opt/airflow/requirements.txt:ro
+    - airflow-logs:/opt/airflow/logs
+
+services:
+  airflow-postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    volumes:
+      - airflow-pg-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com || true
+        echo "Airflow init complete"
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  airflow-pg-data:
+  airflow-logs:
