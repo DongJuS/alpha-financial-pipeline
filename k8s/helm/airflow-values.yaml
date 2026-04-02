@@ -1,0 +1,108 @@
+# Airflow Helm chart values — KubernetesExecutor 부하 테스트
+# Task마다 임시 Pod 생성 → 실행 → 삭제
+
+executor: KubernetesExecutor
+
+# 커스텀 이미지 (Alpha 의존성 포함)
+defaultAirflowRepository: airflow-alpha
+defaultAirflowTag: latest
+images:
+  airflow:
+    repository: airflow-alpha
+    tag: latest
+    pullPolicy: IfNotPresent
+
+# DAG 동기화 — git-sync
+dags:
+  gitSync:
+    enabled: true
+    repo: https://github.com/DongJuS/agents-investing.git
+    branch: feature/airflow-workflow-spike
+    subPath: dags
+    wait: 30
+
+# Webserver
+webserver:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    type: NodePort
+    ports:
+      - port: 8080
+        nodePort: 30080
+
+# Scheduler
+scheduler:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# 자체 PostgreSQL 비활성화 — Alpha PostgreSQL 재활용
+postgresql:
+  enabled: false
+
+data:
+  metadataConnection:
+    user: alpha_user
+    pass: alpha_pass
+    protocol: postgresql
+    host: alpha-pg-postgresql.alpha-trading.svc.cluster.local
+    port: 5432
+    db: airflow
+
+# Redis 비활성화 (KubernetesExecutor는 Redis 불필요)
+redis:
+  enabled: false
+
+# Triggerer 비활성화
+triggerer:
+  enabled: false
+
+# StatsD 비활성화 (리소스 절약)
+statsd:
+  enabled: false
+
+# create-user Job
+createUserJob:
+  useHelmHooks: false
+
+# KubernetesExecutor Worker Pod 템플릿
+# Task마다 이 스펙으로 임시 Pod가 생성됨
+workers:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# 환경변수 — Alpha 인프라 접속 (Scheduler + 모든 임시 Worker Pod에 주입)
+env:
+  - name: DATABASE_URL
+    value: "postgresql://alpha_user:alpha_pass@alpha-pg-postgresql.alpha-trading.svc.cluster.local:5432/alpha_db"
+  - name: REDIS_URL
+    value: "redis://alpha-redis-master.alpha-trading.svc.cluster.local:6379/0"
+  - name: S3_ENDPOINT_URL
+    value: "http://minio.alpha-trading.svc.cluster.local:9000"
+  - name: S3_BUCKET_NAME
+    value: "alpha-lake"
+  - name: S3_ACCESS_KEY_ID
+    value: "minioadmin"
+  - name: S3_SECRET_ACCESS_KEY
+    value: "minioadmin"
+  - name: JWT_SECRET
+    value: "airflow-load-test"
+  - name: PYTHONPATH
+    value: "/opt/airflow/dags/repo"

@@ -15,10 +15,14 @@ from src.brokers.paper import PaperBroker, PaperBrokerExecution
 from src.db.models import PaperOrderRequest
 from src.db.queries import (
     attach_broker_order_reference,
+    fetch,
+    get_position,
     get_trading_account,
     insert_broker_order,
+    save_position,
     update_broker_order_status,
     upsert_trading_account,
+    upsert_trade_fill,
 )
 from src.services.kis_session import ensure_kis_token
 from src.utils.account_scope import AccountScope, normalize_account_scope
@@ -161,16 +165,23 @@ class KISApiClient:
 
         cano, account_product = self._account_parts()
         tr_id = self._tr_id("BUY" if order.signal == "BUY" else "SELL")
+        # 모의투자는 시장가(06) 미지원 → 지정가(00)로 현재가 주문
+        # 실거래는 시장가(06) 사용 가능
+        if self.account_scope == "paper":
+            ord_dvsn = "00"
+            ord_unpr = str(order.price)
+        else:
+            is_market = getattr(order, "order_type", "MARKET") == "MARKET" or order.price <= 0
+            ord_dvsn = "06" if is_market else "00"
+            ord_unpr = "0" if is_market else str(order.price)
+
         payload = {
             "CANO": cano,
             "ACNT_PRDT_CD": account_product,
             "PDNO": order.ticker,
-            "ORD_DVSN": "01",
+            "ORD_DVSN": ord_dvsn,
             "ORD_QTY": str(order.quantity),
-            "ORD_UNPR": "0",
-            "EXCG_ID_DVSN_CD": "KRX",
-            "SLL_TYPE": "",
-            "CNDT_PRIC": "",
+            "ORD_UNPR": ord_unpr,
         }
 
         data = await self._request_json(
@@ -401,6 +412,114 @@ class KISBroker:
             cash_balance=cash_balance,
             total_equity=total_equity,
         )
+
+    async def sync_pending_orders(self) -> int:
+        """PENDING 상태의 KIS 주문을 체결 조회하여 DB를 동기화합니다."""
+        pending_rows = await fetch(
+            """SELECT client_order_id, broker_order_id, ticker, side, requested_quantity
+               FROM broker_orders
+               WHERE status = 'PENDING' AND broker_order_id IS NOT NULL
+                 AND account_scope = $1""",
+            self.account_scope,
+        )
+        if not pending_rows:
+            return 0
+
+        today = date.today()
+        try:
+            ccld = await self.client.inquire_daily_ccld(start_date=today, end_date=today)
+        except Exception as e:
+            logger.warning("KIS 체결 조회 실패: %s", e)
+            return 0
+
+        filled_orders = {
+            str(o.get("odno", "")): o for o in ccld.get("orders", []) if o.get("odno")
+        }
+
+        synced = 0
+        for row in pending_rows:
+            order_no = str(row["broker_order_id"])
+            matched = filled_orders.get(order_no)
+            if not matched:
+                continue
+
+            tot_ccld_qty = int(matched.get("tot_ccld_qty", 0))
+            avg_price = int(float(matched.get("avg_prvs", 0)))
+            if tot_ccld_qty <= 0:
+                continue
+
+            await update_broker_order_status(
+                client_order_id=row["client_order_id"],
+                status="FILLED",
+                filled_quantity=tot_ccld_qty,
+                avg_fill_price=avg_price,
+                broker_order_id=order_no,
+            )
+
+            # trade_history에 체결 기록
+            try:
+                ticker = row["ticker"]
+                side = row["side"]
+                name = str(matched.get("prdt_name", "") or ticker)
+                signal_source = str(matched.get("ord_gno_brno", "") or "BLEND")
+                await upsert_trade_fill(
+                    account_scope=self.account_scope,
+                    ticker=ticker,
+                    name=name,
+                    side=side,
+                    quantity=tot_ccld_qty,
+                    price=avg_price,
+                    signal_source=signal_source,
+                    agent_id="kis_broker",
+                    kis_order_id=order_no,
+                )
+            except Exception as e:
+                logger.warning("KIS 체결 → trade_history 기록 실패: %s", e)
+
+            # portfolio_positions 업데이트
+            try:
+                ticker = row["ticker"]
+                side = row["side"]
+                name = str(matched.get("prdt_name", "") or ticker)
+                position = await get_position(ticker, account_scope=self.account_scope)
+
+                if side == "BUY":
+                    prev_qty = int(position["quantity"]) if position else 0
+                    prev_avg = int(position["avg_price"]) if position else 0
+                    new_qty = prev_qty + tot_ccld_qty
+                    new_avg = int(((prev_qty * prev_avg) + (tot_ccld_qty * avg_price)) / new_qty) if new_qty > 0 else avg_price
+                    await save_position(
+                        ticker=ticker,
+                        name=name,
+                        quantity=new_qty,
+                        avg_price=new_avg,
+                        current_price=avg_price,
+                        is_paper=self.account_scope == "paper",
+                        account_scope=self.account_scope,
+                    )
+                else:  # SELL
+                    held_qty = int(position["quantity"]) if position else 0
+                    remaining_qty = max(held_qty - tot_ccld_qty, 0)
+                    prev_avg = int(position["avg_price"]) if position else 0
+                    await save_position(
+                        ticker=ticker,
+                        name=name,
+                        quantity=remaining_qty,
+                        avg_price=prev_avg if remaining_qty > 0 else 0,
+                        current_price=avg_price,
+                        is_paper=self.account_scope == "paper",
+                        account_scope=self.account_scope,
+                    )
+            except Exception as e:
+                logger.warning("KIS 체결 → portfolio_positions 업데이트 실패: %s", e)
+
+            logger.info(
+                "KIS 체결 동기화: %s %s %d주 @ %s원",
+                row["ticker"], row["side"], tot_ccld_qty, f"{avg_price:,}",
+            )
+            synced += 1
+
+        return synced
 
     async def _ensure_account(self, scope: AccountScope) -> None:
         account = await get_trading_account(scope)

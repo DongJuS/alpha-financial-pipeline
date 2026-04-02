@@ -12,7 +12,14 @@ data:
   REDIS_URL: redis://alpha-redis-master:6379/0
   S3_ENDPOINT_URL: http://minio:9000
   S3_BUCKET_NAME: alpha-lake
+  S3_ACCESS_KEY: minioadmin
+  S3_SECRET_KEY: minioadmin
+  S3_REGION: ap-northeast-2
+  GEN_API_URL: http://gen:9999
   LOG_LEVEL: INFO
+  # LLM CLI 인증
+  ANTHROPIC_CLI_COMMAND: claude
+  GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/gcloud-adc
   MARKET_HOURS_ENFORCED: "true"
   # 전략 설정
   STRATEGY_BLEND_WEIGHTS: '{"A": 0.33, "B": 0.33, "RL": 0.34}'

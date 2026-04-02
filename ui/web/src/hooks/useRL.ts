@@ -448,6 +448,53 @@ export function usePromoteShadowToPaper() {
   });
 }
 
+/* ── RL 종목 관리 ──────────────────────────────────────────────────────── */
+
+export interface RLTickerInfo {
+  ticker: string;
+  active_policy_id: string | null;
+  has_policy: boolean;
+}
+
+export function useRLTickers() {
+  return useQuery({
+    queryKey: ["rl", "tickers"],
+    queryFn: async (): Promise<RLTickerInfo[]> => {
+      const { data } = await api.get<{ tickers: RLTickerInfo[]; total: number }>("/rl/tickers");
+      return data.tickers ?? [];
+    },
+    refetchInterval: 30_000,
+  });
+}
+
+export function useAddRLTickers() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (tickers: string[]) => {
+      const { data } = await api.put("/rl/tickers", { tickers });
+      return data as { tickers: string[]; added: string[]; total: number };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rl", "tickers"] });
+      qc.invalidateQueries({ queryKey: ["rl", "policies"] });
+    },
+  });
+}
+
+export function useRemoveRLTicker() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ticker: string) => {
+      const { data } = await api.delete(`/rl/tickers/${encodeURIComponent(ticker)}`);
+      return data as { removed: string; remaining: string[]; total: number };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rl", "tickers"] });
+      qc.invalidateQueries({ queryKey: ["rl", "policies"] });
+    },
+  });
+}
+
 export function usePromotePaperToReal() {
   const qc = useQueryClient();
   return useMutation({
@@ -465,5 +512,27 @@ export function usePromotePaperToReal() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["rl"] });
     },
+  });
+}
+
+/* ── 종목 선택용 마켓 종목 조회 ─────────────────────────────────────── */
+
+export interface MarketTickerItem {
+  ticker: string;
+  name: string;
+  market: string;
+}
+
+export function useMarketTickers(enabled = true) {
+  return useQuery({
+    queryKey: ["market", "tickers-all"],
+    queryFn: async (): Promise<MarketTickerItem[]> => {
+      const { data } = await api.get<{ data: MarketTickerItem[] }>("/market/tickers", {
+        params: { per_page: 200 },
+      });
+      return data?.data ?? [];
+    },
+    enabled,
+    staleTime: 60_000,
   });
 }

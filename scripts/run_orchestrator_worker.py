@@ -241,6 +241,14 @@ async def main_async() -> int:
     rl_retrain_tickers = _parse_tickers(os.getenv("ORCH_RL_RETRAIN_TICKERS", ""))
     rl_retrain_profiles = _parse_csv(os.getenv("ORCH_RL_RETRAIN_PROFILES", ""))
 
+    # DB 로그 핸들러 활성화
+    try:
+        from src.utils.db_logger import setup_db_logging, start_log_flusher
+        setup_db_logging(source="worker")
+        asyncio.create_task(start_log_flusher())
+    except Exception as e:
+        logger.warning("DB 로그 핸들러 초기화 실패 (비필수): %s", e)
+
     # Orchestrator 생성
     from src.agents.orchestrator import OrchestratorAgent
 

@@ -144,14 +144,13 @@ class TestMarketDataGenerator(unittest.TestCase):
 class TestGenCollectorPipeline(unittest.IsolatedAsyncioTestCase):
     """GenCollectorAgent의 수집→저장 경로를 mock으로 검증합니다."""
 
-    @patch("src.agents.gen_collector.upsert_market_data", new_callable=AsyncMock)
     @patch("src.agents.gen_collector._store_daily_bars", new_callable=AsyncMock)
     @patch("src.agents.gen_collector.publish_message", new_callable=AsyncMock)
     @patch("src.agents.gen_collector.set_heartbeat", new_callable=AsyncMock)
     @patch("src.agents.gen_collector.insert_heartbeat", new_callable=AsyncMock)
     @patch("src.agents.gen_collector.get_redis", new_callable=AsyncMock)
     async def test_collect_daily_bars_pipeline(
-        self, mock_redis, mock_hb_insert, mock_hb_set, mock_publish, mock_s3, mock_db
+        self, mock_redis, mock_hb_insert, mock_hb_set, mock_publish, mock_s3
     ):
         from src.agents.gen_collector import GenCollectorAgent
 
@@ -164,7 +163,6 @@ class TestGenCollectorPipeline(unittest.IsolatedAsyncioTestCase):
         redis_instance = AsyncMock()
         redis_instance.pipeline = MagicMock(return_value=mock_pipe)
         mock_redis.return_value = redis_instance
-        mock_db.return_value = 100
 
         agent = GenCollectorAgent(gen_api_url="http://localhost:9999")
 
@@ -184,20 +182,18 @@ class TestGenCollectorPipeline(unittest.IsolatedAsyncioTestCase):
             mock_get.side_effect = [tickers_resp, ohlcv_resp]
             await agent.collect_daily_bars(lookback_days=5)
 
-        mock_db.assert_called_once()
         mock_s3.assert_called_once()
         mock_publish.assert_called_once()
         pub_data = json.loads(mock_publish.call_args[0][1])
         self.assertEqual(pub_data["type"], "data_ready")
         await agent.close()
 
-    @patch("src.agents.gen_collector.upsert_market_data", new_callable=AsyncMock)
     @patch("src.agents.gen_collector.publish_message", new_callable=AsyncMock)
     @patch("src.agents.gen_collector.set_heartbeat", new_callable=AsyncMock)
     @patch("src.agents.gen_collector.insert_heartbeat", new_callable=AsyncMock)
     @patch("src.agents.gen_collector.get_redis", new_callable=AsyncMock)
     async def test_collect_ticks_pipeline(
-        self, mock_redis, mock_hb_insert, mock_hb_set, mock_publish, mock_db
+        self, mock_redis, mock_hb_insert, mock_hb_set, mock_publish
     ):
         from src.agents.gen_collector import GenCollectorAgent
 
@@ -210,7 +206,6 @@ class TestGenCollectorPipeline(unittest.IsolatedAsyncioTestCase):
         redis_instance = AsyncMock()
         redis_instance.pipeline = MagicMock(return_value=mock_pipe)
         mock_redis.return_value = redis_instance
-        mock_db.return_value = 1
 
         agent = GenCollectorAgent(gen_api_url="http://localhost:9999")
 
@@ -226,7 +221,6 @@ class TestGenCollectorPipeline(unittest.IsolatedAsyncioTestCase):
             count = await agent.collect_realtime_ticks(interval_sec=0.01, max_cycles=1)
 
         self.assertEqual(count, 1)
-        mock_db.assert_called_once()
         mock_publish.assert_called_once()
         await agent.close()
 

@@ -251,6 +251,7 @@ async def save_position(
     current_price: int,
     is_paper: bool,
     account_scope: AccountScope | None = None,
+    strategy_id: str | None = None,
 ) -> None:
     scope = normalize_account_scope(account_scope or scope_from_is_paper(is_paper))
     if quantity <= 0:
@@ -264,9 +265,9 @@ async def save_position(
     await execute(
         """
         INSERT INTO portfolio_positions (
-            ticker, name, quantity, avg_price, current_price, is_paper, account_scope, opened_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-        ON CONFLICT (ticker, account_scope)
+            ticker, name, quantity, avg_price, current_price, is_paper, account_scope, strategy_id, opened_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        ON CONFLICT (ticker, account_scope, COALESCE(strategy_id, ''))
         DO UPDATE SET
             name = EXCLUDED.name,
             quantity = EXCLUDED.quantity,
@@ -282,6 +283,7 @@ async def save_position(
         current_price,
         scope == "paper",
         scope,
+        strategy_id or "",
     )
 
 
@@ -1262,6 +1264,79 @@ async def insert_paper_trading_run(
         summary,
         json.dumps(report or {}, ensure_ascii=False),
     )
+
+
+async def insert_collector_error(
+    source: str,
+    ticker: str,
+    error_type: str,
+    message: str,
+) -> None:
+    """collector_errors 테이블에 수집 에러를 기록합니다."""
+    await execute(
+        """
+        INSERT INTO collector_errors (source, ticker, error_type, message)
+        VALUES ($1, $2, $3, $4)
+        """,
+        source,
+        ticker,
+        error_type,
+        message,
+    )
+
+
+async def insert_daily_ranking(
+    ranking_date: date,
+    ranking_type: str,
+    rank: int,
+    ticker: str,
+    name: str,
+    value: Optional[float] = None,
+    change_pct: Optional[float] = None,
+    extra: Optional[dict] = None,
+) -> None:
+    """daily_rankings 테이블에 종목 랭킹을 기록합니다."""
+    await execute(
+        """
+        INSERT INTO daily_rankings (
+            ranking_date, ranking_type, rank, ticker, name,
+            value, change_pct, extra
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+        ON CONFLICT (ranking_date, ranking_type, rank)
+        DO UPDATE SET
+            ticker = EXCLUDED.ticker,
+            name = EXCLUDED.name,
+            value = EXCLUDED.value,
+            change_pct = EXCLUDED.change_pct,
+            extra = EXCLUDED.extra
+        """,
+        ranking_date,
+        ranking_type,
+        rank,
+        ticker,
+        name,
+        value,
+        change_pct,
+        json.dumps(extra or {}, ensure_ascii=False),
+    )
+
+
+async def insert_daily_rankings_batch(rankings: list[dict]) -> int:
+    """daily_rankings 테이블에 종목 랭킹을 배치로 기록합니다."""
+    if not rankings:
+        return 0
+    for r in rankings:
+        await insert_daily_ranking(
+            ranking_date=r["ranking_date"],
+            ranking_type=r["ranking_type"],
+            rank=r["rank"],
+            ticker=r["ticker"],
+            name=r["name"],
+            value=r.get("value"),
+            change_pct=r.get("change_pct"),
+            extra=r.get("extra"),
+        )
+    return len(rankings)
 
 
 async def fetch_latest_paper_trading_run(scenario: str | None = None) -> Optional[dict]:

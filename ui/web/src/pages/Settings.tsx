@@ -104,7 +104,7 @@ export default function Settings() {
           <h2 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>전략/리스크 설정</h2>
           <span className="chip">
             {config?.enable_paper_trading && config?.enable_real_trading
-              ? `PAPER + REAL (${config.primary_account_scope.toUpperCase()} primary)`
+              ? `PAPER + REAL (${(config.primary_account_scope ?? "paper").toUpperCase()} primary)`
               : config?.enable_real_trading
                 ? "REAL"
                 : "PAPER"}

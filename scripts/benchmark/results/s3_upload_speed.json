@@ -1,0 +1,35 @@
+{
+  "benchmark": "s3_upload_speed",
+  "endpoint": "http://localhost:29000",
+  "bucket": "alpha-lake",
+  "tests": [
+    {
+      "target_mb": 1.0,
+      "actual_mb": 0.63,
+      "upload_seconds": 0.085,
+      "upload_mb_per_sec": 7.34,
+      "download_seconds": 0.011,
+      "download_mb_per_sec": 57.89
+    },
+    {
+      "target_mb": 10.0,
+      "actual_mb": 6.45,
+      "upload_seconds": 0.128,
+      "upload_mb_per_sec": 50.24,
+      "download_seconds": 0.033,
+      "download_mb_per_sec": 193.76
+    },
+    {
+      "target_mb": 50.0,
+      "actual_mb": 26.83,
+      "upload_seconds": 0.149,
+      "upload_mb_per_sec": 180.55,
+      "download_seconds": 0.077,
+      "download_mb_per_sec": 347.95
+    }
+  ],
+  "summary": {
+    "avg_upload_mb_per_sec": 79.38,
+    "avg_download_mb_per_sec": 199.87
+  }
+}

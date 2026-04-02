@@ -18,7 +18,12 @@ import {
   usePromoteShadowToPaper,
   usePromotePaperToReal,
   usePolicyMode,
+  useRLTickers,
+  useAddRLTickers,
+  useRemoveRLTicker,
+  useMarketTickers,
   type RLPolicy,
+  type RLTickerInfo,
   type TrainingJob,
   type TrainingJobRequest,
 } from "@/hooks/useRL";
@@ -39,8 +44,9 @@ function useCollectMarketData() {
 }
 
 /* ── 탭 정의 ───────────────────────────────────────────────────────────── */
-type Tab = "policies" | "experiments" | "shadow" | "promotion";
+type Tab = "tickers" | "policies" | "experiments" | "shadow" | "promotion";
 const TABS: { key: Tab; label: string; desc: string }[] = [
+  { key: "tickers", label: "종목 관리", desc: "RL 대상 종목 추가/제거" },
   { key: "policies", label: "정책 관리", desc: "활성 정책 및 평가" },
   { key: "experiments", label: "학습 실험", desc: "트레이닝 잡 실행" },
   { key: "shadow", label: "섀도우 추론", desc: "가상 시그널 성과" },
@@ -58,8 +64,134 @@ function ModeBadge({ mode }: { mode: string }) {
         : { background: "var(--blue-bg)", color: "var(--blue)" };
   return (
     <span className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" style={style}>
-      {m.toUpperCase()}
+      {(m ?? "unknown").toUpperCase()}
     </span>
+  );
+}
+
+/* ── 종목 관리 탭 ──────────────────────────────────────────────────────── */
+function TickersTab() {
+  const { data: tickers, isLoading } = useRLTickers();
+  const addTickers = useAddRLTickers();
+  const removeTicker = useRemoveRLTicker();
+  const [newTicker, setNewTicker] = useState("");
+
+  const handleAdd = () => {
+    const codes = newTicker.split(",").map((s) => s.trim()).filter(Boolean);
+    if (codes.length === 0) return;
+    addTickers.mutate(codes, { onSuccess: () => setNewTicker("") });
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* 종목 추가 */}
+      <div className="card">
+        <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>종목 추가</h3>
+        <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+          RL 학습 대상 종목을 추가합니다. 쉼표로 여러 종목을 입력할 수 있습니다.
+        </p>
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="text"
+            value={newTicker}
+            onChange={(e) => setNewTicker(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+            placeholder="005930.KS, 000660.KS, AAPL.US"
+            className="flex-1 rounded-xl border px-3 py-2 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
+          />
+          <button
+            onClick={handleAdd}
+            disabled={addTickers.isPending || !newTicker.trim()}
+            className="btn-primary whitespace-nowrap px-4 py-2 text-sm"
+            style={{ background: "linear-gradient(135deg, var(--brand-500), #4b9dff)" }}
+          >
+            {addTickers.isPending ? "추가 중..." : "추가"}
+          </button>
+        </div>
+        {addTickers.data && (
+          <p className="mt-2 text-xs font-semibold" style={{ color: "var(--green)" }}>
+            {addTickers.data.added.length > 0
+              ? `${addTickers.data.added.join(", ")} 추가 완료 (총 ${addTickers.data.total}종목)`
+              : `이미 등록된 종목입니다 (총 ${addTickers.data.total}종목)`}
+          </p>
+        )}
+      </div>
+
+      {/* 등록된 종목 목록 */}
+      <div className="card">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
+            RL 대상 종목 ({tickers?.length ?? 0})
+          </h3>
+        </div>
+        {isLoading ? (
+          <p className="py-4 text-center text-sm" style={{ color: "var(--text-secondary)" }}>로딩 중...</p>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ color: "var(--text-secondary)" }}>
+                  <th className="pb-2 text-left font-semibold">종목</th>
+                  <th className="pb-2 text-left font-semibold">활성 정책</th>
+                  <th className="pb-2 text-center font-semibold">상태</th>
+                  <th className="pb-2 text-right font-semibold">작업</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(tickers ?? []).map((t: RLTickerInfo) => (
+                  <tr key={t.ticker} className="border-t" style={{ borderColor: "var(--border)" }}>
+                    <td className="py-2 font-mono text-xs font-bold" style={{ color: "var(--text-primary)" }}>
+                      {t.ticker}
+                    </td>
+                    <td className="py-2 font-mono text-xs" style={{ color: "var(--text-secondary)" }}>
+                      {t.active_policy_id ?? "-"}
+                    </td>
+                    <td className="py-2 text-center">
+                      <span
+                        className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                        style={
+                          t.has_policy
+                            ? { background: "var(--green-bg)", color: "var(--green)" }
+                            : { background: "var(--bg-secondary)", color: "var(--text-secondary)" }
+                        }
+                      >
+                        {t.has_policy ? "활성" : "미학습"}
+                      </span>
+                    </td>
+                    <td className="py-2 text-right">
+                      <button
+                        onClick={() => {
+                          if (confirm(`${t.ticker}을(를) RL 대상에서 제거하시겠습니까?`))
+                            removeTicker.mutate(t.ticker);
+                        }}
+                        disabled={removeTicker.isPending}
+                        className="rounded-lg px-2 py-1 text-xs font-semibold transition-colors hover:bg-red-50"
+                        style={{ color: "var(--red)" }}
+                      >
+                        제거
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {(tickers ?? []).length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-6 text-center text-sm" style={{ color: "var(--text-secondary)" }}>
+                      등록된 RL 종목이 없습니다. 위에서 종목을 추가하세요.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {removeTicker.data && (
+          <p className="mt-2 text-xs font-semibold" style={{ color: "var(--red)" }}>
+            {removeTicker.data.removed} 제거 완료 (남은 종목: {removeTicker.data.total})
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -182,6 +314,122 @@ function PolicyRow({ policy: p, onActivate }: { policy: RLPolicy; onActivate: ()
   );
 }
 
+/* ── 종목 선택 모달 ──────────────────────────────────────────────────── */
+function TickerPickerModal({
+  open,
+  onClose,
+  onSelect,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSelect: (ticker: string, name: string) => void;
+}) {
+  const [tab, setTab] = useState<string>("KOSPI");
+  const [search, setSearch] = useState("");
+  const { data: allTickers = [], isLoading } = useMarketTickers(open);
+
+  if (!open) return null;
+  const markets = [...new Set(allTickers.map((t) => t.market))].sort();
+  const filtered = allTickers
+    .filter((t) => t.market === tab)
+    .filter(
+      (t) =>
+        !search ||
+        t.ticker.includes(search) ||
+        t.name.toLowerCase().includes(search.toLowerCase())
+    );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.5)" }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl p-5"
+        style={{ background: "var(--bg-primary)", maxHeight: "80vh" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
+            종목 선택
+          </h3>
+          <button onClick={onClose} className="text-xl" style={{ color: "var(--text-tertiary)" }}>
+            ✕
+          </button>
+        </div>
+
+        {/* 검색 */}
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="종목명 또는 코드 검색..."
+          className="mt-3 w-full rounded-xl border px-3 py-2 text-sm"
+          style={{ borderColor: "var(--border)", background: "var(--bg-secondary)", color: "var(--text-primary)" }}
+          autoFocus
+        />
+
+        {/* 마켓 탭 */}
+        <div className="mt-3 flex gap-2">
+          {markets.map((m) => (
+            <button
+              key={m}
+              onClick={() => setTab(m)}
+              className="rounded-full px-3 py-1 text-xs font-semibold"
+              style={{
+                background: tab === m ? "var(--brand-500)" : "var(--bg-secondary)",
+                color: tab === m ? "white" : "var(--text-secondary)",
+              }}
+            >
+              {m} ({allTickers.filter((t) => t.market === m).length})
+            </button>
+          ))}
+        </div>
+
+        {/* 종목 리스트 */}
+        <div className="mt-3 overflow-y-auto" style={{ maxHeight: "50vh" }}>
+          {isLoading && <div className="h-40 skeleton" />}
+          {filtered.map((t) => (
+            <button
+              key={t.ticker}
+              onClick={() => {
+                onSelect(t.ticker, t.name);
+                onClose();
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left hover:opacity-80"
+              style={{ borderBottom: "1px solid var(--border)" }}
+            >
+              <div>
+                <span className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
+                  {t.name}
+                </span>
+                <span className="ml-2 text-xs" style={{ color: "var(--text-tertiary)" }}>
+                  {t.ticker}
+                </span>
+              </div>
+              <span
+                className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                style={{
+                  background: t.market === "KOSPI" ? "var(--blue-bg)" : "var(--purple-bg)",
+                  color: t.market === "KOSPI" ? "var(--blue)" : "var(--purple)",
+                }}
+              >
+                {t.market}
+              </span>
+            </button>
+          ))}
+          {filtered.length === 0 && !isLoading && (
+            <p className="py-8 text-center text-sm" style={{ color: "var(--text-tertiary)" }}>
+              검색 결과가 없습니다.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── 학습 실험 탭 ──────────────────────────────────────────────────────── */
 function ExperimentsTab() {
   const { data: experiments, isLoading } = useExperiments();
@@ -189,8 +437,10 @@ function ExperimentsTab() {
   const createJob = useCreateTrainingJob();
   const runWF = useRunWalkForward();
   const [ticker, setTicker] = useState("");
+  const [tickerName, setTickerName] = useState("");
   const [episodes, setEpisodes] = useState(500);
   const [formError, setFormError] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   function handleTrain() {
     setFormError("");
@@ -209,26 +459,41 @@ function ExperimentsTab() {
     const payload: TrainingJobRequest = { ticker: ticker.trim(), episodes };
     createJob.mutate(payload);
     setTicker("");
+    setTickerName("");
   }
 
   if (isLoading && isJobsLoading) return <div className="card"><div className="h-40 skeleton" /></div>;
 
   return (
     <div className="space-y-4">
+      {/* 종목 선택 모달 */}
+      <TickerPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(code, name) => {
+          setTicker(code);
+          setTickerName(name);
+        }}
+      />
+
       {/* 새 트레이닝 잡 */}
       <div className="card">
         <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>새 트레이닝 실행</h3>
         <div className="mt-3 flex flex-wrap items-end gap-3">
           <div>
             <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>종목 코드</label>
-            <input
-              type="text"
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value)}
-              placeholder="005930"
-              className="mt-1 block w-32 rounded-xl border px-3 py-2 text-sm"
-              style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
-            />
+            <button
+              onClick={() => setPickerOpen(true)}
+              className="mt-1 flex w-44 items-center justify-between rounded-xl border px-3 py-2 text-sm text-left"
+              style={{ borderColor: "var(--border)", background: "var(--bg-secondary)", color: ticker ? "var(--text-primary)" : "var(--text-tertiary)" }}
+            >
+              {ticker ? (
+                <span>{tickerName} <span style={{ color: "var(--text-tertiary)" }}>({ticker})</span></span>
+              ) : (
+                <span>종목 선택...</span>
+              )}
+              <span style={{ color: "var(--text-tertiary)" }}>▾</span>
+            </button>
           </div>
           <div>
             <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
@@ -487,7 +752,7 @@ function StatusBadge({ status }: { status: string }) {
   const c = colors[status] ?? colors.queued;
   return (
     <span className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: c.bg, color: c.fg }}>
-      {status.toUpperCase()}
+      {(status ?? "unknown").toUpperCase()}
     </span>
   );
 }
@@ -723,7 +988,7 @@ function PromotionTab() {
         {policyMode && (
           <div className="mt-3 rounded-2xl p-3" style={{ background: "var(--bg-secondary)" }}>
             <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              현재 모드: <strong style={{ color: "var(--text-primary)" }}>{policyMode.current_mode.toUpperCase()}</strong>
+              현재 모드: <strong style={{ color: "var(--text-primary)" }}>{(policyMode.current_mode ?? "unknown").toUpperCase()}</strong>
               {policyMode.can_promote_to && (
                 <> → 다음 승격: <strong style={{ color: "var(--brand-500)" }}>{policyMode.can_promote_to.toUpperCase()}</strong></>
               )}
@@ -737,7 +1002,7 @@ function PromotionTab() {
 
 /* ── 메인 페이지 ───────────────────────────────────────────────────────── */
 export default function RLTrading() {
-  const [activeTab, setActiveTab] = useState<Tab>("policies");
+  const [activeTab, setActiveTab] = useState<Tab>("tickers");
 
   return (
     <div className="page-shell space-y-5">
@@ -779,6 +1044,7 @@ export default function RLTrading() {
       </div>
 
       {/* 탭 콘텐츠 */}
+      {activeTab === "tickers" && <TickersTab />}
       {activeTab === "policies" && <PoliciesTab />}
       {activeTab === "experiments" && <ExperimentsTab />}
       {activeTab === "shadow" && <ShadowTab />}
