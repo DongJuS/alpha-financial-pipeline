@@ -19,6 +19,7 @@ from src.utils.market_data import compute_change_pct
 from src.db.models import PredictionSignal
 from src.db.queries import fetch_recent_market_data, get_position
 from src.utils.logging import get_logger
+from src.utils.ticker import normalize
 
 logger = get_logger(__name__)
 
@@ -118,6 +119,7 @@ class RLDatasetBuilder:
         seconds: int | None = None,
         limit: int | None = None,
     ) -> RLDataset:
+        ticker = normalize(ticker)
         rows = await fetch_recent_market_data(
             ticker,
             days=days,
@@ -228,6 +230,7 @@ class RLPolicyStore:
         return artifact
 
     def activate_policy(self, artifact: RLPolicyArtifact) -> None:
+        artifact.ticker = normalize(artifact.ticker)
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         registry = self.list_active_policies()
         registry["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -244,6 +247,7 @@ class RLPolicyStore:
         return RLPolicyArtifact.from_dict(payload)
 
     def load_active_policy(self, ticker: str) -> Optional[RLPolicyArtifact]:
+        ticker = normalize(ticker)
         registry = self.list_active_policies()
         policy_info = registry["policies"].get(ticker)
         if not policy_info:

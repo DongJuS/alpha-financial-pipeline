@@ -190,8 +190,8 @@ class RLTradingAgentRunCycleTest(unittest.IsolatedAsyncioTestCase):
             store.activate_policy(artifact)
 
             active = store.list_active_policies()
-            self.assertIn("005930", active)
-            self.assertEqual(active["005930"], "rl_005930_boot")
+            self.assertIn("005930.KS", active)
+            self.assertEqual(active["005930.KS"], "rl_005930_boot")
 
     async def test_run_cycle_trains_activates_policy_and_emits_signal(self) -> None:
         closes = _uptrend_closes()
@@ -213,7 +213,7 @@ class RLTradingAgentRunCycleTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(predictions[0].signal, "BUY")
             self.assertTrue(summaries[0]["approved"])
             registry = agent.policy_store.list_active_policies()
-            self.assertIn("005930", registry["policies"])
+            self.assertIn("005930.KS", registry["policies"])
 
     async def test_portfolio_manager_process_signal_supports_rl_source(self) -> None:
         agent = PortfolioManagerAgent()
@@ -275,7 +275,7 @@ class RLTradingAgentRunCycleTest(unittest.IsolatedAsyncioTestCase):
 
             active = store.list_active_policies()
             self.assertEqual(len(active), 1)
-            self.assertIn("005930", active)
+            self.assertIn("005930.KS", active)
 
             # 두 번째 정책 추가
             artifact2 = store.save_policy(_policy_artifact("rl_035720_v1", ticker="035720"))
@@ -283,7 +283,7 @@ class RLTradingAgentRunCycleTest(unittest.IsolatedAsyncioTestCase):
 
             active2 = store.list_active_policies()
             self.assertEqual(len(active2), 2)
-            self.assertIn("035720", active2)
+            self.assertIn("035720.KS", active2)
 
     async def test_run_cycle_supports_tick_interval_seconds_window(self) -> None:
         closes = _uptrend_closes(80)

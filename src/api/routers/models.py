@@ -43,6 +43,7 @@ class ModelRoleItem(BaseModel):
     llm_model: str
     persona: str
     execution_order: int
+    is_enabled: bool = True
     updated_at: Optional[str] = None
 
 
@@ -58,6 +59,7 @@ class ModelRoleUpdateItem(BaseModel):
     config_key: str
     llm_model: str
     persona: str = Field(..., min_length=1, max_length=300)
+    is_enabled: bool = True
 
 
 class ModelConfigUpdateRequest(BaseModel):
@@ -65,13 +67,16 @@ class ModelConfigUpdateRequest(BaseModel):
 
 
 async def _build_response() -> ModelConfigResponse:
-    rows = await ensure_model_role_configs()
+    from src.services.model_config import get_strategy_a_profiles, get_strategy_b_roles
+
+    a_rows = await get_strategy_a_profiles(enabled_only=False)
+    b_rows = await get_strategy_b_roles(enabled_only=False)
     return ModelConfigResponse(
         rule_based_fallback_allowed=False,
         supported_models=[SupportedModelItem(**item) for item in SUPPORTED_MODEL_OPTIONS],
         provider_status=[ProviderStatusItem(**item) for item in provider_status()],
-        strategy_a=[ModelRoleItem(**row) for row in rows if row["strategy_code"] == "A"],
-        strategy_b=[ModelRoleItem(**row) for row in rows if row["strategy_code"] == "B"],
+        strategy_a=[ModelRoleItem(**row) for row in a_rows],
+        strategy_b=[ModelRoleItem(**row) for row in b_rows],
     )
 
 
