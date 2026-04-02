@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
 from src.db.models import AgentHeartbeatRecord, MarketDataPoint
-from src.db.queries import insert_heartbeat, upsert_market_data
+from src.db.queries import insert_collector_error, insert_heartbeat, upsert_market_data
 from src.services.yahoo_finance import fetch_daily_bars
 from src.utils.config import get_settings, has_kis_credentials, kis_app_key_for_scope, kis_app_secret_for_scope
 from src.utils.logging import get_logger, setup_logging
@@ -562,15 +562,15 @@ class CollectorAgent:
                 for item in output2:
                     o = float(item.get("stck_oprc", 0))
                     h = float(item.get("stck_hgpr", 0))
-                    l = float(item.get("stck_lwpr", 0))
+                    lo = float(item.get("stck_lwpr", 0))
                     c = float(item.get("stck_prpr", 0))
                     v = int(item.get("cntg_vol", 0))
 
                     if day_open is None:
                         day_open = o
                     day_high = max(day_high, h)
-                    if l > 0:
-                        day_low = min(day_low, l)
+                    if lo > 0:
+                        day_low = min(day_low, lo)
                     day_close = c
                     day_volume += v
 
@@ -591,6 +591,15 @@ class CollectorAgent:
                     )
             except Exception as e:
                 logger.warning("분봉 수집 실패 [%s/%s]: %s", ticker, date_str, e)
+                try:
+                    await insert_collector_error(
+                        source="kis_intraday",
+                        ticker=ticker,
+                        error_type=type(e).__name__,
+                        message=str(e)[:1000],
+                    )
+                except Exception:
+                    pass
 
             # KIS API rate limit: 초당 1회
             await asyncio.sleep(1.0)
@@ -643,6 +652,15 @@ class CollectorAgent:
                     latest_points.append(bars[-1])
             except Exception as e:
                 logger.warning("일봉 수집 실패 [%s]: %s", ticker, e)
+                try:
+                    await insert_collector_error(
+                        source="fdr_daily",
+                        ticker=ticker,
+                        error_type=type(e).__name__,
+                        message=str(e)[:1000],
+                    )
+                except Exception:
+                    pass
 
         saved = await upsert_market_data(points)
 
@@ -699,6 +717,15 @@ class CollectorAgent:
             except Exception as exc:
                 logger.warning("Yahoo chart API 수집 실패 [%s/%s]: %s", ticker, yahoo_ticker, exc)
                 try:
+                    await insert_collector_error(
+                        source="yahoo_chart",
+                        ticker=ticker,
+                        error_type=type(exc).__name__,
+                        message=str(exc)[:1000],
+                    )
+                except Exception:
+                    pass
+                try:
                     history = await asyncio.to_thread(
                         self._fetch_yahoo_daily_bars_via_yfinance,
                         yahoo_ticker,
@@ -720,6 +747,15 @@ class CollectorAgent:
                         )
                 except Exception as yf_exc:
                     logger.warning("Yahoo yfinance 수집도 실패 [%s/%s]: %s", ticker, yahoo_ticker, yf_exc)
+                    try:
+                        await insert_collector_error(
+                            source="yfinance_fallback",
+                            ticker=ticker,
+                            error_type=type(yf_exc).__name__,
+                            message=str(yf_exc)[:1000],
+                        )
+                    except Exception:
+                        pass
                     continue
 
             mkt = market if market in {"KOSPI", "KOSDAQ"} else "KOSPI"
@@ -954,6 +990,15 @@ class CollectorAgent:
             except Exception as e:
                 reconnects += 1
                 logger.warning("KIS WebSocket 오류 (%d/%d): %s", reconnects, reconnect_max, e)
+                try:
+                    await insert_collector_error(
+                        source="kis_websocket",
+                        ticker=",".join(subscribed[:5]),
+                        error_type=type(e).__name__,
+                        message=str(e)[:1000],
+                    )
+                except Exception:
+                    pass
                 if reconnects > reconnect_max:
                     logger.error("KIS WebSocket 재연결 한도 초과")
                     break

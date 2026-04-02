@@ -26,6 +26,7 @@ import { formatKRW, formatMDD, formatPct } from "@/utils/api";
 const PERIOD_OPTIONS: PerformanceMetrics["period"][] = ["daily", "weekly", "monthly", "all"];
 
 function compactDate(value: string): string {
+  if (!value) return "—";
   return value.slice(5);
 }
 

@@ -5,6 +5,8 @@ src/api/main.py — FastAPI 애플리케이션 진입점
     uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 """
 
+import asyncio
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -122,6 +124,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning("⚠️ 티커 마스터 캐시 로드 실패 (비필수): %s", e)
 
+    # DB 로그 핸들러 활성화
+    try:
+        from src.utils.db_logger import setup_db_logging, start_log_flusher
+        setup_db_logging(source="api")
+        asyncio.create_task(start_log_flusher())
+    except Exception as e:
+        logger.warning("DB 로그 핸들러 초기화 실패 (비필수): %s", e)
+
     # 통합 스케줄러 시작 (stock_master / macro / collector / index 포함)
     await start_unified_scheduler()
 
@@ -161,7 +171,9 @@ app = FastAPI(
 # ─── CORS ────────────────────────────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=os.environ.get(
+        "CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"
+    ).split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
