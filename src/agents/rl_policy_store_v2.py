@@ -25,6 +25,7 @@ from src.agents.rl_policy_registry import (
 )
 from src.agents.rl_trading import RLPolicyArtifact
 from src.utils.logging import get_logger
+from src.utils.ticker import normalize
 
 logger = get_logger(__name__)
 
@@ -94,6 +95,9 @@ class RLPolicyStoreV2:
 
         저장 경로: models/<algorithm>/<ticker>/<policy_id>.json
         """
+        # 티커 정규화 (005930 → 005930.KS)
+        artifact.ticker = normalize(artifact.ticker)
+
         registry = self.load_registry()
 
         # 디렉토리 생성
@@ -159,6 +163,7 @@ class RLPolicyStoreV2:
 
     def load_active_policy(self, ticker: str) -> Optional[RLPolicyArtifact]:
         """종목의 활성 정책을 로드합니다."""
+        ticker = normalize(ticker)
         registry = self.load_registry()
         entry = registry.get_active_policy(ticker)
         if not entry:
