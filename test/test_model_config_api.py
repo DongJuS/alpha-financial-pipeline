@@ -16,6 +16,7 @@ class ModelConfigApiTest(unittest.IsolatedAsyncioTestCase):
                 "llm_model": "claude-3-5-sonnet-latest",
                 "persona": "가치 투자형",
                 "execution_order": 1,
+                "is_enabled": True,
                 "updated_at": "2026-03-13T13:00:00Z",
             },
             {
@@ -27,13 +28,21 @@ class ModelConfigApiTest(unittest.IsolatedAsyncioTestCase):
                 "llm_model": "claude-3-5-sonnet-latest",
                 "persona": "조정자",
                 "execution_order": 4,
+                "is_enabled": True,
                 "updated_at": "2026-03-13T13:00:00Z",
             },
         ]
 
+    def _a_rows(self) -> list[dict]:
+        return [r for r in self._rows() if r["strategy_code"] == "A"]
+
+    def _b_rows(self) -> list[dict]:
+        return [r for r in self._rows() if r["strategy_code"] == "B"]
+
     async def test_get_model_config_groups_strategy_rows(self) -> None:
         with (
-            patch("src.api.routers.models.ensure_model_role_configs", new=AsyncMock(return_value=self._rows())),
+            patch("src.services.model_config.get_strategy_a_profiles", new=AsyncMock(return_value=self._a_rows())),
+            patch("src.services.model_config.get_strategy_b_roles", new=AsyncMock(return_value=self._b_rows())),
             patch(
                 "src.api.routers.models.provider_status",
                 return_value=[
@@ -56,12 +65,14 @@ class ModelConfigApiTest(unittest.IsolatedAsyncioTestCase):
                     "config_key": "strategy_a_predictor_1",
                     "llm_model": "gpt-4o-mini",
                     "persona": "새 페르소나",
+                    "is_enabled": True,
                 }
             ]
         )
         with (
             patch("src.api.routers.models.update_model_role_configs", new=AsyncMock(return_value=self._rows())) as update_mock,
-            patch("src.api.routers.models.ensure_model_role_configs", new=AsyncMock(return_value=self._rows())),
+            patch("src.services.model_config.get_strategy_a_profiles", new=AsyncMock(return_value=self._a_rows())),
+            patch("src.services.model_config.get_strategy_b_roles", new=AsyncMock(return_value=self._b_rows())),
             patch(
                 "src.api.routers.models.provider_status",
                 return_value=[{"provider": "claude", "mode": "SDK (API Key)", "default_model": "claude-3-5-sonnet-latest", "configured": True}],
