@@ -96,7 +96,7 @@ async def fetch_recent_market_data(
     params: list[Any] = [ticker]
 
     params.append(days)
-    conditions.append(f"o.traded_at >= CURRENT_DATE - ${len(params)} * INTERVAL '1 day'")
+    conditions.append(f"o.traded_at >= (CURRENT_DATE - (${len(params)} * INTERVAL '1 day'))::date")
 
     limit_sql = ""
     if limit is not None:
@@ -379,7 +379,7 @@ async def list_model_role_configs(strategy_code: str | None = None) -> list[dict
             """
             SELECT
                 config_key, strategy_code, role, role_label, agent_id,
-                llm_model, persona, execution_order,
+                llm_model, persona, execution_order, is_enabled,
                 to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
             FROM model_role_configs
             WHERE strategy_code = $1
@@ -392,7 +392,7 @@ async def list_model_role_configs(strategy_code: str | None = None) -> list[dict
             """
             SELECT
                 config_key, strategy_code, role, role_label, agent_id,
-                llm_model, persona, execution_order,
+                llm_model, persona, execution_order, is_enabled,
                 to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
             FROM model_role_configs
             ORDER BY strategy_code, execution_order, config_key
@@ -448,18 +448,21 @@ async def update_model_role_config(
     config_key: str,
     llm_model: str,
     persona: str,
+    is_enabled: bool = True,
 ) -> None:
     await execute(
         """
         UPDATE model_role_configs
         SET llm_model = $2,
             persona = $3,
+            is_enabled = $4,
             updated_at = NOW()
         WHERE config_key = $1
         """,
         config_key,
         llm_model,
         persona,
+        is_enabled,
     )
 
 
