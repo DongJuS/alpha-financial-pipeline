@@ -24,6 +24,7 @@ export interface ModelRoleItem {
   llm_model: string;
   persona: string;
   execution_order: number;
+  is_enabled: boolean;
   updated_at: string | null;
 }
 
@@ -39,6 +40,7 @@ export interface ModelRoleUpdateItem {
   config_key: string;
   llm_model: string;
   persona: string;
+  is_enabled: boolean;
 }
 
 async function fetchModelConfig(): Promise<ModelConfigResponse> {
