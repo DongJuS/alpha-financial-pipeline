@@ -237,3 +237,37 @@ S3 Parquet (학습용 아카이브):
 | feature 벡터 | — | ~1GB/년 |
 
 **시기:** 미정. KIS 모의투자 안정화 후 1단계부터 순차 착수. 각 단계는 독립 배포 가능.
+
+### Step 9 — 코드 추상화 (하드코딩 제거 + Factory 패턴)
+
+코드베이스 전체 스캔 결과 50건 이상의 하드코딩 패턴 발견. 운영관리 효율화를 위해 3 Phase로 개선.
+
+**배경 (2026-04-01 CTO×DevOps×DE×Backend×Frontend 5라운드 회의):**
+- 초기 자본 `10,000,000`이 6곳 이상에서 반복
+- LLM 모델명이 6개 파일에서 중복 정의 (버전 업 시 전부 수정 필요)
+- `os.environ.get()` 직접 호출이 Settings와 이중화
+
+**Phase 1 — 상수 통합 (1h):**
+- `src/constants.py` 신규 생성
+- `10,000,000` → `PAPER_TRADING_INITIAL_CAPITAL` (6곳 교체)
+- `CONFIRM_REAL_TRADING_2026` → 동적 연도
+
+**Phase 2 — LLM Factory (1h):**
+- `src/llm/factory.py` 신규 생성
+- predictor, strategy_b_consensus 등에서 Factory 사용
+- LLM 모델명 중복 제거 (6개 파일 → 1곳 관리)
+
+**Phase 3 — 설정 소스 단일화 (30m):**
+- `os.environ.get()` 직접 호출 → `get_settings()` 경유로 교체
+- gen_collector.py, search_agent.py 등
+
+**하지 않는 것 (오버엔지니어링 방지):**
+- Builder 패턴, DI 컨테이너, ABC 추상 클래스 — 현재 규모에서 불필요
+- "추상화가 없어서 버그가 2번 발생한 후에 하라" 원칙
+
+**장기 로드맵 (문제 발생 시):**
+- Strategy 패턴 — 종목 100개 이상 시
+- BaseCollector ABC — 새 데이터 소스 추가 시
+- Helm values → constants 연동 — 멀티 클러스터 시
+
+**시기:** 미정. Phase 1(상수)은 즉시 가능, Phase 2(Factory)는 LLM 모델 변경 시 착수.
