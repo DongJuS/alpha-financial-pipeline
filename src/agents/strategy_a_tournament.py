@@ -41,7 +41,7 @@ class PredictorProfile:
 
 PROFILES = [
     PredictorProfile("predictor_1", "claude-opus-4-6", "가치 투자형"),
-    PredictorProfile("predictor_2", "claude-opus-4-6", "기술적 분석형"),
+    PredictorProfile("predictor_2", "gemini-3.1-pro-preview", "기술적 분석형"),
     PredictorProfile("predictor_3", "gemini-3.1-pro-preview", "모멘텀형"),
     PredictorProfile("predictor_4", "gemini-3.1-pro-preview", "역추세형"),
     PredictorProfile("predictor_5", "claude-haiku-4-5-20251001", "거시경제형"),
