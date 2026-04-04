@@ -99,6 +99,24 @@ async def get_health_overview(
         logger.warning("S3 헬스체크 실패: %s", e)
     services.append(ServiceStatus(name="S3/MinIO", status=s3_status, latency_ms=s3_latency))
 
+    # KIS API check
+    kis_status = "ok"
+    try:
+        from src.utils.config import get_settings as _get_settings
+        from src.services.kis_session import has_kis_credentials
+
+        _settings = _get_settings()
+        if not has_kis_credentials(_settings, "paper"):
+            kis_status = "error"
+    except Exception:
+        kis_status = "error"
+    services.append(ServiceStatus(
+        name="KIS API",
+        status=kis_status,
+        latency_ms=None,
+        details={"message": "KIS_PAPER_APP_KEY 미설정" if kis_status == "error" else "정상"},
+    ))
+
     # Agent summary
     from src.utils.redis_client import check_heartbeat
 
