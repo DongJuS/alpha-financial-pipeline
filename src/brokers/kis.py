@@ -324,10 +324,9 @@ class KISBroker:
             return await self._reject_without_order(order, f"{self.account_scope} 브로커 실행 모드가 지원되지 않습니다: {self.execution_mode}")
 
         if not self.client.is_configured():
-            if self.account_scope == "paper" and self.fallback_broker is not None:
-                logger.warning("KIS paper broker 설정이 없어 internal paper broker로 폴백합니다.")
-                return await self.fallback_broker.execute_order(order)
-            return await self._reject_without_order(order, f"KIS {self.account_scope} 브로커 설정이 없습니다.")
+            return await self._reject_without_order(
+                order, f"KIS_PAPER_APP_KEY 미설정 — KIS API 키를 K8s Secret에 등록하세요."
+            )
 
         return await self._execute_kis_order(order, scope)
 
