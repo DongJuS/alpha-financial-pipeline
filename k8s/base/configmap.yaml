@@ -8,12 +8,10 @@ data:
   APP_URL: http://localhost:8000
   # 인프라 서비스 연결 — Bitnami Helm release명 기준
   # deploy.sh에서 release명을 변경하면 여기도 맞춰야 함
-  DATABASE_URL: postgresql://alpha_user:alpha_pass@alpha-pg-postgresql:5432/alpha_db
+  # ⚠️ DATABASE_URL, S3_ACCESS_KEY, S3_SECRET_KEY는 secrets.yaml에서 관리
   REDIS_URL: redis://alpha-redis-master:6379/0
   S3_ENDPOINT_URL: http://minio:9000
   S3_BUCKET_NAME: alpha-lake
-  S3_ACCESS_KEY: minioadmin
-  S3_SECRET_KEY: minioadmin
   S3_REGION: ap-northeast-2
   GEN_API_URL: http://gen:9999
   LOG_LEVEL: INFO

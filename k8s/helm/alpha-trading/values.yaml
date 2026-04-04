@@ -78,6 +78,20 @@ ingress:
   host: alpha.local
   tls: false
 
+# ── Secrets (배포 시 반드시 오버라이드) ──────────────────────────────
+# helm install -f my-secrets.yaml 또는 --set secrets.postgres_password=xxx
+secrets:
+  jwt_secret: "change-this-to-a-long-random-secret-in-production"
+  postgres_password: "change-me"
+  s3_access_key: "change-me"
+  s3_secret_key: "change-me"
+  kis_app_key: ""
+  kis_app_secret: ""
+  kis_account_number: ""
+  kis_is_paper_trading: "true"
+  telegram_bot_token: ""
+  telegram_chat_id: ""
+
 # ── Pod Disruption Budget ────────────────────────────────────────────
 pdb:
   api:
