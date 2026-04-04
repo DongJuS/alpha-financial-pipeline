@@ -41,7 +41,7 @@ SUPPORTED_MODEL_OPTIONS = [
 
 DEFAULT_MODEL_ROLE_CONFIGS = [
     {"config_key": "strategy_a_predictor_1", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 1", "agent_id": "predictor_1", "llm_model": "claude-opus-4-6", "persona": "가치 투자형", "execution_order": 1},
-    {"config_key": "strategy_a_predictor_2", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 2", "agent_id": "predictor_2", "llm_model": "claude-opus-4-6", "persona": "기술적 분석형", "execution_order": 2},
+    {"config_key": "strategy_a_predictor_2", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 2", "agent_id": "predictor_2", "llm_model": "gemini-3.1-pro-preview", "persona": "기술적 분석형", "execution_order": 2},
     {"config_key": "strategy_a_predictor_3", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 3", "agent_id": "predictor_3", "llm_model": "gemini-3.1-pro-preview", "persona": "모멘텀형", "execution_order": 3},
     {"config_key": "strategy_a_predictor_4", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 4", "agent_id": "predictor_4", "llm_model": "gemini-3.1-pro-preview", "persona": "역추세형", "execution_order": 4},
     {"config_key": "strategy_a_predictor_5", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 5", "agent_id": "predictor_5", "llm_model": "claude-haiku-4-5-20251001", "persona": "거시경제형", "execution_order": 5},
@@ -63,14 +63,20 @@ async def ensure_model_role_configs() -> list[dict]:
     return await list_model_role_configs()
 
 
-async def get_strategy_a_profiles() -> list[dict]:
+async def get_strategy_a_profiles(*, enabled_only: bool = True) -> list[dict]:
     rows = await ensure_model_role_configs()
-    return [row for row in rows if row["strategy_code"] == "A"]
+    return [
+        row for row in rows
+        if row["strategy_code"] == "A" and (not enabled_only or row.get("is_enabled", True))
+    ]
 
 
-async def get_strategy_b_roles() -> list[dict]:
+async def get_strategy_b_roles(*, enabled_only: bool = True) -> list[dict]:
     rows = await ensure_model_role_configs()
-    return [row for row in rows if row["strategy_code"] == "B"]
+    return [
+        row for row in rows
+        if row["strategy_code"] == "B" and (not enabled_only or row.get("is_enabled", True))
+    ]
 
 
 async def update_model_role_configs(items: list[dict]) -> list[dict]:
@@ -87,6 +93,7 @@ async def update_model_role_configs(items: list[dict]) -> list[dict]:
             config_key=item["config_key"],
             llm_model=item["llm_model"],
             persona=persona,
+            is_enabled=bool(item.get("is_enabled", True)),
         )
     return await ensure_model_role_configs()
 
