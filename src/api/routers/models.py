@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 from src.api.deps import get_admin_user
 from src.services.model_config import (
     SUPPORTED_MODEL_OPTIONS,
-    ensure_model_role_configs,
     provider_status,
     update_model_role_configs,
 )
