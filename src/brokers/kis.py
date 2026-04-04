@@ -325,7 +325,7 @@ class KISBroker:
 
         if not self.client.is_configured():
             return await self._reject_without_order(
-                order, f"KIS_PAPER_APP_KEY 미설정 — KIS API 키를 K8s Secret에 등록하세요."
+                order, "KIS_PAPER_APP_KEY 미설정 — KIS API 키를 K8s Secret에 등록하세요."
             )
 
         return await self._execute_kis_order(order, scope)
