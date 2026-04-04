@@ -258,6 +258,8 @@ CREATE_TABLES: list[str] = [
     ALTER TABLE model_role_configs
         ADD COLUMN IF NOT EXISTS execution_order INTEGER DEFAULT 1;
     ALTER TABLE model_role_configs
+        ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+    ALTER TABLE model_role_configs
         DROP CONSTRAINT IF EXISTS model_role_configs_strategy_code_check;
     ALTER TABLE model_role_configs
         ADD CONSTRAINT model_role_configs_strategy_code_check
