@@ -29,6 +29,7 @@ function toFormRows(rows: ModelRoleItem[]): ModelRoleForm {
         config_key: row.config_key,
         llm_model: row.llm_model,
         persona: row.persona,
+        is_enabled: row.is_enabled,
       },
     ])
   );
@@ -45,18 +46,44 @@ function RoleEditor({
   onChange: (configKey: string, next: Partial<ModelRoleUpdateItem>) => void;
   supportedModels: Array<{ model: string; label: string; provider: string; description: string }>;
 }) {
+  const isEnabled = form?.is_enabled ?? row.is_enabled;
+
   return (
     <article
-      className="rounded-[24px] border p-4"
-      style={{ background: "var(--bg-elevated)", borderColor: "var(--line-soft)" }}
+      className="rounded-[24px] border p-4 transition-opacity"
+      style={{
+        background: "var(--bg-elevated)",
+        borderColor: isEnabled ? "var(--line-soft)" : "var(--loss-bg)",
+        opacity: isEnabled ? 1 : 0.5,
+      }}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
-          {row.role_label}
-        </h3>
-        <span className="chip">{row.agent_id}</span>
-        <span className="chip">{row.strategy_code === "A" ? "Strategy A" : "Strategy B"}</span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
+            {row.role_label}
+          </h3>
+          <span className="chip">{row.agent_id}</span>
+          <span className="chip">{row.strategy_code === "A" ? "Strategy A" : "Strategy B"}</span>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={isEnabled}
+          onClick={() => onChange(row.config_key, { is_enabled: !isEnabled })}
+          className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors"
+          style={{ background: isEnabled ? "var(--green)" : "var(--text-tertiary)" }}
+        >
+          <span
+            className="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform"
+            style={{ transform: isEnabled ? "translateX(1.25rem)" : "translateX(0.125rem)", marginTop: "0.125rem" }}
+          />
+        </button>
       </div>
+      {!isEnabled && (
+        <p className="mt-1 text-xs font-semibold" style={{ color: "var(--loss)" }}>
+          비활성 — 다음 사이클부터 실행에서 제외됩니다.
+        </p>
+      )}
       <p className="mt-2 text-xs" style={{ color: "var(--text-secondary)" }}>
         {ROLE_COPY[row.config_key] ?? "이 역할의 모델과 페르소나를 운영합니다."}
       </p>
@@ -116,6 +143,7 @@ export default function Models() {
         config_key: configKey,
         llm_model: next.llm_model ?? prev[configKey]?.llm_model ?? "",
         persona: next.persona ?? prev[configKey]?.persona ?? "",
+        is_enabled: next.is_enabled ?? prev[configKey]?.is_enabled ?? true,
       },
     }));
   }
