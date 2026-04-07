@@ -16,6 +16,8 @@
     "default_source": "yfinance",
     "default_range": "10y",
     "default_train_ratio": 0.7,
+    "adaptive_ratios": [0.5, 0.6, 0.7, 0.8],
+    "bandit_epsilon": 0.2,
     "min_history_points": 40
   },
   "evaluation": {
