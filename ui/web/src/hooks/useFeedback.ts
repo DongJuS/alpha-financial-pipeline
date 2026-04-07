@@ -53,6 +53,25 @@ export interface StrategyComparison {
   ranking: { strategy: string; total_return: number; rank: number }[];
 }
 
+export interface BanditArmStats {
+  ratio: number;
+  pulls: number;
+  total_reward: number;
+  mean_reward: number;
+  last_reward: number | null;
+  last_pulled_at: string | null;
+}
+
+export interface BanditSnapshot {
+  ticker: string;
+  profile_id: string;
+  epsilon: number;
+  ratios: number[];
+  best_ratio: number | null;
+  updated_at: string | null;
+  arms: Record<string, BanditArmStats>;
+}
+
 export interface RetrainResultItem {
   ticker: string;
   success: boolean;
@@ -61,6 +80,8 @@ export interface RetrainResultItem {
   walk_forward_passed: boolean;
   deployed: boolean;
   error: string | null;
+  selected_train_ratio: number | null;
+  bandit_snapshot: BanditSnapshot | null;
 }
 
 export interface RetrainBatchResponse {

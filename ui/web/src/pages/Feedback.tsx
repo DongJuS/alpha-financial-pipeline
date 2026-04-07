@@ -545,11 +545,77 @@ function CycleTab() {
           </p>
         )}
 
+        {retrainTicker.data?.success && retrainTicker.data.selected_train_ratio != null && (
+          <div className="mt-1 flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-secondary)" }}>
+            <span className="rounded-full px-2 py-0.5" style={{ background: "var(--bg-secondary)" }}>
+              선택된 학습 비율: <strong style={{ color: "var(--brand-500)" }}>{retrainTicker.data.selected_train_ratio.toFixed(2)}</strong>
+            </span>
+            {retrainTicker.data.bandit_snapshot?.best_ratio != null && (
+              <span className="rounded-full px-2 py-0.5" style={{ background: "var(--bg-secondary)" }}>
+                밴딧 best ratio: <strong>{retrainTicker.data.bandit_snapshot.best_ratio.toFixed(2)}</strong>
+              </span>
+            )}
+            {retrainTicker.data.bandit_snapshot && (
+              <span className="rounded-full px-2 py-0.5" style={{ background: "var(--bg-secondary)" }}>
+                ε={retrainTicker.data.bandit_snapshot.epsilon.toFixed(2)}
+              </span>
+            )}
+          </div>
+        )}
+
+        {retrainTicker.data?.success && retrainTicker.data.bandit_snapshot?.arms && (
+          <details className="mt-2 text-[11px]" style={{ color: "var(--text-secondary)" }}>
+            <summary className="cursor-pointer font-semibold" style={{ color: "var(--text-primary)" }}>
+              펼쳐보기 (밴딧 arms)
+            </summary>
+            <div className="mt-2 overflow-x-auto rounded-2xl p-2" style={{ background: "var(--bg-secondary)" }}>
+              <table className="w-full text-left">
+                <thead>
+                  <tr style={{ color: "var(--text-secondary)" }}>
+                    <th className="pr-3 font-semibold">ratio</th>
+                    <th className="pr-3 font-semibold text-right">pulls</th>
+                    <th className="font-semibold text-right">mean reward</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(retrainTicker.data.bandit_snapshot.arms).map(([key, arm]) => (
+                    <tr key={key}>
+                      <td className="pr-3 font-mono" style={{ color: "var(--text-primary)" }}>{arm.ratio.toFixed(2)}</td>
+                      <td className="pr-3 font-mono text-right" style={{ color: "var(--text-primary)" }}>{arm.pulls}</td>
+                      <td className="font-mono text-right" style={{ color: "var(--text-primary)" }}>{arm.mean_reward.toFixed(3)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        )}
+
         {retrainAll.data && (
           <div className="mt-3 rounded-2xl p-3" style={{ background: "var(--bg-secondary)" }}>
             <p className="text-xs font-semibold" style={{ color: "var(--green)" }}>
               전체 재학습 완료: {retrainAll.data.successful}/{retrainAll.data.total_tickers} 성공, {retrainAll.data.failed} 실패
             </p>
+            {Array.isArray(retrainAll.data.results) &&
+              retrainAll.data.results.some((r) => r.selected_train_ratio != null) && (
+                <div className="mt-2">
+                  <p className="text-[11px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+                    사이클 선택 비율
+                  </p>
+                  <div
+                    className="mt-1 max-h-40 overflow-y-auto text-[11px]"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {retrainAll.data.results
+                      .filter((r) => r.selected_train_ratio != null)
+                      .map((r) => (
+                        <div key={r.ticker} className="font-mono">
+                          {r.ticker}: ratio=<strong style={{ color: "var(--brand-500)" }}>{r.selected_train_ratio!.toFixed(2)}</strong>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
           </div>
         )}
       </div>
