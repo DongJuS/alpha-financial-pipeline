@@ -94,6 +94,8 @@ class RetrainResultItem(BaseModel):
     walk_forward_passed: bool = False
     deployed: bool = False
     error: Optional[str] = None
+    selected_train_ratio: Optional[float] = None
+    bandit_snapshot: Optional[dict[str, Any]] = None
 
 
 class RetrainBatchResponse(BaseModel):
@@ -309,6 +311,8 @@ async def retrain_ticker(ticker: str) -> RetrainResultItem:
         walk_forward_passed=outcome.walk_forward_passed,
         deployed=outcome.deployed,
         error=outcome.error,
+        selected_train_ratio=outcome.selected_train_ratio,
+        bandit_snapshot=outcome.bandit_snapshot,
     )
 
 
@@ -326,6 +330,8 @@ async def retrain_all() -> RetrainBatchResponse:
             walk_forward_passed=outcome.walk_forward_passed,
             deployed=outcome.deployed,
             error=outcome.error,
+            selected_train_ratio=outcome.selected_train_ratio,
+            bandit_snapshot=outcome.bandit_snapshot,
         )
         for outcome in outcomes
     ]
