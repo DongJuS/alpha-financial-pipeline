@@ -22,6 +22,12 @@ from typing import Any, Sequence
 
 from src.agents.rl_experiment_manager import RLExperimentManager
 from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
+from src.agents.rl_split_bandit import (
+    DEFAULT_EPSILON,
+    DEFAULT_RATIOS,
+    RLSplitBandit,
+    reward_from_walk_forward,
+)
 from src.agents.rl_trading import (
     RLDataset,
     RLDatasetBuilder,
@@ -64,6 +70,8 @@ class RetrainOutcome:
     active_policy_before: str | None = None
     active_policy_after: str | None = None
     error: str | None = None
+    selected_train_ratio: float | None = None
+    bandit_snapshot: dict[str, Any] | None = None
 
 
 class _WalkForwardTrainerAdapter:
@@ -100,6 +108,7 @@ class RLContinuousImprover:
         experiment_manager: RLExperimentManager | None = None,
         policy_store: RLPolicyStoreV2 | None = None,
         walk_forward_evaluator: WalkForwardEvaluator | None = None,
+        split_bandit: RLSplitBandit | None = None,
     ) -> None:
         self._dataset_builder = dataset_builder
         self._experiment_manager = experiment_manager or RLExperimentManager()
@@ -109,6 +118,9 @@ class RLContinuousImprover:
             expanding_window=True,
             consistency_threshold=0.6,
         )
+        # 주입형 bandit이 우선. 미주입 시 profile별로 lazy 생성해 캐시한다.
+        self._split_bandit = split_bandit
+        self._bandit_cache: dict[str, RLSplitBandit] = {}
 
     async def retrain_ticker(
         self,
@@ -185,6 +197,24 @@ class RLContinuousImprover:
             deployed=deployed,
         )
 
+        # 이번 사이클에서 bandit이 고른 비율과 스냅샷 — /feedback 응답에 노출
+        selected_ratio: float | None = None
+        bandit_snapshot: dict[str, Any] | None = None
+        try:
+            selected_ratio = float(best.split_metadata.train_ratio)
+        except Exception:
+            selected_ratio = None
+        try:
+            bandit = (
+                self._split_bandit
+                if self._split_bandit is not None
+                else self._bandit_cache.get(best.profile_id)
+            )
+            if bandit is not None:
+                bandit_snapshot = bandit.snapshot(canonical_ticker, best.profile_id)
+        except Exception as exc:
+            logger.debug("bandit snapshot 수집 실패: %s", exc)
+
         return RetrainOutcome(
             ticker=canonical_ticker,
             success=True,
@@ -197,6 +227,8 @@ class RLContinuousImprover:
             active_policy_before=active_before,
             active_policy_after=active_after,
             error=None if deployed or not errors else "; ".join(errors),
+            selected_train_ratio=selected_ratio,
+            bandit_snapshot=bandit_snapshot,
         )
 
     async def retrain_all(
@@ -245,7 +277,20 @@ class RLContinuousImprover:
     ) -> CandidateResult:
         profile = self._experiment_manager.load_profile(profile_id)
         trainer = self._trainer_for_profile(profile)
-        train_ratio = float(profile.get("dataset", {}).get("default_train_ratio", 0.7))
+        bandit = self._bandit_for_profile(profile_id, profile)
+
+        fallback_ratio = float(profile.get("dataset", {}).get("default_train_ratio", 0.7))
+        try:
+            train_ratio = float(bandit.select_ratio(dataset.ticker, profile_id))
+        except Exception as exc:
+            logger.warning(
+                "bandit select 실패, fallback %.2f 사용 [%s][%s]: %s",
+                fallback_ratio,
+                dataset.ticker,
+                profile_id,
+                exc,
+            )
+            train_ratio = fallback_ratio
 
         run_id = self._experiment_manager.create_run(
             dataset.ticker,
@@ -267,6 +312,18 @@ class RLContinuousImprover:
         walk_forward = self._run_walk_forward(dataset, trainer)
         self._write_walk_forward(run_dir, walk_forward)
 
+        # bandit 보상 업데이트 — 실패해도 학습 자체는 성공으로 유지
+        try:
+            reward = reward_from_walk_forward(
+                consistency_score=walk_forward.consistency_score,
+                excess_return_pct=artifact.evaluation.excess_return_pct,
+            )
+            bandit.update(dataset.ticker, profile_id, train_ratio, reward)
+        except Exception as exc:
+            logger.warning(
+                "bandit update 실패 [%s][%s]: %s", dataset.ticker, profile_id, exc
+            )
+
         return CandidateResult(
             profile_id=profile_id,
             run_id=run_id,
@@ -274,6 +331,22 @@ class RLContinuousImprover:
             split_metadata=split_metadata,
             walk_forward=walk_forward,
         )
+
+    def _bandit_for_profile(
+        self, profile_id: str, profile: dict[str, Any]
+    ) -> RLSplitBandit:
+        """주입형 bandit 우선. 미주입 시 profile별로 lazy 생성해 캐시한다."""
+        if self._split_bandit is not None:
+            return self._split_bandit
+        cached = self._bandit_cache.get(profile_id)
+        if cached is not None:
+            return cached
+        dataset_cfg = profile.get("dataset", {})
+        ratios = dataset_cfg.get("adaptive_ratios") or list(DEFAULT_RATIOS)
+        epsilon = float(dataset_cfg.get("bandit_epsilon", DEFAULT_EPSILON))
+        bandit = RLSplitBandit(ratios=ratios, epsilon=epsilon)
+        self._bandit_cache[profile_id] = bandit
+        return bandit
 
     def _builder_for_profile(self, profile_id: str) -> RLDatasetBuilder:
         profile = self._experiment_manager.load_profile(profile_id)
