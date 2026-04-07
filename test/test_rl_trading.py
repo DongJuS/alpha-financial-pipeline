@@ -158,6 +158,57 @@ class RLTrainerCoreTest(unittest.TestCase):
         self.assertEqual(metrics.total_return_pct, 0.0)
         self.assertFalse(metrics.approved)
 
+    def test_train_with_metadata_rejects_ratio_below_half(self) -> None:
+        closes = _uptrend_closes(120)
+        dataset = RLDataset(
+            ticker="005930",
+            closes=closes,
+            timestamps=[f"2026-01-{(i % 28) + 1:02d}" for i in range(len(closes))],
+        )
+        trainer = TabularQTrainer(episodes=5)
+        with self.assertRaises(ValueError):
+            trainer.train_with_metadata(dataset, train_ratio=0.4)
+
+    def test_train_with_metadata_rejects_ratio_one_or_above(self) -> None:
+        closes = _uptrend_closes(120)
+        dataset = RLDataset(
+            ticker="005930",
+            closes=closes,
+            timestamps=[f"2026-01-{(i % 28) + 1:02d}" for i in range(len(closes))],
+        )
+        trainer = TabularQTrainer(episodes=5)
+        with self.assertRaises(ValueError):
+            trainer.train_with_metadata(dataset, train_ratio=1.0)
+
+    def test_train_with_metadata_records_actual_split_sizes(self) -> None:
+        closes = _uptrend_closes(120)
+        dataset = RLDataset(
+            ticker="005930",
+            closes=closes,
+            timestamps=[f"2026-01-{(i % 28) + 1:02d}" for i in range(len(closes))],
+        )
+        trainer = TabularQTrainer(episodes=5)
+        for ratio in (0.6, 0.8):
+            _, meta = trainer.train_with_metadata(dataset, train_ratio=ratio)
+            self.assertAlmostEqual(meta.train_ratio, ratio)
+            # train+test 합이 전체 길이와 일치해야 한다
+            self.assertEqual(meta.train_size + meta.test_size, len(closes))
+            # lookback+5 하한이 걸려도 train_size는 dataset 내부여야 한다
+            self.assertGreater(meta.train_size, 0)
+            self.assertGreater(meta.test_size, 0)
+
+    def test_train_with_metadata_rejects_dataset_too_short(self) -> None:
+        # lookback=6, lookback+10=16 미만이면 ValueError
+        closes = _uptrend_closes(12)
+        dataset = RLDataset(
+            ticker="005930",
+            closes=closes,
+            timestamps=[f"2026-01-{(i % 28) + 1:02d}" for i in range(len(closes))],
+        )
+        trainer = TabularQTrainer(episodes=5, lookback=6)
+        with self.assertRaises(ValueError):
+            trainer.train_with_metadata(dataset, train_ratio=0.7)
+
 
 class RLDatasetBuilderTest(unittest.IsolatedAsyncioTestCase):
     async def test_build_dataset_supports_tick_interval_and_second_timestamps(self) -> None:
