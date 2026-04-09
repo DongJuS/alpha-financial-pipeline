@@ -11,6 +11,7 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.constants import PAPER_TRADING_INITIAL_CAPITAL
 from src.utils.secret_validation import is_placeholder_secret
 
 
@@ -118,7 +119,7 @@ class Settings(BaseSettings):
     )
 
     # ── Virtual Broker 시뮬레이션 설정 ────────────────────────────────────
-    virtual_initial_capital: int = Field(default=10_000_000, alias="VIRTUAL_INITIAL_CAPITAL")
+    virtual_initial_capital: int = Field(default=PAPER_TRADING_INITIAL_CAPITAL, alias="VIRTUAL_INITIAL_CAPITAL")
     virtual_slippage_bps: int = Field(default=5, ge=0, le=100, alias="VIRTUAL_SLIPPAGE_BPS")
     virtual_fill_delay_max_sec: float = Field(default=2.0, ge=0.0, le=30.0, alias="VIRTUAL_FILL_DELAY_MAX_SEC")
     virtual_partial_fill_enabled: bool = Field(default=False, alias="VIRTUAL_PARTIAL_FILL_ENABLED")
