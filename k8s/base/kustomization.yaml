@@ -6,7 +6,8 @@ namespace: alpha-trading
 resources:
   - namespace.yaml
   - configmap.yaml
-  - secrets.yaml
+  # app-secret 은 SOPS 로 관리: k8s/secrets/app-secret.enc.yaml
+  # deploy-local.sh 가 sops --decrypt | kubectl apply 단계로 직접 적용한다.
   # 인프라(postgres/redis/minio)는 Bitnami Helm chart로 배포.
   # k8s/helm/bitnami-values/ 참조.
   - api.yaml

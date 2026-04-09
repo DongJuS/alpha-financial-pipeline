@@ -4,7 +4,14 @@
 auth:
   database: alpha_db
   username: alpha_user
-  password: alpha_pass
+  # password: SOPS 파일(k8s/secrets/app-secret.enc.yaml)의 DATABASE_URL 과 동기화 필수.
+  # 최초 install 예:
+  #   helm install postgresql bitnami/postgresql -n alpha-trading -f postgres-values.yaml \
+  #     --set auth.password="$(sops --decrypt k8s/secrets/app-secret.enc.yaml | yq '.stringData.POSTGRES_PASSWORD')"
+  # 변경 시: postgres pod에서 ALTER USER alpha_user PASSWORD '<new>' 실행 후
+  #         k8s/scripts/secrets-edit.sh 로 SOPS 파일의 DATABASE_URL 동시 갱신,
+  #         이어서 k8s/scripts/deploy-local.sh 재실행.
+  # 평문 password 커밋은 anti-pattern (drift 발생 원인이었음, 2026-04-07 #102 deploy 사고).
 
 primary:
   persistence:
