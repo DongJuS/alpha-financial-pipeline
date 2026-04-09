@@ -296,7 +296,14 @@ class OrchestratorAgent:
                     len(all_predictions),
                 )
                 await self._maybe_update_dynamic_weights(list(all_predictions.keys()))
+                self._last_blend_fallback = None
                 blended = self._blend_nway_predictions(all_predictions)
+                if self._last_blend_fallback:
+                    try:
+                        from src.utils.db_logger import log_event
+                        await log_event("blend_fallback", self._last_blend_fallback)
+                    except Exception:
+                        pass
                 if not blended and collected_count > 0:
                     logger.warning(
                         "Strategies produced %d predictions but blending yielded 0 signals — "
@@ -551,6 +558,12 @@ class OrchestratorAgent:
                 sorted(excluded),
                 len(active_predictions),
             )
+            self._last_blend_fallback = {
+                "excluded": sorted(excluded),
+                "active": sorted(active_predictions.keys()),
+                "active_count": len(active_predictions),
+                "total_strategies": len(all_predictions),
+            }
 
         # 활성 전략만으로 가중치 재정규화
         effective_weights = self._normalize_active_weights(
