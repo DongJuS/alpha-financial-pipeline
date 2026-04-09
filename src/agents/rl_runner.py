@@ -49,11 +49,13 @@ class RLRunner:
             registry = self._store.load_registry()
         except Exception as e:
             logger.error("RLRunner: 정책 레지스트리 로드 실패: %s", e)
+            await self._log_skip("registry_load_failed", len(tickers), exc=e)
             return []
 
         active_map = registry.list_active_policies()
         if not active_map:
             logger.info("RLRunner: 활성 정책이 없습니다. 건너뜁니다.")
+            await self._log_skip("no_active_policy", len(tickers))
             return []
 
         signals: list[PredictionSignal] = []
@@ -62,6 +64,7 @@ class RLRunner:
             policy_id = find_in_map(ticker, active_map)
             if not policy_id:
                 logger.debug("RLRunner: %s에 활성 정책 없음, 건너뜁니다.", ticker)
+                await self._log_skip("no_ticker_policy", 1, ticker=ticker)
                 continue
 
             # DB 조회용 raw 코드 (ohlcv_daily는 instrument_id/raw_code 양방향 매칭)
@@ -73,6 +76,7 @@ class RLRunner:
                     signals.append(signal)
             except Exception as e:
                 logger.warning("RLRunner: %s 추론 실패: %s", ticker, e)
+                await self._log_skip("infer_exception", 1, ticker=ticker, exc=e)
 
         logger.info("RLRunner: %d/%d 티커에서 %d 신호 생성", len(signals), len(tickers), len(signals))
         return signals
@@ -99,17 +103,20 @@ class RLRunner:
             artifact = self._store.load_policy(policy_id, signal_ticker)
         if artifact is None:
             logger.warning("RLRunner: 정책 파일 로드 실패: %s/%s", policy_id, db_ticker)
+            await self._log_skip("policy_load_failed", 1, ticker=signal_ticker)
             return None
 
         # 최근 OHLCV 데이터 조회 (DB는 raw 코드 사용)
         candles = await fetch_recent_ohlcv(ticker=db_ticker, days=60)
         if not candles or len(candles) < _MIN_CLOSES_FOR_INFERENCE:
+            candle_count = len(candles) if candles else 0
             logger.warning(
                 "RLRunner: %s 캔들 데이터 부족 (%d건, 최소 %d건 필요)",
                 db_ticker,
-                len(candles) if candles else 0,
+                candle_count,
                 _MIN_CLOSES_FOR_INFERENCE,
             )
+            await self._log_skip("insufficient_candles", 1, ticker=signal_ticker)
             return None
 
         closes = [float(c["close"]) for c in candles]
@@ -139,6 +146,27 @@ class RLRunner:
             ),
             trading_date=date.today(),
         )
+
+    @staticmethod
+    async def _log_skip(
+        reason: str,
+        ticker_count: int,
+        *,
+        ticker: str | None = None,
+        exc: Exception | None = None,
+    ) -> None:
+        """RL skip 이벤트를 event_logs에 기록한다."""
+        try:
+            from src.utils.db_logger import log_event
+            data: dict = {"reason": reason, "ticker_count": ticker_count}
+            if ticker:
+                data["ticker"] = ticker
+            if exc:
+                data["exc_type"] = type(exc).__name__
+                data["exc_msg"] = str(exc)[:200]
+            await log_event("rl_skip", data)
+        except Exception:
+            pass
 
     @staticmethod
     def _map_action_to_signal(action: str) -> str:
