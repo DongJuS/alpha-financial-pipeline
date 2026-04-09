@@ -24,6 +24,15 @@ primary:
     limits:
       cpu: "1"
       memory: 1Gi
+  # 신규 설치 시 alpha_gen_db (gen 시뮬레이터 전용 DB) 자동 생성.
+  # gen_collector 가 import 시점에 DATABASE_URL 을 이 DB 로 rewrite 한다.
+  # 이미 설치된 클러스터에는 helm upgrade 만으로는 적용되지 않으니
+  # k8s/overlays/gen/kustomization.yaml 의 헤더 코멘트에 적힌 manual psql
+  # 명령으로 한 번만 생성하면 된다.
+  initdb:
+    scripts:
+      00_create_gen_db.sql: |
+        CREATE DATABASE alpha_gen_db OWNER alpha_user;
 
 metrics:
   enabled: true

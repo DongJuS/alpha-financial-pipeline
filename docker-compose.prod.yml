@@ -76,14 +76,20 @@ services:
           memory: 1G
           cpus: "1.0"
 
-  # gen/gen-collector는 프로덕션에서 비활성화 (테스트 전용)
+  # gen/gen-collector는 프로덕션에서 비활성화 (테스트 전용).
+  # 활성화 시: docker compose -f ... --profile gen up
+  # gen 데이터는 alpha_gen_db (별도 DB) 에만 쓰이며, 실 alpha_db 와 격리된다.
   gen:
     profiles:
-      - gen-testing
+      - gen
 
   gen-collector:
     profiles:
-      - gen-testing
+      - gen
+    environment:
+      # prod 는 POSTGRES_PASSWORD 를 외부 주입받는다 (env_file/secret).
+      # dev override 의 하드코딩된 alpha_pass 를 덮어쓴다.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alpha_user}:${POSTGRES_PASSWORD}@postgres:5432/alpha_gen_db
 
   ui:
     build:
