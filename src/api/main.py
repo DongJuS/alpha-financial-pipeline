@@ -6,7 +6,6 @@ src/api/main.py — FastAPI 애플리케이션 진입점
 """
 
 import asyncio
-import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -171,9 +170,7 @@ app = FastAPI(
 # ─── CORS ────────────────────────────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get(
-        "CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"
-    ).split(","),
+    allow_origins=settings.cors_origins.split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

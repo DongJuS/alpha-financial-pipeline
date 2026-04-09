@@ -17,6 +17,7 @@ import traceback as tb_module
 from datetime import datetime, timezone
 from typing import Any
 
+from src.utils.config import get_settings as _get_settings
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -25,8 +26,8 @@ logger = get_logger(__name__)
 
 BUFFER_SIZE = 50       # 이 수만큼 모이면 flush
 FLUSH_INTERVAL = 10.0  # 초마다 flush
-POD_NAME = os.environ.get("HOSTNAME", os.environ.get("POD_NAME", "unknown"))
-SOURCE = os.environ.get("APP_SOURCE", "worker")  # worker, api, gen, gen-collector
+POD_NAME = os.environ.get("HOSTNAME", _get_settings().pod_name)
+SOURCE = _get_settings().app_source
 
 
 # ── 버퍼 ─────────────────────────────────────────────────────────────────

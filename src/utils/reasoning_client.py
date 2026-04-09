@@ -8,7 +8,6 @@ backend from CLI subprocess to SDK later without changing the interface.
 import asyncio
 import json
 import logging
-import os
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -25,7 +24,8 @@ class ReasoningClient:
             model: Claude model to use (e.g., "claude-3-5-sonnet-latest")
         """
         self.model = model
-        self.api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        from src.utils.config import get_settings
+        self.api_key = get_settings().anthropic_api_key
 
     async def reason(
         self,
