@@ -1049,6 +1049,51 @@ CREATE_TABLES: list[str] = [
     ALTER TABLE broker_orders
         DROP CONSTRAINT IF EXISTS broker_orders_signal_source_check;
     """,
+
+    # ── 백테스트 테이블 ──────────────────────────────────────────────────
+
+    # 23. 백테스트 실행 이력
+    """
+    CREATE TABLE IF NOT EXISTS backtest_runs (
+        id                   BIGSERIAL PRIMARY KEY,
+        ticker               VARCHAR(10) NOT NULL,
+        strategy             VARCHAR(10) NOT NULL,
+        train_start          DATE NOT NULL,
+        train_end            DATE NOT NULL,
+        test_start           DATE NOT NULL,
+        test_end             DATE NOT NULL,
+        initial_capital      INTEGER NOT NULL,
+        commission_rate_pct  NUMERIC(6,4) NOT NULL,
+        tax_rate_pct         NUMERIC(6,4) NOT NULL,
+        slippage_bps         INTEGER NOT NULL,
+        total_return_pct     NUMERIC(10,4),
+        annual_return_pct    NUMERIC(10,4),
+        sharpe_ratio         NUMERIC(10,4),
+        max_drawdown_pct     NUMERIC(10,4),
+        win_rate             NUMERIC(6,4),
+        total_trades         INTEGER,
+        avg_holding_days     NUMERIC(8,2),
+        baseline_return_pct  NUMERIC(10,4),
+        excess_return_pct    NUMERIC(10,4),
+        created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    """,
+
+    # 24. 백테스트 일별 스냅샷
+    """
+    CREATE TABLE IF NOT EXISTS backtest_daily (
+        id               BIGSERIAL PRIMARY KEY,
+        run_id           BIGINT NOT NULL REFERENCES backtest_runs(id),
+        date             DATE NOT NULL,
+        close_price      NUMERIC(15,4) NOT NULL,
+        cash             NUMERIC(15,2) NOT NULL,
+        position_qty     INTEGER NOT NULL DEFAULT 0,
+        position_value   NUMERIC(15,2) NOT NULL DEFAULT 0,
+        portfolio_value  NUMERIC(15,2) NOT NULL,
+        daily_return_pct NUMERIC(10,6),
+        UNIQUE (run_id, date)
+    );
+    """,
 ]
 
 DROP_TABLES_SQL = """
