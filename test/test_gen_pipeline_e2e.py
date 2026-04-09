@@ -225,6 +225,139 @@ class TestGenCollectorPipeline(unittest.IsolatedAsyncioTestCase):
         await agent.close()
 
 
+class TestGenCollectorDatabaseIsolation(unittest.TestCase):
+    """gen_collector 가 DATABASE_URL 의 database 부분을 alpha_gen_db 로
+    강제 전환하는지 검증한다. 회귀 가드: gen 데이터가 실 alpha_db 에
+    오염되는 사고를 막기 위함 (2026-04-08, gen-data-isolation)."""
+
+    def test_rewrites_alpha_db_to_alpha_gen_db(self):
+        from src.agents.gen_collector import _rewrite_database_url_to_gen_db
+        import os
+        prev = os.environ.get("DATABASE_URL")
+        prev_disabled = os.environ.get("GEN_DB_REWRITE_DISABLED")
+        os.environ.pop("GEN_DB_REWRITE_DISABLED", None)
+        try:
+            os.environ["DATABASE_URL"] = "postgresql://u:p@host:5432/alpha_db"
+            info = _rewrite_database_url_to_gen_db()
+            self.assertEqual(os.environ["DATABASE_URL"],
+                             "postgresql://u:p@host:5432/alpha_gen_db")
+            self.assertIsNotNone(info)
+            self.assertIn("alpha_gen_db", info)
+        finally:
+            if prev is not None:
+                os.environ["DATABASE_URL"] = prev
+            else:
+                os.environ.pop("DATABASE_URL", None)
+            if prev_disabled is not None:
+                os.environ["GEN_DB_REWRITE_DISABLED"] = prev_disabled
+
+    def test_noop_when_already_gen_db(self):
+        from src.agents.gen_collector import _rewrite_database_url_to_gen_db
+        import os
+        prev = os.environ.get("DATABASE_URL")
+        prev_disabled = os.environ.get("GEN_DB_REWRITE_DISABLED")
+        os.environ.pop("GEN_DB_REWRITE_DISABLED", None)
+        try:
+            os.environ["DATABASE_URL"] = "postgresql://u:p@host:5432/alpha_gen_db"
+            info = _rewrite_database_url_to_gen_db()
+            self.assertIsNone(info, "이미 gen DB 이면 rewrite 정보가 없어야 함")
+            self.assertEqual(os.environ["DATABASE_URL"],
+                             "postgresql://u:p@host:5432/alpha_gen_db")
+        finally:
+            if prev is not None:
+                os.environ["DATABASE_URL"] = prev
+            else:
+                os.environ.pop("DATABASE_URL", None)
+            if prev_disabled is not None:
+                os.environ["GEN_DB_REWRITE_DISABLED"] = prev_disabled
+
+    def test_disabled_via_env_flag(self):
+        from src.agents.gen_collector import _rewrite_database_url_to_gen_db
+        import os
+        prev = os.environ.get("DATABASE_URL")
+        prev_disabled = os.environ.get("GEN_DB_REWRITE_DISABLED")
+        try:
+            os.environ["DATABASE_URL"] = "postgresql://u:p@host:5432/alpha_db"
+            os.environ["GEN_DB_REWRITE_DISABLED"] = "1"
+            info = _rewrite_database_url_to_gen_db()
+            self.assertIsNone(info)
+            self.assertEqual(os.environ["DATABASE_URL"],
+                             "postgresql://u:p@host:5432/alpha_db")
+        finally:
+            if prev is not None:
+                os.environ["DATABASE_URL"] = prev
+            else:
+                os.environ.pop("DATABASE_URL", None)
+            if prev_disabled is not None:
+                os.environ["GEN_DB_REWRITE_DISABLED"] = prev_disabled
+            else:
+                os.environ.pop("GEN_DB_REWRITE_DISABLED", None)
+
+    def test_custom_gen_database_name(self):
+        from src.agents.gen_collector import _rewrite_database_url_to_gen_db
+        import os
+        prev = os.environ.get("DATABASE_URL")
+        prev_disabled = os.environ.get("GEN_DB_REWRITE_DISABLED")
+        prev_name = os.environ.get("GEN_DATABASE_NAME")
+        os.environ.pop("GEN_DB_REWRITE_DISABLED", None)
+        try:
+            os.environ["DATABASE_URL"] = "postgresql://u:p@host:5432/alpha_db"
+            os.environ["GEN_DATABASE_NAME"] = "custom_gen"
+            info = _rewrite_database_url_to_gen_db()
+            self.assertIsNotNone(info)
+            self.assertEqual(os.environ["DATABASE_URL"],
+                             "postgresql://u:p@host:5432/custom_gen")
+        finally:
+            if prev is not None:
+                os.environ["DATABASE_URL"] = prev
+            else:
+                os.environ.pop("DATABASE_URL", None)
+            if prev_disabled is not None:
+                os.environ["GEN_DB_REWRITE_DISABLED"] = prev_disabled
+            if prev_name is not None:
+                os.environ["GEN_DATABASE_NAME"] = prev_name
+            else:
+                os.environ.pop("GEN_DATABASE_NAME", None)
+
+
+class TestInitDbHelpers(unittest.TestCase):
+    """scripts/db/init_db.py 의 헬퍼가 alpha_gen_db URL 을 정확히 만들어내는지."""
+
+    def test_swap_database_name(self):
+        import importlib.util
+        from pathlib import Path
+        spec = importlib.util.spec_from_file_location(
+            "init_db",
+            Path(__file__).resolve().parent.parent / "scripts" / "db" / "init_db.py",
+        )
+        # init_db 는 import 시 DATABASE_URL 환경변수를 요구한다.
+        import os
+        prev = os.environ.get("DATABASE_URL")
+        os.environ["DATABASE_URL"] = "postgresql://u:p@host:5432/alpha_db"
+        try:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            self.assertEqual(
+                mod._swap_database_name(
+                    "postgresql://u:p@host:5432/alpha_db", "alpha_gen_db"
+                ),
+                "postgresql://u:p@host:5432/alpha_gen_db",
+            )
+            # query string 이 있는 경우에도 path 만 교체
+            self.assertEqual(
+                mod._swap_database_name(
+                    "postgresql://u:p@host:5432/alpha_db?sslmode=require",
+                    "alpha_gen_db",
+                ),
+                "postgresql://u:p@host:5432/alpha_gen_db?sslmode=require",
+            )
+        finally:
+            if prev is not None:
+                os.environ["DATABASE_URL"] = prev
+            else:
+                os.environ.pop("DATABASE_URL", None)
+
+
 class TestGenServerEndpoints(unittest.TestCase):
     """Gen 서버 엔드포인트 검증."""
 

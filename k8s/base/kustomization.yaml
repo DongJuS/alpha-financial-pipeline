@@ -13,8 +13,10 @@ resources:
   - api.yaml
   - worker.yaml
   - ui.yaml
-  - gen.yaml
   - ingress.yaml
+  # gen 시뮬레이터(gen + gen-collector) 는 별도 overlay 로 분리되었다.
+  # 활성화: kubectl apply -k k8s/overlays/gen/
+  # 데이터는 alpha_gen_db (별도 DB) 에만 쓰이며 실 alpha_db 와 격리된다.
 
 # LLM 인증 Secret — .secrets/ 폴더에서 자동 생성
 # 초기화: k8s/scripts/init-llm.sh (최초 1회)
