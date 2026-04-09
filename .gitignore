@@ -42,3 +42,10 @@ artifacts/rl/models/ppo/*
 
 test/archive/
 .claude/worktrees/
+
+# SOPS / age
+# age private key 는 ~/.config/sops/age/keys.txt 에만 존재해야 한다.
+# 노트북 외부에 떨어진 임시 키 파일 보호를 위한 패턴:
+age-key*.txt
+*.age
+keys.txt

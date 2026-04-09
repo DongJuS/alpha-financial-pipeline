@@ -1,0 +1,14 @@
+# SOPS 암호화 규칙
+# - k8s/secrets/*.enc.yaml 파일들은 stringData/data 필드 값만 암호화
+#   (metadata, kind, type, key 이름은 평문으로 남아 PR diff 에서 어떤 secret 이
+#    어떤 키를 바꿨는지 인간 리뷰가 가능하도록 한다.)
+# - recipient (age public key) 는 secrets-bootstrap.sh 가 최초 1회
+#   여기 placeholder 를 실제 키로 치환한다.
+# - 협업자 추가 시: age: 줄에 ',' 로 이어붙인 뒤
+#     sops updatekeys k8s/secrets/*.enc.yaml
+#   를 실행해 모든 파일을 일괄 재암호화한다.
+creation_rules:
+  - path_regex: k8s/secrets/.*\.enc\.yaml$
+    encrypted_regex: '^(data|stringData)$'
+    age: >-
+      age18qupwj35fuedm7phyusgx4ksgkfsnk6q999dstxecc8hrmrpkdesf8yfap
