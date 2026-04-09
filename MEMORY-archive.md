@@ -6,6 +6,51 @@
 
 ---
 
+## 2026-04-08 — Cluster Secret 단일 소스화 SOPS+age 도입 (PR #104)
+
+- **문제:** PR #102/#103 머지 후 라이브 배포 시 새 api 파드가 `asyncpg.InvalidPasswordError` 로 CrashLoopBackOff. 옛 파드만 살아 있어 사용자가 `192.168.64.3/feedback` 접속 시 PR 이전 코드가 응답하는 deadlock. 추적 결과 cluster secret 이 3곳에 따로 살고 어디가 진실인지 아무도 모름:
+  - `k8s/helm/bitnami-values/postgres-values.yaml:7` — `alpha_pass` (평문 커밋)
+  - `k8s/base/secrets.yaml:14` — `change-me` (평문 커밋, kustomize 가 매번 덮어씀)
+  - `kubectl get secret app-secret` — `change-me`
+- **결정:** **SOPS + age** 채택 (3축 매핑: 확장성·안전·관리 수월함)
+  - 확장성 ✅ — `.sops.yaml` recipient 추가만으로 협업자 합류, 디렉토리별 rule 로 환경 분리 가능
+  - 안전 ✅ — age 는 X25519 + ChaCha20-Poly1305 (modern AEAD), encrypted_regex 로 키 이름은 평문 / 값만 ENC[...]
+  - 관리 수월함 ✅ — 운영 server 0대, controller 0개, unseal 의식 없음, DR = age key 1개 백업
+- **탈락 대안:**
+  - **Vault/OpenBao** — 1인 1노드에 unseal/HA/Raft 는 관리 수월함 파탄. Vault BUSL 라이선스 + 2025 년 Cyata 0day. 향후 팀 5인+ 시 SOPS→Vault 마이그레이션은 평이 (decrypt → vault kv put). SOPS 가 stepping stone.
+  - **Sealed Secrets** — sealing key 가 새 SPOF, rotation 까다로움. PR diff 가시성에서 SOPS 우위.
+  - **Infisical** — 또 다른 server 운영 부담.
+- **산출물 (PR #104, 5 commits):**
+  - `.sops.yaml` — encrypted_regex `^(data|stringData)$` 로 키 이름은 평문, 값만 암호화
+  - `k8s/secrets/app-secret.enc.yaml` — bootstrap 후 자동 생성, git 에 암호화된 채로 커밋
+  - `k8s/scripts/secrets-bootstrap.sh` — age 키 생성 + `.sops.yaml` 치환 + `.env` → 암호화 파일 (멱등)
+  - `k8s/scripts/secrets-edit.sh` — `sops` 인터랙티브 편집 wrapper
+  - `k8s/scripts/rotate-secrets.sh` — leak 사고 대응용 한 번 실행 회전 + 재배포 (8단계 자동)
+  - `k8s/scripts/deploy-local.sh` — `sops --decrypt | kubectl apply` 단계 추가, `SOPS_AGE_KEY_FILE` export (macOS sops 기본 위치 mismatch 회피)
+  - `k8s/base/secrets.yaml` 삭제, `k8s/base/kustomization.yaml` 에서 리소스 라인 제거
+  - `k8s/helm/{bitnami-values,alpha-trading}/*.yaml` 평문 placeholder 제거 + 주석
+  - `docs/secrets.md` — 일상 운영 가이드
+  - `docs/secret-leak-recovery.md` — leak 사고 대응 절차 (CLAUDE.md 에서 링크)
+  - `test/test_secrets_sops.sh` — 14건 hermetic 단위 테스트 (merge gate)
+- **사고 (배포 중):** 첫 deploy 시도에서 `kubectl apply` 가 `cannot convert int64 to string` 으로 거절하면서 **error 메시지에 전체 patch 평문이 포함되어 모든 secret 이 사용자 터미널 + 채팅 로그에 leak**. 원인:
+  1. bootstrap 이 `KIS_IS_PAPER_TRADING=true` / `TELEGRAM_CHAT_ID=8203915188` 를 quote 없이 YAML 로 출력 → bool/int 으로 자동 추론
+  2. `Secret.stringData` 는 string-only 라 거절 + kubectl 이 거절 사유로 patch 본문을 dump
+- **사고 fix:** bootstrap 이 모든 값을 single-quoted YAML scalar 로 출력 (`printf "  %s: '%s'\n"`, 내부 single quote escape). 또한 `DATABASE_URL` 의 `localhost` 를 `alpha-pg-postgresql:5432` 로 sed 치환 (k8s 컨텍스트와 로컬 컨텍스트 분리). 회귀 방지: case 10 (`test_secrets_bootstrap_quotes_bool_and_int_values`) + case 11 (`test_secrets_bootstrap_rewrites_database_url_localhost`).
+- **rotate-secrets.sh 검증 hook:** 가짜 repo + hermetic age key 로 실제 postgres / kubectl / docker 없이 rotation 흐름 전체를 end-to-end 검증. `ROTATE_NON_INTERACTIVE` / `ROTATE_SKIP_CONFIRM` / `ROTATE_SKIP_POSTGRES` / `ROTATE_SKIP_DEPLOY` 환경변수는 **테스트 전용** — 운영자는 절대 직접 export 금지 (KIS 입력이 컨텍스트에 노출). case 14 (`test_rotate_secrets_end_to_end_hermetic`) 가 9개 invariant 검증.
+- **명시적으로 *안* 한 것:**
+  - postgres PVC nuke (운영 데이터 보존, `ALTER USER` 로 런타임 동기화)
+  - `.env` 폐기 (로컬 개발용 부트스트랩 스크립트 입력으로 유지, cluster secret 만 SOPS 로 일원화)
+  - CI 에 SOPS 통합 (CI 는 lint/test 만 돌려 secret 불필요)
+  - LLM credentials (`llm-credentials` Secret) SOPS 화 — 파일 기반 secretGenerator 라 별도 PR
+  - KIS 토큰 자동 rotation (별도 작업, KIS API 호출 로직)
+- **운영 책임 분리 (사용자 ↔ SOPS):**
+  - SOPS 가 함: secret 의 *전달* (git → cluster), 협업자 동기화, drift 방지, DR
+  - 사용자가 함: secret 의 *발급/회전* (KIS / Telegram / postgres / age key 백업), leak 시 원천 키 재발급
+- **장기 기억:** `feedback_secrets_handling.md` — Claude 는 secret 이 도구 출력에 닿을 수 있는 명령(개인키 생성, `--decrypt` 검증, 비번 ALTER 등)을 직접 실행하지 않고 사용자에게 위임. 도구 출력은 `~/.claude/projects/.../*.jsonl` 에 영구 저장되어 leak 시 회수 불가.
+- **검증:** `bash test/test_secrets_sops.sh` → 14/14 passed, `shellcheck k8s/scripts/*.sh test/test_secrets_sops.sh` → clean. 라이브 검증(새 api Running + asyncpg 연결 + Task B bandit 재개)은 사용자의 실제 rotation 후 진행 예정.
+
+---
+
 ## 2026-03-29 — 문서 정비 + smoke test 통과 (PR #53)
 
 - **작업:** README 정량 지표 섹션 추가, Airflow 비교 문서 신규 작성, README 빠른 시작 minio 누락 수정
