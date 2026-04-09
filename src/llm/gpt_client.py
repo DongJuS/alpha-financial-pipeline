@@ -9,6 +9,7 @@ import os
 import shutil
 from typing import Any, Optional
 
+from src.constants import DEFAULT_GPT_MODEL
 from src.llm.cli_bridge import is_cli_available, run_cli_prompt_with_output_file
 from src.services.llm_usage_limiter import reserve_provider_call
 from src.utils.config import get_settings
@@ -78,7 +79,7 @@ def _build_codex_cli_command(model: str) -> list[str]:
 class GPTClient:
     _global_quota_exhausted = False
 
-    def __init__(self, model: str = "gpt-4o-mini") -> None:
+    def __init__(self, model: str = DEFAULT_GPT_MODEL) -> None:
         self.model = model
         settings = get_settings()
         self.api_key = settings.openai_api_key

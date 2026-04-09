@@ -4,6 +4,7 @@ src/services/model_config.py — LLM 모델/페르소나 역할 설정 서비스
 
 from __future__ import annotations
 
+from src.constants import DEFAULT_GPT_MODEL
 from src.db.queries import (
     list_model_role_configs,
     update_model_role_config,
@@ -142,7 +143,7 @@ def provider_status() -> list[dict]:
 
     # ── GPT ──
     try:
-        gpt = GPTClient(model="gpt-4o-mini")
+        gpt = GPTClient(model=DEFAULT_GPT_MODEL)
         if gpt.auth_mode == "codex_cli":
             gpt_mode = "Codex CLI (ChatGPT)"
         elif gpt.auth_mode == "api_key":

@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
+from src.constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL, DEFAULT_GPT_MODEL
 from src.db.models import PredictionSignal
 from src.db.queries import fetch_recent_ohlcv, insert_debate_transcript, insert_prediction
 from src.llm.claude_client import ClaudeClient
@@ -55,9 +56,9 @@ class StrategyBConsensus:
         consensus_threshold: float | None = None,
     ) -> None:
         settings = get_settings()
-        self.claude = ClaudeClient(model="claude-3-5-sonnet-latest")
-        self.gpt = GPTClient(model="gpt-4o-mini")
-        self.gemini = GeminiClient(model="gemini-1.5-pro")
+        self.claude = ClaudeClient(model=DEFAULT_CLAUDE_MODEL)
+        self.gpt = GPTClient(model=DEFAULT_GPT_MODEL)
+        self.gemini = GeminiClient(model=DEFAULT_GEMINI_MODEL)
         default_rounds = settings.strategy_b_max_rounds
         default_threshold = settings.strategy_b_consensus_threshold
         self.max_rounds = max(1, int(max_rounds if max_rounds is not None else default_rounds))
