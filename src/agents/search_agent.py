@@ -12,10 +12,10 @@ SearXNG → 스니펫 구조화 → Claude CLI 감성 분석 파이프라인.
 
 from __future__ import annotations
 
-import os
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from src.utils.config import get_settings
 from src.utils.logging import get_logger
 from src.utils.searxng_client import SearXNGClient, SearchResult
 from src.utils.reasoning_client import ReasoningClient
@@ -91,7 +91,7 @@ class SearchAgent:
         self.max_sources = max_sources
         self.db_pool = db_pool
 
-        searxng_url = os.environ.get("SEARXNG_API_URL", "http://localhost:8888")
+        searxng_url = get_settings().searxng_api_url
         self._searxng = SearXNGClient(base_url=searxng_url)
         self._reasoner = ReasoningClient()
 

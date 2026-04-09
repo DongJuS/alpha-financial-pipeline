@@ -150,6 +150,22 @@ class Settings(BaseSettings):
     # ── Logging ──────────────────────────────────────────────────────────────
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
+    # ── CORS ─────────────────────────────────────────────────────────────
+    cors_origins: str = Field(
+        default="http://localhost:3000,http://localhost:5173",
+        alias="CORS_ORIGINS",
+    )
+
+    # ── Pod / Source 식별 ────────────────────────────────────────────────
+    pod_name: str = Field(default="unknown", alias="POD_NAME")
+    app_source: str = Field(default="worker", alias="APP_SOURCE")
+
+    # ── 장 시간 강제 적용 ───────────────────────────────────────────────
+    market_hours_enforced: bool = Field(default=True, alias="MARKET_HOURS_ENFORCED")
+
+    # ── SearXNG ──────────────────────────────────────────────────────────
+    searxng_api_url: str = Field(default="http://localhost:8888", alias="SEARXNG_API_URL")
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
