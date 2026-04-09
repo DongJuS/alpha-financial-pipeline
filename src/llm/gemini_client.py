@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
+from src.constants import DEFAULT_GEMINI_MODEL
 from src.services.llm_usage_limiter import reserve_provider_call
 from src.utils.logging import get_logger
 
@@ -103,7 +104,7 @@ class GeminiClient:
     _global_quota_exhausted = False
     _global_disabled_reason: str | None = None
 
-    def __init__(self, model: str = "gemini-1.5-pro") -> None:
+    def __init__(self, model: str = DEFAULT_GEMINI_MODEL) -> None:
         self.model = model
         self._model: Optional[Any] = None
         self._auth_mode: Optional[str] = None

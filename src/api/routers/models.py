@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from src.api.deps import get_admin_user
+from src.constants import DEFAULT_GPT_MODEL
 from src.services.model_config import (
     SUPPORTED_MODEL_OPTIONS,
     provider_status,
@@ -133,7 +134,7 @@ async def debug_providers(
         ]
     }
     gemini_creds, gemini_project = load_gemini_oauth_credentials()
-    gpt = GPTClient(model="gpt-4o-mini")
+    gpt = GPTClient(model=DEFAULT_GPT_MODEL)
     codex_auth = load_codex_auth_status()
 
     return {
