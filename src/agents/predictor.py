@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
+from src.constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL, DEFAULT_GPT_MODEL
 from src.db.models import AgentHeartbeatRecord, PredictionSignal
 from src.db.queries import (
     fetch_recent_ohlcv,
@@ -42,16 +43,16 @@ class PredictorAgent:
         self,
         agent_id: str = "predictor_1",
         strategy: str = "A",
-        llm_model: str = "claude-3-5-sonnet-latest",
+        llm_model: str = DEFAULT_CLAUDE_MODEL,
         persona: str = "MVP Claude 단일 인스턴스",
     ) -> None:
         self.agent_id = agent_id
         self.strategy = strategy
         self.llm_model = llm_model
         self.persona = persona
-        self.claude = ClaudeClient(model=llm_model if "claude" in llm_model.lower() else "claude-3-5-sonnet-latest")
-        self.gpt = GPTClient(model=llm_model if "gpt" in llm_model.lower() else "gpt-4o-mini")
-        self.gemini = GeminiClient(model=llm_model if "gemini" in llm_model.lower() else "gemini-1.5-pro")
+        self.claude = ClaudeClient(model=llm_model if "claude" in llm_model.lower() else DEFAULT_CLAUDE_MODEL)
+        self.gpt = GPTClient(model=llm_model if "gpt" in llm_model.lower() else DEFAULT_GPT_MODEL)
+        self.gemini = GeminiClient(model=llm_model if "gemini" in llm_model.lower() else DEFAULT_GEMINI_MODEL)
         # 에이전트별 temperature 다양성 (동일 데이터에서 다른 응답 유도)
         self._temperature = self._compute_temperature(agent_id)
 
@@ -318,7 +319,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="PredictorAgent MVP")
     parser.add_argument("--agent-id", default="predictor_1")
     parser.add_argument("--strategy", default="A", choices=["A", "B"])
-    parser.add_argument("--model", default="claude-3-5-sonnet-latest")
+    parser.add_argument("--model", default=DEFAULT_CLAUDE_MODEL)
     parser.add_argument("--tickers", default="", help="쌍표 구분 티커 목록")
     parser.add_argument("--limit", type=int, default=10)
     args = parser.parse_args()
