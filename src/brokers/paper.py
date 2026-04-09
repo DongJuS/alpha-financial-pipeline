@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from src.db.models import PaperOrderRequest
 from src.db.queries import get_position, get_trading_account, insert_broker_order, insert_trade, save_position, update_broker_order_status, upsert_trading_account
+from src.constants import PAPER_TRADING_INITIAL_CAPITAL
 from src.services.account_state import recompute_account_state
 from src.utils.account_scope import AccountScope, normalize_account_scope
 
@@ -140,10 +141,10 @@ class PaperBroker:
             account_scope=scope,
             broker_name="한국투자증권 KIS",
             account_label="KIS 모의투자 계좌" if scope == "paper" else "KIS 실거래 계좌",
-            seed_capital=10_000_000 if scope == "paper" else 0,
-            cash_balance=10_000_000 if scope == "paper" else 0,
-            buying_power=10_000_000 if scope == "paper" else 0,
-            total_equity=10_000_000 if scope == "paper" else 0,
+            seed_capital=PAPER_TRADING_INITIAL_CAPITAL if scope == "paper" else 0,
+            cash_balance=PAPER_TRADING_INITIAL_CAPITAL if scope == "paper" else 0,
+            buying_power=PAPER_TRADING_INITIAL_CAPITAL if scope == "paper" else 0,
+            total_equity=PAPER_TRADING_INITIAL_CAPITAL if scope == "paper" else 0,
             is_active=(scope == "paper"),
         )
 
