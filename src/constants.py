@@ -15,3 +15,8 @@ PAPER_TRADING_INITIAL_CAPITAL: int = 10_000_000
 DEFAULT_CLAUDE_MODEL: str = "claude-3-5-sonnet-latest"
 DEFAULT_GPT_MODEL: str = "gpt-4o-mini"
 DEFAULT_GEMINI_MODEL: str = "gemini-1.5-pro"
+
+# ── 백테스트 비용 모델 ──────────────────────────────────────────────
+BACKTEST_COMMISSION_RATE_PCT: float = 0.015  # 매수/매도 양방향 (증권사 수수료)
+BACKTEST_TAX_RATE_PCT: float = 0.18          # 매도 시에만 (증권거래세)
+BACKTEST_SLIPPAGE_BPS: int = 3               # 고정 슬리피지 (재현성)
