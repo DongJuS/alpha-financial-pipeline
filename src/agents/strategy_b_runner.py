@@ -45,4 +45,14 @@ class StrategyBRunner:
             return signals
         except Exception as e:
             logger.error("StrategyBRunner: 토론 실패: %s", e, exc_info=True)
+            try:
+                from src.utils.db_logger import log_event
+                await log_event("b_empty", {
+                    "reason": "exception",
+                    "exc_type": type(e).__name__,
+                    "exc_msg": str(e)[:200],
+                    "ticker_count": len(tickers),
+                })
+            except Exception:
+                pass
             return []
