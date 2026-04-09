@@ -4,7 +4,15 @@ src/agents/gen_collector.py — GenCollectorAgent
 Gen REST API에서 랜덤 시세 데이터를 가져와
 수집→저장 파이프라인(PostgreSQL, Redis, S3)에 주입합니다.
 
-마이그레이션 기간 동안 ohlcv_daily(신규)와 market_data(레거시) 양쪽에 듀얼 라이트합니다.
+데이터 격리 (2026-04-08, gen-data-isolation):
+    gen 데이터가 실 데이터(alpha_db)와 섞이지 않도록, 이 모듈은 import 시
+    DATABASE_URL 의 database 부분을 GEN_DATABASE_NAME (기본 alpha_gen_db)
+    로 강제 교체한다. 따라서 gen_collector 는 어떤 환경에서 어떻게 띄워져도
+    alpha_db 의 market_data / agent_heartbeats 를 절대 건드리지 않는다.
+    Redis / S3 는 별도 분리하지 않는다 (gen 이 profile 옵트인이라 평소엔
+    안 도므로 오염 시점이 사용자가 의도한 시점에만 발생).
+
+    GEN_DB_REWRITE_DISABLED=1 로 끌 수 있다 (테스트용).
 """
 
 from __future__ import annotations
@@ -13,6 +21,7 @@ import asyncio
 import json
 import os
 import sys
+import urllib.parse
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -24,6 +33,35 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
+
+
+def _rewrite_database_url_to_gen_db() -> Optional[str]:
+    """DATABASE_URL 의 database 이름을 GEN_DATABASE_NAME (기본 alpha_gen_db)
+    로 교체해 os.environ 에 다시 넣는다.
+
+    호출은 db_client / config.get_settings() 가 처음 불리기 전에 일어나야 함.
+    이 모듈을 import 하는 시점에 module-level 로 1회 실행한다.
+
+    Returns: 교체 후의 새 URL (host 부분만 노출되도록 redact). 변경 없을 때 None.
+    """
+    if os.environ.get("GEN_DB_REWRITE_DISABLED", "").lower() in {"1", "true", "yes"}:
+        return None
+    raw = os.environ.get("DATABASE_URL")
+    if not raw:
+        return None
+    parsed = urllib.parse.urlparse(raw)
+    if not parsed.scheme or not parsed.path:
+        return None
+    gen_db_name = os.environ.get("GEN_DATABASE_NAME", "alpha_gen_db")
+    current_db = parsed.path.lstrip("/")
+    if current_db == gen_db_name:
+        return None  # 이미 gen DB 로 설정돼 있음 (compose env 등)
+    new_url = urllib.parse.urlunparse(parsed._replace(path=f"/{gen_db_name}"))
+    os.environ["DATABASE_URL"] = new_url
+    return f"{parsed.hostname or '?'}/{gen_db_name}"
+
+
+_GEN_DB_REWRITE_INFO = _rewrite_database_url_to_gen_db()
 
 from src.db.models import AgentHeartbeatRecord, MarketDataPoint
 from src.db.queries import insert_heartbeat
@@ -47,6 +85,12 @@ from src.utils.redis_client import (
 
 setup_logging()
 logger = get_logger(__name__)
+
+if _GEN_DB_REWRITE_INFO is not None:
+    logger.info(
+        "GenCollector DB 격리: DATABASE_URL → %s (실 DB 와 분리)",
+        _GEN_DB_REWRITE_INFO,
+    )
 
 KST = ZoneInfo("Asia/Seoul")
 

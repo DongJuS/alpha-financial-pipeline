@@ -98,6 +98,13 @@ Cluster Secret 은 SOPS + age 로 관리한다 (`k8s/secrets/*.enc.yaml`).
 - 미설정이면 FDR + KIS 모드 (실제 시장 데이터)
 - 주말에 gen 모드가 아니면 Orchestrator 사이클을 스킵하는 것이 **정상 동작**
 
+### Gen 데이터 격리 (2026-04-08~)
+- gen / gen-collector 는 docker compose `--profile gen` 으로만 기동.
+  기본 `docker compose up` 에서는 안 뜬다.
+- gen 데이터는 별도 DB **alpha_gen_db** 에만 쓴다 (실 alpha_db 와 격리).
+  gen_collector 가 import 시점에 DATABASE_URL 의 db 부분을 자동 rewrite.
+- k8s 에서 활성화: `kubectl apply -k k8s/overlays/gen/`
+
 ### 테스트 스위트
 - `python3.11 -m pytest test/ --ignore=test/test_search_pipeline.py` → 512+ passed
 - 독립 실행 시 전체 통과 확인 (전체 실행 시 event loop 오염으로 일부 실패는 알려진 이슈)
