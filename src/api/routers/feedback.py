@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from src.agents.rl_continuous_improver import RLContinuousImprover
 from src.agents.rl_experiment_manager import RLExperimentManager
 from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
+from src.constants import PAPER_TRADING_INITIAL_CAPITAL
 from src.utils.logging import get_logger
 
 router = APIRouter()
@@ -62,7 +63,7 @@ class BacktestRequest(BaseModel):
     strategy: str
     start_date: Optional[str] = None
     end_date: Optional[str] = None
-    initial_capital: float = Field(default=10_000_000, gt=0)
+    initial_capital: float = Field(default=PAPER_TRADING_INITIAL_CAPITAL, gt=0)
 
 
 class BacktestResult(BaseModel):
@@ -272,8 +273,8 @@ async def compare_strategies(
             BacktestResult(
                 strategy=s,
                 period={"start": "2025-01-01", "end": now.strftime("%Y-%m-%d")},
-                initial_capital=10_000_000,
-                final_capital=10_000_000,
+                initial_capital=PAPER_TRADING_INITIAL_CAPITAL,
+                final_capital=PAPER_TRADING_INITIAL_CAPITAL,
                 total_return=0.0,
                 annualized_return=0.0,
                 max_drawdown=0.0,
