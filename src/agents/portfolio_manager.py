@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
 from src.brokers import build_paper_broker, build_real_broker
+from src.constants import PAPER_TRADING_INITIAL_CAPITAL
 from src.db.models import AgentHeartbeatRecord, PaperOrderRequest, PredictionSignal
 from src.db.queries import (
     fetch_recent_ohlcv,
@@ -212,9 +213,9 @@ class PortfolioManagerAgent:
             paper_seed_capital_raw = cfg.get("paper_seed_capital")
             if is_paper and paper_seed_capital_raw is None:
                 account = await get_trading_account(account_scope)
-                paper_seed_capital = int(account.get("seed_capital") or 10_000_000) if account else 10_000_000
+                paper_seed_capital = int(account.get("seed_capital") or PAPER_TRADING_INITIAL_CAPITAL) if account else PAPER_TRADING_INITIAL_CAPITAL
             else:
-                paper_seed_capital = int(paper_seed_capital_raw or 10_000_000)
+                paper_seed_capital = int(paper_seed_capital_raw or PAPER_TRADING_INITIAL_CAPITAL)
             total_value = await portfolio_total_value(account_scope=account_scope)
             current_value = (
                 int(position["quantity"]) * int(position["current_price"]) if position else 0
