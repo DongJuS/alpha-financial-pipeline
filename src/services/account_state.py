@@ -12,6 +12,7 @@ from src.db.queries import (
     trade_cash_totals,
     upsert_trading_account,
 )
+from src.constants import PAPER_TRADING_INITIAL_CAPITAL
 from src.utils.account_scope import AccountScope, normalize_account_scope
 from src.utils.performance import compute_trade_performance
 
@@ -29,7 +30,7 @@ async def recompute_account_state(
     performance_rows = await fetch_all_trade_rows(scope)
     performance = compute_trade_performance(performance_rows)
 
-    seed_capital = int(account["seed_capital"]) if account else (10_000_000 if scope == "paper" else 0)
+    seed_capital = int(account["seed_capital"]) if account else (PAPER_TRADING_INITIAL_CAPITAL if scope == "paper" else 0)
     cash_balance = max(seed_capital - trade_totals["buy_total"] + trade_totals["sell_total"], 0)
     buying_power = cash_balance
     total_equity = cash_balance + position_stats["market_value"]
