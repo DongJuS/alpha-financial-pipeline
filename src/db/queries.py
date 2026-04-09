@@ -15,6 +15,7 @@ from src.db.models import (
     PaperOrderRequest,
     PredictionSignal,
 )
+from src.constants import PAPER_TRADING_INITIAL_CAPITAL
 from src.utils.account_scope import AccountScope, normalize_account_scope, scope_from_is_paper
 from src.utils.db_client import execute, executemany, fetch, fetchrow, fetchval
 
@@ -999,10 +1000,10 @@ async def upsert_trading_account(
     broker_name: str,
     account_label: str,
     base_currency: str = "KRW",
-    seed_capital: int = 10_000_000,
-    cash_balance: int = 10_000_000,
-    buying_power: int = 10_000_000,
-    total_equity: int = 10_000_000,
+    seed_capital: int = PAPER_TRADING_INITIAL_CAPITAL,
+    cash_balance: int = PAPER_TRADING_INITIAL_CAPITAL,
+    buying_power: int = PAPER_TRADING_INITIAL_CAPITAL,
+    total_equity: int = PAPER_TRADING_INITIAL_CAPITAL,
     is_active: bool = False,
 ) -> None:
     scope = normalize_account_scope(account_scope)
