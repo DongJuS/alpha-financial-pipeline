@@ -150,7 +150,12 @@ services:
       retries: 3
       start_period: 30s
 
+  # gen / gen-collector 는 시뮬레이션(랜덤 시세) 전용. 기본 `docker compose up`
+  # 에서는 뜨지 않고, `docker compose --profile gen up` 으로 명시 기동해야 한다.
+  # 데이터는 별도 데이터베이스 alpha_gen_db 에만 쓰며, 실 데이터(alpha_db)와
+  # 격리된다. (2026-04-08, gen-data-isolation)
   gen:
+    profiles: ["gen"]
     build:
       context: .
       dockerfile: Dockerfile
@@ -168,6 +173,7 @@ services:
       start_period: 5s
 
   gen-collector:
+    profiles: ["gen"]
     build:
       context: .
       dockerfile: Dockerfile
@@ -175,7 +181,8 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://alpha_user:alpha_pass@postgres:5432/alpha_db
+      # 격리: 실 alpha_db 가 아닌 alpha_gen_db 에만 쓴다.
+      DATABASE_URL: postgresql://alpha_user:alpha_pass@postgres:5432/alpha_gen_db
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://minio:9000
       GEN_API_URL: http://gen:9999

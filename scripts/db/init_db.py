@@ -2,14 +2,22 @@
 scripts/db/init_db.py — PostgreSQL 전체 스키마 생성 스크립트
 
 사용법:
-    python scripts/db/init_db.py           # 테이블 생성 (없으면 생성)
-    python scripts/db/init_db.py --drop    # 기존 테이블 삭제 후 재생성 (주의!)
+    python scripts/db/init_db.py              # alpha_db + alpha_gen_db 둘 다 초기화
+    python scripts/db/init_db.py --skip-gen-db  # alpha_db 만 초기화
+    python scripts/db/init_db.py --drop       # 기존 테이블 삭제 후 재생성 (주의!)
+
+gen DB 분리 (2026-04-08):
+    gen_collector 가 실 데이터 (ohlcv_daily / market_data) 를 오염시키지
+    않도록 별도 데이터베이스 alpha_gen_db 를 자동 생성한다. 동일한
+    postgres 인스턴스 안의 logical database 분리이며,
+    GEN_DATABASE_NAME 환경변수로 이름을 바꿀 수 있다.
 """
 
 import argparse
 import asyncio
 import logging
 import sys
+import urllib.parse
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -28,6 +36,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.environ["DATABASE_URL"]
+GEN_DATABASE_NAME = os.environ.get("GEN_DATABASE_NAME", "alpha_gen_db")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # DDL 정의 (생성 순서가 중요 — 외래키 의존성 반영)
@@ -1148,21 +1157,74 @@ async def seed_default_admin(conn: asyncpg.Connection) -> bool:
     return True
 
 
-async def create_schema(drop_first: bool = False) -> None:
-    """PostgreSQL 스키마를 생성합니다."""
-    logger.info("DB 연결 중: %s", DATABASE_URL.split("@")[-1])
-    conn: asyncpg.Connection = await asyncpg.connect(DATABASE_URL)
+def _swap_database_name(database_url: str, new_db: str) -> str:
+    """DATABASE_URL 의 database 부분만 교체한 새 URL 을 반환합니다.
+
+    예: postgresql://u:p@host:5432/alpha_db → postgresql://u:p@host:5432/alpha_gen_db
+    """
+    parsed = urllib.parse.urlparse(database_url)
+    return urllib.parse.urlunparse(parsed._replace(path=f"/{new_db}"))
+
+
+async def _ensure_database_exists(base_url: str, target_db: str) -> bool:
+    """`postgres` 메인터넌스 DB 에 붙어 target_db 가 없으면 CREATE DATABASE.
+
+    Returns: True 면 존재 보장, False 면 생성 실패 (권한/네트워크 등) → caller 가 스킵.
+    """
+    maint_url = _swap_database_name(base_url, "postgres")
+    try:
+        conn = await asyncpg.connect(maint_url)
+    except Exception as e:
+        logger.warning("postgres 메인터넌스 DB 연결 실패 — gen DB 생성 스킵: %s", e)
+        return False
+    try:
+        exists = await conn.fetchval(
+            "SELECT 1 FROM pg_database WHERE datname = $1", target_db
+        )
+        if exists:
+            logger.info("DATABASE %s 이미 존재 (skip CREATE)", target_db)
+            return True
+        # CREATE DATABASE 는 트랜잭션 안에서 실행 불가 → asyncpg 는 자동으로 implicit
+        # transaction 을 쓰지 않으므로 그대로 execute 가능. identifier 는 큰따옴표로 quote.
+        await conn.execute(f'CREATE DATABASE "{target_db}"')
+        logger.info("CREATE DATABASE %s 완료", target_db)
+        return True
+    except Exception as e:
+        logger.warning("CREATE DATABASE %s 실패 — gen DB 초기화 스킵: %s", target_db, e)
+        return False
+    finally:
+        await conn.close()
+
+
+async def create_schema(
+    drop_first: bool = False,
+    *,
+    database_url: Optional[str] = None,
+    seed_admin: bool = True,
+    label: str = "primary",
+) -> None:
+    """PostgreSQL 스키마를 생성합니다.
+
+    Args:
+        drop_first: True 면 모든 테이블을 먼저 drop.
+        database_url: 대상 DB URL. None 이면 모듈 전역 DATABASE_URL.
+        seed_admin: 기본 admin 계정 시드 여부 (gen DB 는 False 권장).
+        label: 로그 prefix (primary / gen).
+    """
+    target_url = database_url or DATABASE_URL
+    logger.info("[%s] DB 연결 중: %s", label, target_url.split("@")[-1])
+    conn: asyncpg.Connection = await asyncpg.connect(target_url)
 
     try:
         if drop_first:
-            logger.warning("⚠️  기존 테이블 전체 삭제 중...")
+            logger.warning("[%s] ⚠️  기존 테이블 전체 삭제 중...", label)
             await conn.execute(DROP_TABLES_SQL)
-            logger.info("테이블 삭제 완료")
+            logger.info("[%s] 테이블 삭제 완료", label)
 
         # users.id 기본값 gen_random_uuid()를 위해 pgcrypto 확장을 보장합니다.
         await conn.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
 
-        logger.info("테이블 생성 시작...")
+        logger.info("[%s] 테이블 생성 시작...", label)
         for ddl in CREATE_TABLES:
             # 여러 SQL 문이 하나의 문자열에 있을 수 있으므로 ;로 분리 실행
             statements = [s.strip() for s in ddl.split(";") if s.strip()]
@@ -1186,9 +1248,12 @@ async def create_schema(drop_first: bool = False) -> None:
             "CREATE TABLE IF NOT EXISTS ohlcv_daily_default "
             "PARTITION OF ohlcv_daily DEFAULT"
         )
-        logger.info("ohlcv_daily 파티션 생성 완료 (2010~2027 + default)")
+        logger.info("[%s] ohlcv_daily 파티션 생성 완료 (2010~2027 + default)", label)
 
-        await seed_default_admin(conn)
+        if seed_admin:
+            await seed_default_admin(conn)
+        else:
+            logger.info("[%s] admin 시드 스킵 (gen DB)", label)
 
         # 생성된 테이블 목록 확인
         rows = await conn.fetch(
@@ -1200,10 +1265,33 @@ async def create_schema(drop_first: bool = False) -> None:
             """
         )
         table_names = [r["tablename"] for r in rows]
-        logger.info("✅ 생성된 테이블 (%d개): %s", len(table_names), ", ".join(table_names))
+        logger.info("[%s] ✅ 생성된 테이블 (%d개): %s", label, len(table_names), ", ".join(table_names))
 
     finally:
         await conn.close()
+
+
+async def _run(drop_first: bool, init_gen_db: bool) -> None:
+    """primary DB → (옵션) gen DB 순서로 초기화합니다."""
+    await create_schema(drop_first=drop_first, database_url=DATABASE_URL, label="primary")
+
+    if not init_gen_db:
+        logger.info("gen DB 초기화 스킵 (--skip-gen-db)")
+        return
+
+    # gen DB 가 없으면 생성한다. 권한 부족/네트워크 등으로 실패하면 경고만 남기고
+    # 전체 init 은 성공으로 끝낸다 (db-init 이 항상 실패하는 일이 없도록).
+    created = await _ensure_database_exists(DATABASE_URL, GEN_DATABASE_NAME)
+    if not created:
+        return
+
+    gen_url = _swap_database_name(DATABASE_URL, GEN_DATABASE_NAME)
+    await create_schema(
+        drop_first=drop_first,
+        database_url=gen_url,
+        seed_admin=False,
+        label="gen",
+    )
 
 
 def main() -> None:
@@ -1213,6 +1301,11 @@ def main() -> None:
         action="store_true",
         help="기존 테이블 삭제 후 재생성 (데이터 전부 삭제됨!)",
     )
+    parser.add_argument(
+        "--skip-gen-db",
+        action="store_true",
+        help="alpha_gen_db (gen 전용 DB) 초기화 스킵. 기본은 둘 다 초기화.",
+    )
     args = parser.parse_args()
 
     if args.drop:
@@ -1221,7 +1314,7 @@ def main() -> None:
             print("취소되었습니다.")
             sys.exit(0)
 
-    asyncio.run(create_schema(drop_first=args.drop))
+    asyncio.run(_run(drop_first=args.drop, init_gen_db=not args.skip_gen_db))
     logger.info("🎉 스키마 초기화 완료!")
 
 
