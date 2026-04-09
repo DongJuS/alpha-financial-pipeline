@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# gen 시뮬레이터 overlay — base 와 독립적으로 apply/delete 한다.
+# 활성화: kubectl apply -k k8s/overlays/gen/
+# 제거:   kubectl delete -k k8s/overlays/gen/
+#
+# gen 데이터는 alpha_gen_db (별도 DB) 에만 쓴다. gen_collector 모듈이
+# import 시점에 DATABASE_URL 의 database 부분을 alpha_gen_db 로 자동
+# rewrite 하므로, app-secret 의 DATABASE_URL 을 별도로 override 할
+# 필요는 없다 (src/agents/gen_collector.py 참조).
+#
+# 사전 조건: alpha_gen_db 가 postgres 클러스터에 존재해야 한다.
+# Bitnami chart 는 primary.initdb.scripts 로 자동 생성하지만, 이미 설치된
+# 클러스터라면 한 번만 수동 생성:
+#
+#   kubectl exec -n alpha-trading alpha-pg-postgresql-0 -- \
+#     env PGPASSWORD="$(kubectl get secret -n alpha-trading \
+#         alpha-pg-postgresql -o jsonpath='{.data.postgres-password}' \
+#         | base64 -d)" \
+#     psql -U postgres -c 'CREATE DATABASE alpha_gen_db OWNER alpha_user;'
+
+namespace: alpha-trading
+
+resources:
+  - gen.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: alpha-trading
+      app.kubernetes.io/component: gen-simulator
+      app.kubernetes.io/managed-by: kustomize
