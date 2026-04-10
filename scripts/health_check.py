@@ -132,6 +132,44 @@ def check_env_vars() -> tuple[bool, str]:
     return True, msg
 
 
+async def check_heartbeats() -> tuple[bool, str]:
+    """에이전트 heartbeat 상태를 확인합니다."""
+    from src.utils.redis_client import close_redis, get_heartbeat_detail
+
+    agent_ids = [
+        "collector_agent",
+        "orchestrator_agent",
+        "portfolio_manager_agent",
+        "notifier_agent",
+    ]
+    try:
+        results: list[str] = []
+        has_error = False
+        for aid in agent_ids:
+            detail = await get_heartbeat_detail(aid)
+            if detail is None:
+                results.append(f"{aid}: offline")
+                continue
+            status = detail.get("status", "ok")
+            mode = detail.get("mode", "")
+            mode_label = f" [{mode}]" if mode else ""
+            if status == "error":
+                has_error = True
+                results.append(f"{aid}: {FAIL_MARK} error{mode_label}")
+            elif status == "degraded":
+                results.append(f"{aid}: {WARN_MARK} degraded{mode_label}")
+            else:
+                results.append(f"{aid}: ok{mode_label}")
+        await close_redis()
+
+        summary = "; ".join(results)
+        if has_error:
+            return False, summary
+        return True, summary
+    except Exception as e:
+        return False, f"확인 실패: {e}"
+
+
 async def run_health_check() -> int:
     """전체 헬스체크를 실행하고 종료 코드를 반환합니다."""
     print("\n" + "=" * 55)
@@ -144,6 +182,7 @@ async def run_health_check() -> int:
         ("PostgreSQL", await check_db()),
         ("Redis", await check_redis()),
         ("KIS 토큰", await check_kis_token()),
+        ("Heartbeat", await check_heartbeats()),
     ]
 
     all_ok = True
