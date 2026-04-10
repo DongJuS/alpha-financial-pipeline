@@ -12,6 +12,7 @@ from src.db.queries import (
 from src.llm.claude_client import ClaudeClient
 from src.llm.gemini_client import GeminiClient
 from src.llm.gpt_client import GPTClient
+from src.llm.router import LLMRouter
 
 SUPPORTED_MODEL_OPTIONS = [
     # ── Claude (CLI) ────────────────────────────────────────────
@@ -99,14 +100,7 @@ async def update_model_role_configs(items: list[dict]) -> list[dict]:
 
 
 def provider_name_for_model(model: str) -> str:
-    text = model.lower()
-    if "claude" in text:
-        return "claude"
-    if "gpt" in text:
-        return "gpt"
-    if "gemini" in text:
-        return "gemini"
-    raise ValueError(f"지원하지 않는 provider 모델명입니다: {model}")
+    return LLMRouter.provider_for_model(model)
 
 
 def provider_status() -> list[dict]:
