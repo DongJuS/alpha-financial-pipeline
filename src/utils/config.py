@@ -131,6 +131,10 @@ class Settings(BaseSettings):
     # ── 전략 승격 기준 오버라이드 ──────────────────────────────────────────
     promotion_criteria_override: str = Field(default="", alias="PROMOTION_CRITERIA_OVERRIDE")
 
+    # ── WebSocket Tick Collection ──────────────────────────────────────────────
+    ws_tick_batch_size: int = Field(default=100, ge=1, le=2000, alias="WS_TICK_BATCH_SIZE")
+    ws_tick_flush_interval: float = Field(default=1.0, ge=0.1, le=30.0, alias="WS_TICK_FLUSH_INTERVAL")
+
     # ── S3 / MinIO (Data Lake) ───────────────────────────────────────────────
     s3_endpoint_url: str = Field(default="", alias="S3_ENDPOINT_URL")
     s3_access_key: str = Field(default="", alias="S3_ACCESS_KEY")
