@@ -75,19 +75,21 @@ healthcheck:
 
 ---
 
-## 👀 Orchestrator 모니터링 (계획)
+## 👀 Orchestrator 모니터링
 
-> 아래는 설계 스펙이며, 현재 미구현 상태이다. 후속 PR에서 구현 예정.
+**점검 시점:** 매 사이클 완료 후 (`run_cycle` 내부)
 
-**폴링 주기:** 60초
+Orchestrator는 사이클 성공 후 `_check_agent_health()`를 호출하여
+collector_agent, portfolio_manager_agent, notifier_agent의 heartbeat를 점검한다.
 
 | 조건 | 행동 |
 |------|------|
-| 1회 헬스비트 미수신 | WARNING 로그 기록 |
-| 연속 3회 미수신 (90초) | NotifierAgent 경보 발송 |
-| `degraded` 상태 30분 지속 | NotifierAgent 경보 발송 |
-| `error` 상태 감지 즉시 | NotifierAgent 긴급 경보 |
+| heartbeat 키 없음 (TTL 만료) | `offline` → Telegram 알림 (⚫) |
+| `error` 상태 감지 | Telegram 알림 (🔴) + mode/error_count 포함 |
+| `degraded` 상태 감지 | Telegram 알림 (⚠️) + mode/error_count 포함 |
+| `ok` 상태 | 정상 — 별도 조치 없음 |
 
+**알림 메서드:** `NotifierAgent.send_agent_health_alert(agent_id, status, mode, error_count)`
 **재시작은 Docker/K8s 인프라에 위임.** Orchestrator는 감지 + 알림만 담당.
 
 ---
