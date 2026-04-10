@@ -110,10 +110,12 @@ class RLSignalSource:
         self.lookback = lookback
 
     def get_signal(self, dt: date, prices: list[float], position: int) -> str:
+        # Q-table은 position을 0(미보유)/1(보유)로 학습 — 수량→바이너리 변환
+        binary_position = 1 if position > 0 else 0
         if self.algorithm == "qlearn_v2":
-            state = _state_key_v2(prices, position)
+            state = _state_key_v2(prices, binary_position)
         else:
-            state = _state_key_v1(prices, position)
+            state = _state_key_v1(prices, binary_position)
 
         q_values = self.q_table.get(state)
         if q_values is None:
