@@ -25,3 +25,8 @@ data:
   # 오케스트레이터 기본값 (worker env로 오버라이드 가능)
   ORCH_MODE: blend
   ORCH_INTERVAL_SECONDS: "120"
+  # WebSocket 틱 수집 설정
+  WS_TICK_BATCH_SIZE: "100"
+  WS_TICK_FLUSH_INTERVAL: "1.0"
+  WS_RECONNECT_MAX: "3"
+  MAX_TICKERS_PER_WS: "40"
