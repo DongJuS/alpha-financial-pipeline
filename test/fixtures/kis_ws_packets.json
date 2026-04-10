@@ -1,0 +1,7 @@
+{
+  "tick_normal": "0|H0STCNT0|001|005930^53400^1^53500^53200^53400^16630538^53400^0^0^0^0^0^0^0^0^0^0^0",
+  "tick_multi_field": "0|H0STCNT0|001|000660^142500^2^143000^142000^142500^8532100^142500^0^0^0^0^0^142500",
+  "subscribe_ack": "{\"header\":{\"tr_id\":\"H0STCNT0\",\"tr_key\":\"005930\",\"encrypt\":\"N\"},\"body\":{\"rt_cd\":\"0\",\"msg_cd\":\"OPSP0000\",\"msg1\":\"SUBSCRIBE SUCCESS\"}}",
+  "invalid_format": "GARBAGE_DATA",
+  "empty": ""
+}
