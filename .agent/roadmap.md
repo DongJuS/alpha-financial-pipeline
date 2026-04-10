@@ -7,14 +7,14 @@
 
 ---
 
-## 현재 상태 (2026-03-29)
+## 현재 상태 (2026-04-10)
 
 - **코어 트레이딩**: Phase 1~13 구현 완료, 유지보수 단계
-- **Step 3 완료**: RL 부트스트랩 + 3전략 동시 블렌딩
-- **Step 4 대부분 완료**: Helm chart + CI/CD + Dockerfile. 모니터링/실배포만 잔여
-- **Step 5 완료**: Alpha 안정화 (e2e 검증, smoke test, Collector→Orchestrator 1사이클 재현, README, Airflow 비교 문서)
-- **Step 6 완료**: 테스트 557 passed, 0 failed
-- **다음 목표**: 제출(3/30) → 모니터링 → K3s 실배포
+- **Step 3~7 완료**: RL 블렌딩, K3s 배포, 안정화, 테스트 정비, 글로벌 데이터 레이크 (11.5M행, ohlcv_daily src 전환 완료)
+- **Step 7b 거의 완료**: Airflow DAG 6개 SUCCESS + 비교 문서. UI 스크린샷만 잔여
+- **Step 8 구현됨**: KIS WebSocket 실시간 수집 코드 존재. 다중 연결 확장/안정화 잔여
+- **Step 9 Phase 1 완료**: constants.py + 매직 넘버 교체 + Settings 단일화 (PR #107~110)
+- **다음 목표**: 안정화 스프린트 (Step 10 검증 + CI 정비) → Step 8 안정화 → Step 9 Phase 2
 
 ---
 
@@ -24,250 +24,129 @@
 
 PR #32/#33/#34. 장 전(학습) → 장 중(블렌딩) → 장 후(재학습) 운영 흐름 완성.
 
+### Step 4 — K3s 프로덕션 배포 ✅
+
+PR #38/#39/#41/#51/#63/#64/#68. Helm(인프라) + Kustomize(앱) 병행 전략.
+deploy.sh Helm→Kustomize 순서 정상. K3s 6 Pod Running 검증 완료.
+
 ### Step 5 — Alpha 안정화 + 제출 준비 ✅
 
-PR #48/#49/#51/#52/#53/#54. docker compose 클린 기동 → 8서비스 healthy → smoke test 통과 → Collector→Orchestrator 1사이클 재현(수집 24건→3전략 병렬→블렌딩 fallback→S3 저장, 16초) → README 정량 지표 → Airflow 비교 문서.
+PR #48/#49/#51/#52/#53/#54. docker compose 클린 기동 → 8서비스 healthy → smoke test 통과 → 1사이클 재현.
 
 ### Step 6 — 테스트 스위트 완전 정비 ✅
 
-PR #44/#45/#50. 462 → 557 passed (+95). event loop 오염 해결, 인터페이스 불일치 수정, DB 테스트 integration 마킹.
+PR #44/#45/#50. 462 → 612 passed. event loop 오염 해결, 인터페이스 불일치 수정.
 
-### Step 4 — K3s 프로덕션 배포 (대부분 완료)
+### Step 7 — 글로벌 데이터 레이크 ✅
 
-PR #38/#39/#41/#51. Helm chart + Kustomize + CI/CD(4단계 게이트) + Dockerfile multi-stage.
+KR 2,771 + US 6,595 종목, 11.5M행 수집 완료. ohlcv_daily 파티셔닝.
+src/ 코드 전체 ohlcv_daily 전환 완료 (queries/models/collector/API/RL).
+
+### Step 9 Phase 1 — 상수 + Settings 단일화 ✅
+
+PR #107~110. 4에이전트 병렬 실행으로 3시간 분량을 1시간에 완료.
+- `src/constants.py` 신규: `PAPER_TRADING_INITIAL_CAPITAL`, `DEFAULT_*_MODEL`
+- 18곳+ 매직 넘버 → 상수 교체 (7파일)
+- LLM 모델명 12곳 → 상수 교체 (6파일)
+- `os.environ.get()` 6건 → `get_settings()` 전환 + config.py 5개 필드 추가
+
+---
+
+## 안정화 스프린트 (2026-04-10 ~) ← 현재
+
+Step 10 백테스트 코드가 4개 PR(#111~#114)로 병렬 머지되었으나, 모듈 간 통합 검증·DDL 확인·CI 신뢰도 정비가 되지 않은 상태.
+신규 기능(Step 8 안정화, Step 9 P2 등) 착수 전에 아래를 완료한다.
+
+**배경:**
+- 726 unit tests pass / 100 integration tests fail (서버 미기동 httpx.ConnectError, 코드 결함 아님)
+- Step 10 코드는 유닛 테스트만 통과, 실데이터 end-to-end 검증 없음
+- 4 에이전트가 각각 만든 모듈(models, engine, signal_source, optimizer, CLI)의 인터페이스 경계 검증 필요
+
+**작업 항목:**
+1. integration test를 `pytest.mark.integration`으로 분리 → CI에서 유닛만 실행 (100건 실패 제거)
+2. backtest DDL(backtest_runs, backtest_daily)이 init_db.py에 포함됐는지 확인, 누락 시 추가
+3. `python -m src.backtest --help` CLI 기동 검증 (import 에러·의존성 확인)
+4. ohlcv_daily 실데이터로 RL 백테스트 1종목 end-to-end 실행
+5. engine ↔ signal_source ↔ optimizer 통합 테스트 1~2개 추가
+6. 미커밋 변경(roadmap/progress 정리, test 1줄) 커밋
+7. Docker Compose 전체 기동 + smoke test (이번 주)
+8. gen 격리(alpha_gen_db) 주말 사이클 검증 (주말)
+
+**완료 조건:** 유닛 테스트 전체 pass + CLI 실데이터 검증 통과 + 미커밋 없음
 
 ---
 
 ## 진행 중 마일스톤
 
-### Step 4 — K3s 프로덕션 배포 (잔여)
+### Step 7b — Airflow 비교 스파이크
 
-#### 배포 전략: Helm(인프라) + Kustomize(앱) 병행
+DAG 6/6 SUCCESS + 비교 문서 완료. Airflow UI 스크린샷만 잔여.
 
-**인프라(Stateful) → Helm (Bitnami chart)**: PostgreSQL, Redis, MinIO
-**앱(Stateless) → Kustomize (base + overlay)**: api, worker, ui
-**배포 순서**: helm install → kubectl apply -k
-**롤백**: 인프라 `helm rollback` / 앱 `git revert` → `kubectl apply -k`
+### Step 8 — KIS WebSocket 실시간
 
-**완료된 액션 아이템:**
-1. ~~커스텀 StatefulSet 삭제 → Bitnami chart values 작성~~ — PR #63 완료 (Helm 레이어)
-2. ~~`k8s/base/`에서 postgres/redis/minio 삭제~~ — PR #64 완료 (Kustomize 레이어)
-3. ~~Kustomize overlays dev/prod 보강~~ — PR #64 완료 (storage, ingress TLS, UI 리소스 패치)
-4. ~~configmap/secrets Bitnami 서비스명 정합~~ — PR #63/#64 완료
+WebSocket 연결 + 틱 수집 → Redis + DB 저장 구현 완료.
+잔여: 다중 연결 확장 (20→40종목), 재연결/장애 복구 안정화.
 
-**남은 액션 아이템:**
-1. `k8s/scripts/deploy.sh`를 Helm(인프라) → Kustomize(앱) 순서로 수정
-2. K3s 클러스터 실배포 검증
+### Step 9 Phase 2 — LLM Factory (후순위)
 
-#### K8s 로컬 환경: Colima
+`src/llm/factory.py` 신규 생성. predictor, strategy_b_consensus에서 Factory 사용.
+LLM 모델명 중복 제거 (6파일 → 1곳 관리). 시기: LLM 모델 변경 시 착수.
+후순위 이유: constants.py에 모델명 상수가 이미 있어 변경 어렵지 않고, 모델 교체 계획 없음.
 
-`colima start --kubernetes --cpu 4 --memory 8 --disk 40` (K3s v1.35.0, 구동 확인 완료)
+### Step 10 — 백테스트 시뮬레이션 (코드 머지 완료, 통합 검증 중)
 
----
+전략의 실제 유효성을 과거 데이터로 검증한다. ohlcv_daily 11.5M행 활용.
+백테스트 결과에 따라 이후 전략 집중 방향, Step 8/9 P2 착수 시점이 결정된다.
+
+**현재 상태 (2026-04-10):** PR #111~#114로 전체 코드 머지 완료.
+유닛 테스트 통과, 실데이터 end-to-end 검증은 안정화 스프린트에서 진행 중.
+
+**(fix) 결정 사항:**
+- RL 백테스트를 먼저 구현 (gymnasium 환경 재사용, LLM 비용 없음)
+- 성과 지표: 수익률, 샤프 비율, MDD, 승률
+- 수수료 0.015% + 세금 0.18% 반영
+- train/test 기간 반드시 분리 (과적합 방지)
+- Strategy A/B: Signal Replay (predictions DB 재생), 룰 기반 Proxy는 데이터 부족 시에만
+- 구현 구조: `src/backtest/` 신규 디렉터리 (engine, metrics, models, signal_source, cli)
+- 저장: DB 2테이블 (backtest_runs 메타 + backtest_daily 상세)
+- 인터페이스: CLI 먼저 (`python -m src.backtest`), API는 결과 조회 GET만 이후
+- 체결 시뮬: BacktestEngine 내 인메모리 포지션 추적, 고정 슬리피지 3bps (재현성)
+- 가중치 최적화: 그리드 서치 0.05 단위 (231조합), 샤프 비율 기준 + MDD 제약
+- 구현 순서: P0(RL백테스트+구조+DB+테스트+CLI) → P1(ReplaySource) → P2(가중치최적화) → P3(API+K8s)
 
 ### Phase 10 — 확장 통합 운영 (잔여)
 
-SearchAgent 잠정 중단 상태. Step 4 완료 후 재개 검토.
+SearchAgent 잠정 중단 상태.
 
 ### Phase 12 — 전략별 독립 포트폴리오 + 가상 트레이딩 (잔여)
 
-Docker 환경 통합 테스트, 대시보드 UI, 백테스트 시뮬레이션 모드가 남아 있다.
+Docker 환경 통합 테스트, 대시보드 UI. Step 10 백테스트 완료 후 착수.
 
 ---
 
-## 다음 단계
+## 미정 — Hot/Cold 데이터 Lifecycle 자동화
 
-### Step 7 — Airflow 비교 스파이크
+PostgreSQL + S3 이중 저장 수명 관리. Hot(최근 N일) PostgreSQL → Cold(N일 후) S3만 보존.
+시기: 데이터 규모가 PostgreSQL 성능에 영향을 줄 때 착수. (현재 1.94GB, 성능 이슈 없음)
 
-> 브랜치: `feature/airflow-workflow-spike` (main에서 분기, main은 건드리지 않음)
-> 목적: "Airflow를 직접 띄워서 DAG를 돌려봤다"고 면접에서 말할 수 있는 상태 만들기
-> 범위: 장 전 수집 파이프라인 1개 DAG (5 태스크). 전체 마이그레이션 아님.
+### 미정 — 멀티 타임프레임 데이터 파이프라인
 
-#### CTO/DevOps/DataEngineer 회의 결정 (2026-03-30)
-
-**원칙:**
-- 프로덕션 도입이 아님. 학습/비교 환경으로만 사용.
-- `docker-compose.airflow.yml` 별도 파일로 분리. 메인 `docker-compose.yml`은 건드리지 않음.
-- Alpha 소스(`src/`)를 DAG에서 읽기 전용 import. 코드 수정 없음.
-- Alpha(`docker compose up`)와 Airflow(`docker compose -f docker-compose.airflow.yml up`)를 동시에 띄움.
-
-**기술 결정:**
-- Airflow 이미지: `apache/airflow:2.10-python3.11`
-- Executor: `LocalExecutor` (1인 개발, Celery 불필요)
-- 메타데이터 DB: 자체 postgres (기존 alpha_db와 분리, 충돌 방지)
-- Alpha 소스 마운트: `./src:/opt/airflow/src:ro`, `./scripts:/opt/airflow/scripts:ro`
-- DAG 폴더: `./dags:/opt/airflow/dags`
-- 포트: Airflow webserver `8080` (기존 API `8000`과 충돌 없음)
-
-**DAG 설계:**
-```
-pre_market_collection (08:10 KST, 월~금)
-│
-├── collect_stock_master
-│       ↓
-├── collect_macro ──────┐
-│                        ├──→ collect_daily_bars
-├── collect_index_warmup ┘
-│       ↓
-├── validate_collection (Alpha에 없는 품질 게이트 — Airflow 부가가치)
-│       ↓
-└── log_completion (XCom으로 수집 건수 전달)
-```
-
-- `retries=3, retry_delay=30s` — Alpha `job_wrapper.py`와 동일 패턴을 선언적으로
-- `execution_timeout=10m` — Alpha TTL과 동일 개념을 SLA로
-- `validate_collection` — 수집 건수 검증. "Airflow 도입 시 이런 걸 추가할 수 있다"는 증거
-
-**실행 계획:**
-
-| 단계 | 시간 | 산출물 |
-|------|------|--------|
-| 1. 환경 구축 | 30분 | `docker-compose.airflow.yml` + Airflow UI 접속 |
-| 2. DAG 구현 | 45분 | `dags/pre_market_collection.py` (5 태스크) |
-| 3. 실행 + 검증 | 15분 | DAG Graph View, Gantt Chart 스크린샷 |
-| 4. 비교 기록 | 30분 | Obsidian `work/` 문서 + 면접 답변 |
-
-**면접 답변:**
-> "Alpha의 수집 파이프라인을 Airflow DAG로 이식해봤습니다. retry와 backfill이 선언적으로 되는 건 확실히 편했고, 실행 이력 UI는 압도적이었습니다. 하지만 30초 인터벌 실시간 수집은 Airflow가 지원하지 않아서, 배치 파이프라인만 선별 도입하고 실시간은 기존 구조를 유지하는 게 맞다고 판단했습니다."
+FDR 일봉 + KIS 분봉/틱 통합. RL state vector를 멀티 타임프레임으로 확장.
+4단계 구현: ohlcv_minute → RL feature → tick_summary → feature 전처리.
+시기: Step 8 WebSocket 안정화 후. Step 8은 Step 10 백테스트 이후 재검토.
 
 ---
 
-### 제출 (3/30)
-이력서 DE 언어 전환 → 제출
-
-### Step 4 잔여 — K3s 실배포
-1. deploy.sh Helm→Kustomize 순서 수정 — PR #68 완료
-2. K3s 6 Pod Running 검증 완료 — PR #68
-
-### Step 7 — 글로벌 데이터 레이크 확장
-
-KR(2,772종목) + US(6,591종목) 전 종목의 FDR 최대 12년 일봉을 수집한다.
-
-**배경 (2026-03-30 회의):**
-기존 `market_data` 테이블은 KR 전용(int 가격, KST 고정, interval 혼재)으로 글로벌 확장에 부적합.
-미장 추가, 실시간 분봉/틱 대응, 장기 데이터 축적을 위해 테이블을 재설계한다.
-
-**신규 테이블 구조:**
-1. `markets` — 시장 메타 (KOSPI/KOSDAQ/NYSE/NASDAQ, timezone, currency)
-2. `instruments` — 종목 마스터 (글로벌 유니크 ID: 005930.KS, AAPL.US)
-3. `ohlcv_daily` — 일봉 (NUMERIC(15,4) 가격, 연도별 파티셔닝 2010~2027)
-4. (미래) `ohlcv_minute` — 분봉, `ticks` — 틱 (S3 전용)
-
-**핵심 설계 결정:**
-- 가격: `int` → `NUMERIC(15,4)` (KRW 정수 + USD 소수점 통합)
-- instrument_id에 시장 접미사 (.KS, .KQ, .US) → 코드 충돌 방지
-- 일봉/분봉/틱 테이블 분리 → 행 수 차이 1000배, 쿼리 패턴 다름
-- ohlcv_daily 연도별 파티셔닝 → 오래된 데이터 DROP PARTITION으로 정리
-
-**예상 규모:** ~9,363종목, ~2,800만 행, ~5GB (PostgreSQL)
-
-### 보류
-- SearchAgent (SearXNG 통합)
-
-### 미정 — Hot/Cold 데이터 Lifecycle 자동화
-
-현재 PostgreSQL과 S3에 동일 데이터가 이중 저장(dual write)되고 있으며, 수명 관리가 없어 양쪽 모두 무한히 쌓이는 구조.
-
-**목표:**
-- Hot (최근 N일): PostgreSQL에서 실시간 조회
-- Cold (N일 이후): S3 Parquet에만 보존, PostgreSQL에서 삭제
-- 배치 분석(RL 재학습, 백테스트)은 S3에서 직접 수행
-
-**필요한 것:**
-1. PostgreSQL → S3 이관 확인 후 오래된 행 삭제하는 스케줄 잡
-2. 이관 대상: market_data(일봉/틱), predictions, trade_history
-3. ohlcv_daily 연도별 파티셔닝 활용 → DROP PARTITION으로 정리
-4. S3 Glacier 또는 lifecycle rule로 장기 보존 비용 절감
-
-**시기:** 미정. 데이터 규모가 PostgreSQL 성능에 영향을 줄 때 착수.
-
-### 미정 — 멀티 타임프레임 데이터 파이프라인 (KIS 실시간 + RL 학습 확장)
-
-FDR 일봉 + KIS 분봉/틱을 통합하여 RL과 에이전트가 멀티 타임프레임으로 학습·추론할 수 있게 한다.
-
-**배경 (2026-03-31 회의):**
-현재 RL은 일봉(ohlcv_daily)만 학습에 사용한다. 장중 모멘텀(분봉), 체결 강도(틱)를 추가하면 state vector가 풍부해지고 전략 정밀도가 올라간다.
-
-**저장 계층:**
-```
-PostgreSQL (쿼리용):
-  ohlcv_daily    — 일봉 (이미 있음, FDR/KIS 장 마감 후 확정)
-  ohlcv_minute   — 분봉 (신규, KIS REST, 장중 1분/5분, 월별 파티셔닝)
-  tick_summary   — 틱 요약 (신규, 일별 VWAP/매수비율/스프레드)
-
-Redis (실시간):
-  latest_ticks      — 최신 체결가 TTL 60초 (이미 있음)
-  realtime_series   — 최근 300틱 시계열 (이미 있음)
-
-S3 Parquet (학습용 아카이브):
-  daily/    — 일봉 (이미 있음)
-  minute/   — 분봉 (신규)
-  ticks/    — 틱 원본 (신규, PostgreSQL에 안 넣음)
-  features/ — 전처리된 멀티 타임프레임 feature 벡터 (신규)
-```
-
-**RL state vector 확장:**
-```
-현재 (일봉만):
-  [sma_5, sma_20, rsi, volatility, volume_ratio, returns_1d]
-
-확장 (멀티 타임프레임):
-  일봉: [sma_5, sma_20, rsi, volatility, volume_ratio]
-  분봉: [vwap_deviation, intraday_momentum, volume_surge_5min]
-  틱:   [buy_ratio, spread_pct, tick_intensity]
-```
-
-**구현 4단계:**
-
-| 단계 | 내용 | 신규 파일 | 기존 수정 | 난이도 |
-|------|------|-----------|-----------|--------|
-| 1단계 | `ohlcv_minute` 테이블 + KIS 분봉 수집 | create_market_tables.py DDL, queries.py 함수, collector.py 메서드, scheduler 잡 | 없음 | 낮~중 |
-| 2단계 | RL state vector에 분봉 feature 추가 | — | rl_dataset_builder_v2.py, rl_trading_v2.py | 중간 |
-| 3단계 | `tick_summary` + S3 틱 아카이브 | datalake.py 함수, queries.py 함수 | 없음 | 낮음 |
-| 4단계 | `features/` 전처리 파이프라인 | feature_builder.py (신규) | rl_dataset_builder_v2.py 연결 | 높음 |
-
-**기존 API 수정: 0건.** 전부 신규 추가.
-
-**용량 추정 (20종목, 연간):**
-| 데이터 | PostgreSQL | S3 |
-|--------|------------|-----|
-| 분봉 (ohlcv_minute) | ~25MB/년 | ~5MB/년 |
-| 틱 요약 (tick_summary) | ~1MB/년 | — |
-| 틱 원본 | — | ~50GB/년 |
-| feature 벡터 | — | ~1GB/년 |
-
-**시기:** 미정. KIS 모의투자 안정화 후 1단계부터 순차 착수. 각 단계는 독립 배포 가능.
-
-### Step 9 — 코드 추상화 (하드코딩 제거 + Factory 패턴)
-
-코드베이스 전체 스캔 결과 50건 이상의 하드코딩 패턴 발견. 운영관리 효율화를 위해 3 Phase로 개선.
-
-**배경 (2026-04-01 CTO×DevOps×DE×Backend×Frontend 5라운드 회의):**
-- 초기 자본 `10,000,000`이 6곳 이상에서 반복
-- LLM 모델명이 6개 파일에서 중복 정의 (버전 업 시 전부 수정 필요)
-- `os.environ.get()` 직접 호출이 Settings와 이중화
-
-**Phase 1 — 상수 통합 (1h):**
-- `src/constants.py` 신규 생성
-- `10,000,000` → `PAPER_TRADING_INITIAL_CAPITAL` (6곳 교체)
-- `CONFIRM_REAL_TRADING_2026` → 동적 연도
-
-**Phase 2 — LLM Factory (1h):**
-- `src/llm/factory.py` 신규 생성
-- predictor, strategy_b_consensus 등에서 Factory 사용
-- LLM 모델명 중복 제거 (6개 파일 → 1곳 관리)
-
-**Phase 3 — 설정 소스 단일화 (30m):**
-- `os.environ.get()` 직접 호출 → `get_settings()` 경유로 교체
-- gen_collector.py, search_agent.py 등
-
-**하지 않는 것 (오버엔지니어링 방지):**
+### 하지 않는 것 (오버엔지니어링 방지)
 - Builder 패턴, DI 컨테이너, ABC 추상 클래스 — 현재 규모에서 불필요
 - "추상화가 없어서 버그가 2번 발생한 후에 하라" 원칙
 
-**장기 로드맵 (문제 발생 시):**
+### 장기 로드맵 (문제 발생 시)
 - Strategy 패턴 — 종목 100개 이상 시
 - BaseCollector ABC — 새 데이터 소스 추가 시
 - Helm values → constants 연동 — 멀티 클러스터 시
 
-**시기:** 미정. Phase 1(상수)은 즉시 가능, Phase 2(Factory)는 LLM 모델 변경 시 착수.
+### 보류
+- SearchAgent (SearXNG 통합)
+- RL 하이퍼파라미터 자동 탐색 (Optuna)
+- Pre-commit Lint 자동화 (ruff --fix)
