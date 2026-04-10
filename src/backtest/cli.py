@@ -118,7 +118,7 @@ async def _build_replay_signal_source(
     )
     signals: dict[date, str] = {}
     for p in predictions:
-        d = p["predicted_at"] if isinstance(p["predicted_at"], date) else p["predicted_at"].date()
+        d = p["trading_date"] if isinstance(p["trading_date"], date) else p["trading_date"].date()
         signals[d] = p["signal"]
     return ReplaySignalSource(signals=signals)
 
@@ -241,7 +241,7 @@ async def _run_backtest(args: argparse.Namespace) -> None:
         raise SystemExit(f"지원하지 않는 전략: {config.strategy}")
 
     # 엔진 실행
-    cost_model = CostModel(config)
+    cost_model = CostModel(config.commission_rate_pct, config.tax_rate_pct, config.slippage_bps)
     engine = BacktestEngine(
         config=config,
         signal_source=signal_source,
@@ -261,9 +261,8 @@ async def _run_backtest(args: argparse.Namespace) -> None:
 
     # DB 저장
     if args.save_db:
-        from src.backtest.repository import save_backtest_daily, save_backtest_run
-        run_id = await save_backtest_run(result)
-        await save_backtest_daily(run_id, result.daily_snapshots)
+        from src.backtest.repository import save_backtest
+        run_id = await save_backtest(result)
         print(f"\nDB 저장 완료: run_id={run_id}")
 
 
