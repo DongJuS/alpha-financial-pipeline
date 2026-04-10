@@ -12,6 +12,18 @@
 
 ---
 
+## Git Workflow
+
+Always verify you are on the correct git branch before committing or creating a PR. Run `git branch` to confirm before any commit operation.
+
+---
+
+## Multi-Agent Workflow
+
+When working as an Agent (1-4) on partitioned tasks, never run `git checkout` on files modified by other agents. Use `git diff` or `git show` to inspect without modifying.
+
+---
+
 ## 🔐 Git Push 인증 절차
 
 GitHub 관련 지침은 `.github/README.md`부터 읽는다.
