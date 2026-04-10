@@ -47,15 +47,9 @@ DEFAULT_RL_PROFILE = "tabular_q_v2_momentum"
 
 async def _load_ohlcv(ticker: str, start: date, end: date) -> list[dict]:
     """ohlcv_daily에서 start~end 구간 데이터를 로딩합니다."""
-    from src.db.queries import fetch_recent_market_data
+    from src.db.queries import fetch_ohlcv_range
 
-    total_days = (end - start).days + 30  # 여유분
-    rows = await fetch_recent_market_data(ticker, days=total_days)
-    filtered = [
-        r for r in rows
-        if start <= (r["traded_at"] if isinstance(r["traded_at"], date) else r["traded_at"].date()) <= end
-    ]
-    return sorted(filtered, key=lambda r: r["traded_at"])
+    return await fetch_ohlcv_range(ticker, start, end)
 
 
 # ── RL 시그널 소스 구성 ───────────────────────────────────────────────
