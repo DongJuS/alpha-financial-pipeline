@@ -18,6 +18,7 @@ import asyncio
 import logging
 import sys
 import urllib.parse
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -155,6 +156,21 @@ CREATE_TABLES: list[str] = [
     ) PARTITION BY RANGE (traded_at);
     CREATE INDEX IF NOT EXISTS idx_ohlcv_daily_instrument
         ON ohlcv_daily (instrument_id, traded_at DESC);
+    """,
+
+    # 2-e. tick_data (실시간 틱 전용 파티셔닝 테이블)
+    """
+    CREATE TABLE IF NOT EXISTS tick_data (
+        instrument_id  VARCHAR(20)    NOT NULL,
+        timestamp_kst  TIMESTAMPTZ    NOT NULL,
+        price          INTEGER        NOT NULL,
+        volume         INTEGER        NOT NULL,
+        change_pct     NUMERIC(8,4),
+        source         VARCHAR(20)    DEFAULT 'kis_ws',
+        PRIMARY KEY (instrument_id, timestamp_kst)
+    ) PARTITION BY RANGE (timestamp_kst);
+    CREATE INDEX IF NOT EXISTS idx_tick_data_instrument_ts
+        ON tick_data (instrument_id, timestamp_kst DESC);
     """,
 
     # 3. 예측 시그널 (PredictorAgent 출력)
@@ -1304,6 +1320,24 @@ async def create_schema(
             "PARTITION OF ohlcv_daily DEFAULT"
         )
         logger.info("[%s] ohlcv_daily 파티션 생성 완료 (2010~2027 + default)", label)
+
+        # tick_data 날짜별 파티션 생성 (오늘 ~ +30일 + default)
+        today = date.today()
+        for day_offset in range(31):
+            d = today + timedelta(days=day_offset)
+            next_d = d + timedelta(days=1)
+            partition_name = f"tick_data_{d.strftime('%Y%m%d')}"
+            partition_ddl = (
+                f"CREATE TABLE IF NOT EXISTS {partition_name} "
+                f"PARTITION OF tick_data "
+                f"FOR VALUES FROM ('{d.isoformat()}') TO ('{next_d.isoformat()}')"
+            )
+            await conn.execute(partition_ddl)
+        await conn.execute(
+            "CREATE TABLE IF NOT EXISTS tick_data_default "
+            "PARTITION OF tick_data DEFAULT"
+        )
+        logger.info("[%s] tick_data 파티션 생성 완료 (오늘~+30일 + default)", label)
 
         if seed_admin:
             await seed_default_admin(conn)
