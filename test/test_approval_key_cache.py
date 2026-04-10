@@ -6,7 +6,6 @@ test/test_approval_key_cache.py — approval_key Redis 캐싱 테스트
 
 from __future__ import annotations
 
-import asyncio
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -35,14 +34,13 @@ def collector(_env):
 class TestApprovalKeyCacheHit:
     """Redis에 캐시된 approval_key가 있으면 KIS API를 호출하지 않는다."""
 
-    def test_cache_hit_returns_cached_value(self, collector):
+    @pytest.mark.asyncio
+    async def test_cache_hit_returns_cached_value(self, collector):
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value="cached-approval-key-abc")
 
         with patch("src.agents.collector.get_redis", return_value=mock_redis):
-            result = asyncio.get_event_loop().run_until_complete(
-                collector._ensure_ws_approval_key()
-            )
+            result = await collector._ensure_ws_approval_key()
 
         assert result == "cached-approval-key-abc"
         mock_redis.get.assert_awaited_once()
@@ -52,7 +50,8 @@ class TestApprovalKeyCacheHit:
 class TestApprovalKeyCacheMiss:
     """Redis에 캐시가 없으면 KIS API로 발급 후 Redis에 저장한다."""
 
-    def test_cache_miss_issues_and_stores(self, collector):
+    @pytest.mark.asyncio
+    async def test_cache_miss_issues_and_stores(self, collector):
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=None)
         mock_redis.set = AsyncMock()
@@ -72,9 +71,7 @@ class TestApprovalKeyCacheMiss:
             patch("src.agents.collector.get_redis", return_value=mock_redis),
             patch("httpx.AsyncClient", return_value=mock_http),
         ):
-            result = asyncio.get_event_loop().run_until_complete(
-                collector._ensure_ws_approval_key()
-            )
+            result = await collector._ensure_ws_approval_key()
 
         assert result == "new-approval-key-xyz"
         mock_redis.get.assert_awaited_once()
