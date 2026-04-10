@@ -171,20 +171,18 @@ class TestFlushTickBuffer:
     """_flush_tick_buffer의 flush 조건을 검증합니다."""
 
     @staticmethod
-    def _make_point() -> "MarketDataPoint":
-        from src.db.models import MarketDataPoint
+    def _make_point():
+        from src.agents.collector.models import TickData
 
-        return MarketDataPoint(
+        return TickData(
             instrument_id="005930.KS",
+            price=53400.0,
+            volume=100,
+            timestamp_kst=datetime.now(),
             name="삼성전자",
             market="KOSPI",
-            traded_at=date.today(),
-            open=53400.0,
-            high=53500.0,
-            low=53200.0,
-            close=53400.0,
-            volume=100,
             change_pct=None,
+            source="kis_ws",
         )
 
     @pytest.mark.asyncio
@@ -210,7 +208,7 @@ class TestFlushTickBuffer:
         mock_store = AsyncMock()
         with (
             patch(
-                "src.agents.collector._realtime.upsert_market_data",
+                "src.agents.collector._realtime.insert_tick_batch",
                 new_callable=AsyncMock,
                 return_value=3,
             ) as mock_upsert,
@@ -237,7 +235,7 @@ class TestFlushTickBuffer:
         mock_store = AsyncMock()
         with (
             patch(
-                "src.agents.collector._realtime.upsert_market_data",
+                "src.agents.collector._realtime.insert_tick_batch",
                 new_callable=AsyncMock,
                 return_value=1,
             ) as mock_upsert,
