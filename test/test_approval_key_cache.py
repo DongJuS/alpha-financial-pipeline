@@ -39,7 +39,7 @@ class TestApprovalKeyCacheHit:
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value="cached-approval-key-abc")
 
-        with patch("src.agents.collector.get_redis", return_value=mock_redis):
+        with patch("src.agents.collector._base.get_redis", return_value=mock_redis):
             result = await collector._ensure_ws_approval_key()
 
         assert result == "cached-approval-key-abc"
@@ -68,7 +68,7 @@ class TestApprovalKeyCacheMiss:
         from src.utils.redis_client import TTL_KIS_APPROVAL_KEY
 
         with (
-            patch("src.agents.collector.get_redis", return_value=mock_redis),
+            patch("src.agents.collector._base.get_redis", return_value=mock_redis),
             patch("httpx.AsyncClient", return_value=mock_http),
         ):
             result = await collector._ensure_ws_approval_key()

@@ -17,7 +17,7 @@ DEFAULT_GPT_MODEL: str = "gpt-4o-mini"
 DEFAULT_GEMINI_MODEL: str = "gemini-1.5-pro"
 
 # ── KIS WebSocket 실시간 수집 ──────────────────────────────────────
-MAX_TICKERS_PER_WS: int = 20  # KIS WebSocket 1연결당 최대 구독 종목 수
+MAX_TICKERS_PER_WS: int = 40  # KIS WebSocket 1연결당 최대 구독 종목 수 (기본값, Settings.max_tickers_per_ws 우선)
 
 # ── 백테스트 비용 모델 ──────────────────────────────────────────────
 BACKTEST_COMMISSION_RATE_PCT: float = 0.015  # 매수/매도 양방향 (증권사 수수료)
