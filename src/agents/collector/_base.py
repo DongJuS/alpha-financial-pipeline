@@ -43,10 +43,11 @@ class _CollectorBase:
         self.settings = get_settings()
         self._last_hb_db_at: Optional[datetime] = None
         # 실시간 틱 버퍼 (건별 INSERT 대신 배치 flush)
-        self._tick_buffer: list[MarketDataPoint] = []
+        self._tick_buffer: list = []  # TickData 리스트 (순환참조 방지를 위해 타입 생략)
         self._tick_buffer_last_flush: float = 0.0
         self._tick_batch_size: int = self.settings.ws_tick_batch_size
         self._tick_flush_interval: float = self.settings.ws_tick_flush_interval
+        self._last_tick_at: datetime | None = None  # 마지막 수신 틱 시각
 
     def _account_scope(self) -> str:
         return "paper" if self.settings.kis_is_paper_trading else "real"
@@ -109,18 +110,21 @@ class _CollectorBase:
     async def resolve_tickers(self, requested: list[str] | None, limit: int = 20) -> list[tuple[str, str, str]]:
         return await asyncio.to_thread(self._resolve_tickers, requested, limit)
 
-    async def _cache_latest_tick(self, point: MarketDataPoint, source: str) -> None:
+    async def _cache_latest_tick(self, tick, source: str) -> None:
+        """TickData 또는 MarketDataPoint를 Redis에 캐시합니다."""
         redis = await get_redis()
-        # Redis 키는 instrument_id (005930.KS) 기반
-        cache_key = point.instrument_id
+        inst_id = getattr(tick, 'instrument_id', '')
+        cache_key = inst_id
+        # TickData는 price 속성, MarketDataPoint는 close 속성
+        current_price = getattr(tick, 'price', None) or getattr(tick, 'close', None)
         payload = {
             "ticker": cache_key,
             "instrument_id": cache_key,
-            "name": point.name,
-            "current_price": point.close,
-            "change_pct": point.change_pct,
-            "volume": point.volume,
-            "updated_at": point.timestamp_kst.isoformat(),
+            "name": getattr(tick, 'name', cache_key),
+            "current_price": current_price,
+            "change_pct": getattr(tick, 'change_pct', None),
+            "volume": getattr(tick, 'volume', 0),
+            "updated_at": (getattr(tick, 'timestamp_kst', None) or datetime.now(KST)).isoformat(),
             "source": source,
         }
         encoded = json.dumps(payload, ensure_ascii=False)
