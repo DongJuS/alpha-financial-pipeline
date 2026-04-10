@@ -1,7 +1,8 @@
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from src.agents.strategy_b_consensus import StrategyBConsensus
+from src.llm.router import LLMRouter
 
 
 class StrategyBConsensusTest(unittest.IsolatedAsyncioTestCase):
@@ -15,12 +16,13 @@ class StrategyBConsensusTest(unittest.IsolatedAsyncioTestCase):
                 "persona": "조정자",
             }
         )
-        runner._ask_json_with_fallback = AsyncMock()
+        runner.router = LLMRouter()
+        runner.router.ask_json = AsyncMock()
         return runner
 
     async def test_synthesize_rejects_low_confidence_below_threshold(self) -> None:
         runner = self._runner(threshold=0.67)
-        runner._ask_json_with_fallback.return_value = {
+        runner.router.ask_json.return_value = {
             "final_signal": "BUY",
             "confidence": 0.61,
             "consensus_reached": True,
@@ -41,7 +43,7 @@ class StrategyBConsensusTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_synthesize_accepts_high_confidence_when_consensus_true(self) -> None:
         runner = self._runner(threshold=0.67)
-        runner._ask_json_with_fallback.return_value = {
+        runner.router.ask_json.return_value = {
             "final_signal": "SELL",
             "confidence": 0.81,
             "consensus_reached": True,

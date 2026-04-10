@@ -25,9 +25,7 @@ load_dotenv(ROOT / ".env")
 
 from src.db.models import PredictionSignal
 from src.db.queries import fetch_recent_ohlcv, insert_debate_transcript, insert_prediction
-from src.llm.claude_client import ClaudeClient
-from src.llm.gemini_client import GeminiClient
-from src.llm.gpt_client import GPTClient
+from src.llm.router import LLMRouter
 from src.services.model_config import get_strategy_b_roles
 from src.utils.config import get_settings
 from src.utils.logging import get_logger, setup_logging
@@ -55,9 +53,7 @@ class StrategyBConsensus:
         consensus_threshold: float | None = None,
     ) -> None:
         settings = get_settings()
-        self.claude = ClaudeClient(model="claude-3-5-sonnet-latest")
-        self.gpt = GPTClient(model="gpt-4o-mini")
-        self.gemini = GeminiClient(model="gemini-1.5-pro")
+        self.router = LLMRouter()
         default_rounds = settings.strategy_b_max_rounds
         default_threshold = settings.strategy_b_consensus_threshold
         self.max_rounds = max(1, int(max_rounds if max_rounds is not None else default_rounds))
@@ -70,22 +66,6 @@ class StrategyBConsensus:
     @staticmethod
     def _clamp_confidence(value: float) -> float:
         return max(0.0, min(1.0, value))
-
-    @staticmethod
-    def _provider_name_for_model(model: str) -> str:
-        lowered = model.lower()
-        if "claude" in lowered:
-            return "claude"
-        if "gpt" in lowered:
-            return "gpt"
-        if "gemini" in lowered:
-            return "gemini"
-        raise ValueError(f"지원하지 않는 model/provider 조합입니다: {model}")
-
-    def _provider_order_for_model(self, model: str) -> list[str]:
-        primary = self._provider_name_for_model(model)
-        rest = [provider for provider in ("claude", "gpt", "gemini") if provider != primary]
-        return [primary, *rest]
 
     async def _ensure_role_configs(self) -> dict[str, dict[str, Any]]:
         if self.role_configs is not None:
@@ -100,50 +80,6 @@ class StrategyBConsensus:
         if config_key not in role_configs:
             raise RuntimeError(f"Strategy B role config missing: {config_key}")
         return role_configs[config_key]
-
-    async def _ask_json_with_fallback(self, model: str, prompt: str, temperature: float = 0.5) -> dict[str, Any]:
-        last_error: Exception | None = None
-        providers_tried = self._provider_order_for_model(model)
-        for i, provider in enumerate(providers_tried):
-            try:
-                if provider == "gpt" and self.gpt.is_configured:
-                    result = await self.gpt.ask_json(prompt, temperature=temperature)
-                elif provider == "gemini" and self.gemini.is_configured:
-                    result = await self.gemini.ask_json(prompt, temperature=temperature)
-                elif provider == "claude" and self.claude.is_configured:
-                    result = await self.claude.ask_json(prompt, temperature=temperature)
-                else:
-                    continue
-                if i > 0:
-                    logger.info("LLM fallback 사용: %s → %s (model=%s)", providers_tried[0], provider, model)
-                return result
-            except Exception as exc:
-                last_error = exc
-                logger.warning("%s JSON 호출 실패 (model=%s): %s", provider, model, exc)
-
-        raise RuntimeError(f"LLM JSON 호출 실패 — 모든 provider 실패: model={model}, tried={providers_tried}, last_error={last_error}")
-
-    async def _ask_text_with_fallback(self, model: str, prompt: str, temperature: float = 0.5) -> str:
-        last_error: Exception | None = None
-        providers_tried = self._provider_order_for_model(model)
-        for i, provider in enumerate(providers_tried):
-            try:
-                if provider == "gpt" and self.gpt.is_configured:
-                    result = await self.gpt.ask(prompt, temperature=temperature)
-                elif provider == "gemini" and self.gemini.is_configured:
-                    result = await self.gemini.ask(prompt, temperature=temperature)
-                elif provider == "claude" and self.claude.is_configured:
-                    result = await self.claude.ask(prompt, temperature=temperature)
-                else:
-                    continue
-                if i > 0:
-                    logger.info("LLM fallback 사용: %s → %s (model=%s)", providers_tried[0], provider, model)
-                return result
-            except Exception as exc:
-                last_error = exc
-                logger.warning("%s text 호출 실패 (model=%s): %s", provider, model, exc)
-
-        raise RuntimeError(f"LLM text 호출 실패 — 모든 provider 실패: model={model}, tried={providers_tried}, last_error={last_error}")
 
     async def _propose(
         self,
@@ -172,7 +108,7 @@ BUY/SELL/HOLD 중 하나를 선택하고 JSON으로 답해라:
   "argument": "핵심 근거 한 문단"
 }}
 """
-        data = await self._ask_json_with_fallback(str(proposer_role["llm_model"]), prompt, temperature=0.5)
+        data = await self.router.ask_json(str(proposer_role["llm_model"]), prompt, temperature=0.5)
         signal = str(data.get("signal", "HOLD")).upper()
         if signal not in {"BUY", "SELL", "HOLD"}:
             signal = "HOLD"
@@ -202,7 +138,7 @@ Proposer 주장: {json.dumps(proposer, ensure_ascii=False)}
 반론을 2~3문장으로 작성해라.
 """
         # Challenger는 더 높은 temperature로 다양한 반론 유도
-        return await self._ask_text_with_fallback(str(role_config["llm_model"]), prompt, temperature=0.7)
+        return await self.router.ask_text(str(role_config["llm_model"]), prompt, temperature=0.7)
 
     async def _synthesize(
         self,
@@ -237,7 +173,7 @@ challenger2: {challenger2}
 }}
 """
         # Synthesizer는 낮은 temperature로 일관된 종합 판단
-        data = await self._ask_json_with_fallback(str(synthesizer_role["llm_model"]), prompt, temperature=0.3)
+        data = await self.router.ask_json(str(synthesizer_role["llm_model"]), prompt, temperature=0.3)
         signal = str(data.get("final_signal", fallback_signal)).upper()
         if signal not in {"BUY", "SELL", "HOLD"}:
             signal = "HOLD"
