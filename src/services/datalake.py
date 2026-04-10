@@ -154,7 +154,7 @@ def _to_parquet_bytes(records: list[dict[str, Any]], schema: pa.Schema) -> bytes
 
     table = pa.table(columns, schema=schema)
     buf = io.BytesIO()
-    pq.write_table(table, buf, compression="snappy")
+    pq.write_table(table, buf, compression="zstd")
     return buf.getvalue()
 
 
