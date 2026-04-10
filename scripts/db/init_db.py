@@ -1094,6 +1094,16 @@ CREATE_TABLES: list[str] = [
         UNIQUE (run_id, date)
     );
     """,
+
+    # 25. 대형 TEXT 컬럼에 lz4 TOAST 압축 적용 (PostgreSQL 14+)
+    # pglz 대비 압축/해제 속도 3배, 대형 TEXT 컬럼 읽기 성능 개선
+    """
+    ALTER TABLE debate_transcripts ALTER COLUMN proposer_content SET COMPRESSION lz4;
+    ALTER TABLE debate_transcripts ALTER COLUMN challenger1_content SET COMPRESSION lz4;
+    ALTER TABLE debate_transcripts ALTER COLUMN challenger2_content SET COMPRESSION lz4;
+    ALTER TABLE debate_transcripts ALTER COLUMN synthesizer_content SET COMPRESSION lz4;
+    ALTER TABLE predictions ALTER COLUMN reasoning_summary SET COMPRESSION lz4;
+    """,
 ]
 
 DROP_TABLES_SQL = """
