@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { to: "/datalake", label: "데이터", description: "S3 레이크" },
   { to: "/notifications", label: "알림", description: "알림 센터" },
   { to: "/audit", label: "감사", description: "감사 추적" },
+  { to: "/backtest", label: "백테스트", description: "전략 시뮬레이션" },
   { to: "/settings", label: "설정", description: "운영 정책" },
   { to: "/real-account", label: "실계좌", description: "KIS 실거래" },
 ];
