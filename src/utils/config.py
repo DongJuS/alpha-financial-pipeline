@@ -134,6 +134,8 @@ class Settings(BaseSettings):
     # ── WebSocket Tick Collection ──────────────────────────────────────────────
     ws_tick_batch_size: int = Field(default=100, ge=1, le=2000, alias="WS_TICK_BATCH_SIZE")
     ws_tick_flush_interval: float = Field(default=1.0, ge=0.1, le=30.0, alias="WS_TICK_FLUSH_INTERVAL")
+    ws_reconnect_max: int = Field(default=3, ge=1, le=20, description="WebSocket 최대 재연결 횟수")
+    max_tickers_per_ws: int = Field(default=40, ge=1, le=100, description="WebSocket 연결당 최대 종목 수")
 
     # ── S3 / MinIO (Data Lake) ───────────────────────────────────────────────
     s3_endpoint_url: str = Field(default="", alias="S3_ENDPOINT_URL")
