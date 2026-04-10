@@ -25,11 +25,12 @@ def _build_candles(count: int = 20) -> list[dict]:
 class PredictorFailoverTest(unittest.IsolatedAsyncioTestCase):
     async def test_fallback_to_secondary_provider_when_primary_fails(self) -> None:
         agent = PredictorAgent(llm_model="gpt-4o-mini")
-        agent.gpt = types.SimpleNamespace(
+
+        mock_gpt = types.SimpleNamespace(
             is_configured=True,
             ask_json=AsyncMock(side_effect=RuntimeError("insufficient_quota")),
         )
-        agent.claude = types.SimpleNamespace(
+        mock_claude = types.SimpleNamespace(
             is_configured=True,
             ask_json=AsyncMock(
                 return_value={
@@ -41,25 +42,28 @@ class PredictorFailoverTest(unittest.IsolatedAsyncioTestCase):
                 }
             ),
         )
-        agent.gemini = types.SimpleNamespace(
+        mock_gemini = types.SimpleNamespace(
             is_configured=True,
             ask_json=AsyncMock(return_value={"signal": "SELL", "confidence": 0.6}),
         )
+        agent.router._clients = {"gpt": mock_gpt, "claude": mock_claude, "gemini": mock_gemini}
 
         result = await agent._llm_signal("005930", _build_candles())
         self.assertEqual(result["signal"], "BUY")
         self.assertEqual(result["target_price"], 123456)
         self.assertEqual(result["stop_loss"], 120000)
-        agent.gpt.ask_json.assert_awaited_once()
-        agent.claude.ask_json.assert_awaited_once()
-        agent.gemini.ask_json.assert_not_awaited()
+        mock_gpt.ask_json.assert_awaited_once()
+        mock_claude.ask_json.assert_awaited_once()
+        mock_gemini.ask_json.assert_not_awaited()
 
     async def test_raises_when_all_providers_unavailable(self) -> None:
         candles = _build_candles()
         agent = PredictorAgent(llm_model="claude-3-5-sonnet-latest")
-        agent.claude = types.SimpleNamespace(is_configured=False, ask_json=AsyncMock())
-        agent.gpt = types.SimpleNamespace(is_configured=False, ask_json=AsyncMock())
-        agent.gemini = types.SimpleNamespace(is_configured=False, ask_json=AsyncMock())
+        agent.router._clients = {
+            "claude": types.SimpleNamespace(is_configured=False, ask_json=AsyncMock()),
+            "gpt": types.SimpleNamespace(is_configured=False, ask_json=AsyncMock()),
+            "gemini": types.SimpleNamespace(is_configured=False, ask_json=AsyncMock()),
+        }
 
         with self.assertRaises(RuntimeError):
             await agent._llm_signal("005930", candles)
