@@ -121,6 +121,32 @@ async def fetch_recent_market_data(
     return [dict(r) for r in rows]
 
 
+async def fetch_ohlcv_range(ticker: str, start: date, end: date) -> list[dict]:
+    """날짜 범위로 ohlcv_daily를 조회합니다.
+
+    ticker는 instrument_id(005930.KS) 또는 raw_code(005930) 모두 허용합니다.
+    반환 형식은 fetch_recent_market_data()와 동일합니다.
+    """
+    rows = await fetch(
+        """
+        SELECT
+            o.instrument_id, i.raw_code AS ticker, i.name,
+            o.traded_at, o.open, o.high, o.low, o.close, o.volume,
+            o.change_pct, o.adj_close
+        FROM ohlcv_daily o
+        JOIN instruments i ON o.instrument_id = i.instrument_id
+        WHERE (o.instrument_id = $1 OR i.raw_code = $1)
+          AND o.traded_at >= $2
+          AND o.traded_at <= $3
+        ORDER BY o.traded_at ASC
+        """,
+        ticker,
+        start,
+        end,
+    )
+    return [dict(r) for r in rows]
+
+
 async def latest_close_price(ticker: str) -> Optional[float]:
     """최근 종가를 반환합니다.
 
