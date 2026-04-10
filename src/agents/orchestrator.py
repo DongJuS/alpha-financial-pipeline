@@ -40,7 +40,7 @@ from src.services.datalake import store_blend_results, store_orders
 from src.utils.aggregate_risk import AggregateRiskMonitor
 from src.utils.config import get_settings
 from src.utils.logging import get_logger, setup_logging
-from src.utils.redis_client import set_heartbeat
+from src.utils.redis_client import get_heartbeat_detail, set_heartbeat
 from src.utils.strategy_promotion import StrategyPromoter
 
 if TYPE_CHECKING:
@@ -139,6 +139,36 @@ class OrchestratorAgent:
                 initial_capital,
             )
         return self._strategy_virtual_brokers[strategy_id]
+
+    # ── Agent Health Check ─────────────────────────────────────────────────
+
+    async def _check_agent_health(self) -> list[dict]:
+        """전체 에이전트 heartbeat 상태를 점검하고 이상 목록을 반환한다."""
+        agent_ids = [
+            "collector_agent",
+            "portfolio_manager_agent",
+            "notifier_agent",
+        ]
+        issues: list[dict] = []
+        for aid in agent_ids:
+            detail = await get_heartbeat_detail(aid)
+            if detail is None:
+                issues.append({"agent_id": aid, "status": "offline"})
+            elif detail.get("status") == "error":
+                issues.append({
+                    "agent_id": aid,
+                    "status": "error",
+                    "mode": detail.get("mode", ""),
+                    "error_count": int(detail.get("error_count", 0)),
+                })
+            elif detail.get("status") == "degraded":
+                issues.append({
+                    "agent_id": aid,
+                    "status": "degraded",
+                    "mode": detail.get("mode", ""),
+                    "error_count": int(detail.get("error_count", 0)),
+                })
+        return issues
 
     # ── Core Cycle ─────────────────────────────────────────────────────────
 
@@ -406,6 +436,16 @@ class OrchestratorAgent:
             )
             logger.info("Orchestrator cycle 완료: %s", result)
 
+            # 에이전트 heartbeat 상태 점검 + 이상 시 Telegram 알림
+            try:
+                issues = await self._check_agent_health()
+                if issues:
+                    notifier = self._create_notifier()
+                    for issue in issues:
+                        await notifier.send_agent_health_alert(**issue)
+                    logger.warning("에이전트 상태 이상 감지: %s", issues)
+            except Exception as e:
+                logger.debug("에이전트 상태 점검 스킵: %s", e)
 
             # KIS PENDING 주문 체결 동기화
             try:
