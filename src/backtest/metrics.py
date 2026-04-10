@@ -54,7 +54,7 @@ def compute_backtest_metrics(
     sell_trades = [t for t in trades if t.side == "SELL"]
     if sell_trades:
         win_count = sum(1 for t in sell_trades if t.pnl > 0)
-        win_rate = win_count / len(sell_trades)
+        win_rate = (win_count / len(sell_trades)) * 100.0
     else:
         win_rate = 0.0
 
