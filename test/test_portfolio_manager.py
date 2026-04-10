@@ -195,6 +195,7 @@ class PortfolioManagerRiskGuardTest(unittest.IsolatedAsyncioTestCase):
             ),
             patch("src.agents.portfolio_manager.market_session_status", new=AsyncMock(return_value="open")),
             patch.object(agent, "_is_daily_loss_blocked", new=AsyncMock(return_value=(False, 0.0))),
+            patch.object(agent, "_check_rule_based_exits", new=AsyncMock(return_value=[])),
             patch.object(agent, "process_signal", new=AsyncMock(side_effect=[paper_result, real_result])) as process_signal_mock,
             patch("src.agents.portfolio_manager.publish_message", new=AsyncMock()),
             patch("src.agents.portfolio_manager.set_heartbeat", new=AsyncMock()),
