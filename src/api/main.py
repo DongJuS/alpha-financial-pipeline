@@ -17,6 +17,7 @@ from src.api.routers import (
     agents,
     audit,
     auth,
+    backtest,
     datalake,
     feedback,
     market,
@@ -93,6 +94,7 @@ OPENAPI_TAGS = [
     {"name": "datalake", "description": "Data Lake 저장물 및 메타데이터 조회"},
     {"name": "audit", "description": "실거래/운영 감사 이력"},
     {"name": "feedback", "description": "전략 피드백 수집 및 조회"},
+    {"name": "backtest", "description": "백테스트 실행 결과 조회"},
     {"name": "scheduler", "description": "통합 스케줄러 상태 및 잡 실행 이력"},
     {"name": "system", "description": "루트 및 헬스체크"},
 ]
@@ -192,6 +194,7 @@ app.include_router(system_health.router, prefix=f"{API_PREFIX}/system", tags=["s
 app.include_router(datalake.router, prefix=f"{API_PREFIX}/datalake", tags=["datalake"])
 app.include_router(audit.router, prefix=f"{API_PREFIX}/audit", tags=["audit"])
 app.include_router(feedback.router, prefix=f"{API_PREFIX}/feedback", tags=["feedback"])
+app.include_router(backtest.router, prefix=f"{API_PREFIX}/backtest", tags=["backtest"])
 app.include_router(scheduler.router, prefix=f"{API_PREFIX}/scheduler", tags=["scheduler"])
 
 
