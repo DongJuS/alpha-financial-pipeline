@@ -56,6 +56,98 @@ async def upsert_market_data(points: list[MarketDataPoint]) -> int:
     return len(points)
 
 
+async def insert_tick_batch(ticks: list) -> int:
+    """tick_data 테이블에 틱 배치를 INSERT합니다.
+
+    ON CONFLICT 시 무시합니다 (동일 instrument_id + timestamp_kst).
+
+    Args:
+        ticks: TickData 객체 리스트 (instrument_id, timestamp_kst, price, volume, change_pct, source)
+
+    Returns:
+        INSERT 시도 건수
+    """
+    if not ticks:
+        return 0
+
+    query = """
+        INSERT INTO tick_data (
+            instrument_id, timestamp_kst,
+            price, volume, change_pct, source
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (instrument_id, timestamp_kst) DO NOTHING
+    """
+    await executemany(query, [
+        (
+            t.instrument_id,
+            t.timestamp_kst,
+            int(t.price),
+            int(t.volume),
+            t.change_pct,
+            t.source,
+        )
+        for t in ticks
+    ])
+    return len(ticks)
+
+
+async def get_ohlcv_bars(
+    instrument_id: str,
+    interval: str,
+    start: datetime,
+    end: datetime,
+) -> list[dict]:
+    """tick_data에서 분봉/시간봉 OHLCV를 실시간 집계합니다.
+
+    Args:
+        instrument_id: 종목 ID (예: '005930.KS')
+        interval: '1min', '5min', '15min', '1hour'
+        start: 조회 시작 시각 (KST)
+        end: 조회 종료 시각 (KST)
+
+    Returns:
+        [{timestamp_kst, open, high, low, close, volume}, ...]
+    """
+    # interval → SQL bucket expression
+    bucket_map = {
+        "1min": "date_trunc('minute', timestamp_kst)",
+        "5min": "to_timestamp(floor(extract(epoch FROM timestamp_kst) / 300) * 300) AT TIME ZONE 'Asia/Seoul'",
+        "15min": "to_timestamp(floor(extract(epoch FROM timestamp_kst) / 900) * 900) AT TIME ZONE 'Asia/Seoul'",
+        "1hour": "date_trunc('hour', timestamp_kst)",
+    }
+    bucket_expr = bucket_map.get(interval)
+    if not bucket_expr:
+        raise ValueError(f"지원하지 않는 interval: {interval}. 허용: {list(bucket_map.keys())}")
+
+    query = f"""
+        SELECT
+            {bucket_expr}  AS bucket,
+            (array_agg(price ORDER BY timestamp_kst ASC))[1]  AS open,
+            MAX(price)     AS high,
+            MIN(price)     AS low,
+            (array_agg(price ORDER BY timestamp_kst DESC))[1] AS close,
+            SUM(volume)    AS volume
+        FROM tick_data
+        WHERE instrument_id = $1
+          AND timestamp_kst >= $2
+          AND timestamp_kst < $3
+        GROUP BY bucket
+        ORDER BY bucket ASC
+    """
+    rows = await fetch(query, instrument_id, start, end)
+    return [
+        {
+            "timestamp_kst": row["bucket"],
+            "open": row["open"],
+            "high": row["high"],
+            "low": row["low"],
+            "close": row["close"],
+            "volume": row["volume"],
+        }
+        for row in rows
+    ]
+
+
 async def list_tickers(limit: int = 30) -> list[dict]:
     rows = await fetch(
         """
