@@ -30,6 +30,7 @@ from src.db.models import AgentHeartbeatRecord, MarketDataPoint
 from src.db.queries import insert_collector_error, insert_heartbeat, upsert_market_data
 from src.services.yahoo_finance import fetch_daily_bars
 from src.utils.config import get_settings, has_kis_credentials, kis_app_key_for_scope, kis_app_secret_for_scope
+from src.constants import MAX_TICKERS_PER_WS
 from src.utils.logging import get_logger, setup_logging
 from src.utils.market_data import compute_change_pct
 from src.utils.ticker import from_raw as ticker_from_raw
@@ -851,32 +852,29 @@ class CollectorAgent:
         logger.info("CollectorAgent Yahoo 일봉 수집 완료: %d건", saved)
         return points
 
-    async def collect_realtime_ticks(
+    async def _ws_collect_loop(
         self,
-        tickers: list[str],
-        duration_seconds: Optional[int] = None,
+        subscribed: list[str],
+        meta: dict[str, dict[str, str]],
+        *,
         tr_id: str = "H0STCNT0",
         reconnect_max: int = 3,
-        fallback_on_error: bool = True,
+        duration_seconds: Optional[int] = None,
+        started: Optional[float] = None,
     ) -> int:
-        if not tickers:
-            raise ValueError("realtime 모드는 --tickers 지정이 필요합니다.")
+        """단일 WebSocket 연결로 subscribed 종목의 틱을 수집합니다.
 
-        selected = await asyncio.to_thread(self._resolve_tickers, tickers)
-        meta = {t: {"name": n, "market": m} for t, n, m in selected}
-        subscribed = list(meta.keys())
+        collect_realtime_ticks에서 분리된 내부 루프.
+        다중 연결 분할 시 이 메서드를 청크별로 병렬 호출합니다.
+
+        Returns:
+            수신 틱 수 (>=0). 재연결 한도 초과 시 -1.
+        """
         subscribed_set = set(subscribed)
-        started = asyncio.get_running_loop().time()
+        if started is None:
+            started = asyncio.get_running_loop().time()
         reconnects = 0
         received = 0
-
-        if not self._has_kis_market_credentials():
-            message = f"KIS {self._account_scope()} app key/app secret 미설정"
-            if fallback_on_error:
-                logger.warning("%s — 일봉 스냅샷 수집으로 폴백합니다.", message)
-                await self.collect_daily_bars(tickers=subscribed, lookback_days=2)
-                return 0
-            raise RuntimeError(message)
 
         while True:
             try:
@@ -889,7 +887,11 @@ class CollectorAgent:
                     close_timeout=5,
                     max_size=2**20,
                 ) as ws:
-                    logger.info("KIS WebSocket 연결 성공 [%s]: %s", scope, self.settings.kis_websocket_url_for_scope(scope))
+                    logger.info(
+                        "KIS WebSocket 연결 성공 [%s] (%d종목): %s",
+                        scope, len(subscribed),
+                        self.settings.kis_websocket_url_for_scope(scope),
+                    )
 
                     for ticker in subscribed:
                         subscribe_payload = {
@@ -927,7 +929,6 @@ class CollectorAgent:
                         try:
                             raw = await asyncio.wait_for(ws.recv(), timeout=30)
                         except asyncio.TimeoutError:
-                            # 타임아웃 시 잔여 버퍼 flush
                             await self._flush_tick_buffer(force=True)
                             await self._beat(
                                 status="healthy",
@@ -975,11 +976,9 @@ class CollectorAgent:
                             change_pct=None,
                         )
 
-                        # 버퍼에 추가 → 조건 충족 시 배치 flush
                         self._tick_buffer.append(point)
                         await self._flush_tick_buffer()
 
-                        # Redis 캐시/Pub/Sub는 최신 1건만
                         await self._cache_latest_tick(point, source="kis_ws")
                         await publish_message(
                             TOPIC_MARKET_DATA,
@@ -1034,20 +1033,71 @@ class CollectorAgent:
                     break
                 await asyncio.sleep(min(reconnects * 2, 10))
 
-        if fallback_on_error:
-            logger.warning("WebSocket 실패로 폴백: FDR 스냅샷 수집 모드")
-            await self._beat(
-                status="degraded",
-                last_action="WebSocket 실패 → FDR 폴백",
-                metrics={"received_ticks": received, "mode": "fdr", "error_count": reconnects},
-                force_db=True,
-            )
-            for _ in range(3):
+        return -1  # 재연결 한도 초과로 실패
+
+    async def collect_realtime_ticks(
+        self,
+        tickers: list[str],
+        duration_seconds: Optional[int] = None,
+        tr_id: str = "H0STCNT0",
+        reconnect_max: int = 3,
+        fallback_on_error: bool = True,
+    ) -> int:
+        """KIS WebSocket 실시간 틱 수집 코디네이터.
+
+        tickers를 받아 _ws_collect_loop에 위임합니다.
+        다중 연결 확장 시 MAX_TICKERS_PER_WS 단위로 청크 분할 후
+        asyncio.gather로 _ws_collect_loop를 병렬 호출하는 구조로 전환합니다.
+        """
+        if not tickers:
+            raise ValueError("realtime 모드는 --tickers 지정이 필요합니다.")
+
+        selected = await asyncio.to_thread(self._resolve_tickers, tickers)
+        meta = {t: {"name": n, "market": m} for t, n, m in selected}
+        subscribed = list(meta.keys())
+
+        if not self._has_kis_market_credentials():
+            message = f"KIS {self._account_scope()} app key/app secret 미설정"
+            if fallback_on_error:
+                logger.warning("%s — 일봉 스냅샷 수집으로 폴백합니다.", message)
                 await self.collect_daily_bars(tickers=subscribed, lookback_days=2)
-                await asyncio.sleep(10)
-            return 0
-        else:
-            raise RuntimeError("KIS WebSocket 수집 실패")
+                return 0
+            raise RuntimeError(message)
+
+        started = asyncio.get_running_loop().time()
+
+        # 단일 연결: 전체 종목을 하나의 _ws_collect_loop로 처리.
+        # 다중 연결 확장 시:
+        #   chunks = [subscribed[i:i+MAX_TICKERS_PER_WS]
+        #             for i in range(0, len(subscribed), MAX_TICKERS_PER_WS)]
+        #   results = await asyncio.gather(
+        #       *[self._ws_collect_loop(chunk, meta, ...) for chunk in chunks])
+        received = await self._ws_collect_loop(
+            subscribed,
+            meta,
+            tr_id=tr_id,
+            reconnect_max=reconnect_max,
+            duration_seconds=duration_seconds,
+            started=started,
+        )
+
+        if received < 0:
+            if fallback_on_error:
+                logger.warning("WebSocket 실패로 폴백: FDR 스냅샷 수집 모드")
+                await self._beat(
+                    status="degraded",
+                    last_action="WebSocket 실패 → FDR 폴백",
+                    metrics={"received_ticks": 0, "mode": "fdr"},
+                    force_db=True,
+                )
+                for _ in range(3):
+                    await self.collect_daily_bars(tickers=subscribed, lookback_days=2)
+                    await asyncio.sleep(10)
+                return 0
+            else:
+                raise RuntimeError("KIS WebSocket 수집 실패")
+
+        return received
 
 
 async def _main_async(args: argparse.Namespace) -> None:

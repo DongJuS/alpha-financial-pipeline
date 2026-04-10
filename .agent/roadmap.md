@@ -68,7 +68,8 @@ DAG 6/6 SUCCESS + 비교 문서 완료. Airflow UI 스크린샷만 잔여.
 ### Step 8 — KIS WebSocket 실시간
 
 WebSocket 연결 + 틱 수집 → Redis + DB 저장 구현 완료.
-잔여: 배치 설정 환경변수화, 다중 연결 확장 (20→40종목), 재연결/장애 복구 안정화.
+시그니처 정비 완료: `_ws_collect_loop` 분리 + `MAX_TICKERS_PER_WS` 상수 추가로 다중 연결 분할 준비.
+잔여: 다중 연결 확장 (asyncio.gather로 청크별 병렬 호출), 재연결/장애 복구 안정화.
 
 **(결정) 배치 설정 환경변수화 (2026-04-10):**
 - `TICK_BUFFER_MAX`/`TICK_BUFFER_FLUSH_SEC` 하드코딩 → `WS_TICK_BATCH_SIZE`/`WS_TICK_FLUSH_INTERVAL` Settings 전환
