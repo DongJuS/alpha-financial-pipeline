@@ -13,6 +13,7 @@ import asyncio
 from datetime import datetime, timedelta
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -36,8 +37,10 @@ from src.utils.redis_client import (
     KEY_LATEST_TICKS,
     KEY_REALTIME_SERIES,
     TOPIC_MARKET_DATA,
+    TTL_KIS_APPROVAL_KEY,
     TTL_REALTIME_SERIES,
     get_redis,
+    kis_approval_key,
     kis_oauth_token_key,
     publish_message,
     set_heartbeat,
@@ -49,10 +52,6 @@ logger = get_logger(__name__)
 KST = ZoneInfo("Asia/Seoul")
 
 
-TICK_BUFFER_MAX = 100       # 틱 버퍼 최대 건수
-TICK_BUFFER_FLUSH_SEC = 1.0  # 타임아웃 flush 주기 (초)
-
-
 class CollectorAgent:
     def __init__(self, agent_id: str = "collector_agent") -> None:
         self.agent_id = agent_id
@@ -61,6 +60,8 @@ class CollectorAgent:
         # 실시간 틱 버퍼 (건별 INSERT 대신 배치 flush)
         self._tick_buffer: list[MarketDataPoint] = []
         self._tick_buffer_last_flush: float = 0.0
+        self._tick_batch_size: int = self.settings.ws_tick_batch_size
+        self._tick_flush_interval: float = self.settings.ws_tick_flush_interval
 
     def _account_scope(self) -> str:
         return "paper" if self.settings.kis_is_paper_trading else "real"
@@ -79,7 +80,13 @@ class CollectorAgent:
         return fdr
 
     async def _beat(self, status: str, last_action: str, metrics: dict, force_db: bool = False) -> None:
-        await set_heartbeat(self.agent_id)
+        hb_status = {"healthy": "ok", "degraded": "degraded", "error": "error"}.get(status, status)
+        hb_kwargs: dict[str, str | int | float] = {"mode": metrics.get("mode", "idle")}
+        if "last_data_at" in metrics:
+            hb_kwargs["last_data_at"] = metrics["last_data_at"]
+        if "error_count" in metrics:
+            hb_kwargs["error_count"] = metrics["error_count"]
+        await set_heartbeat(self.agent_id, status=hb_status, **hb_kwargs)
         now = datetime.utcnow()
         if force_db or self._last_hb_db_at is None or (now - self._last_hb_db_at).total_seconds() >= 30:
             await insert_heartbeat(
@@ -190,8 +197,8 @@ class CollectorAgent:
     async def _flush_tick_buffer(self, force: bool = False) -> int:
         """틱 버퍼를 DB에 배치 flush합니다.
 
-        버퍼가 TICK_BUFFER_MAX 이상이거나, 마지막 flush 이후
-        TICK_BUFFER_FLUSH_SEC가 경과했거나, force=True이면 flush합니다.
+        버퍼가 batch_size 이상이거나, 마지막 flush 이후
+        flush_interval이 경과했거나, force=True이면 flush합니다.
 
         Returns:
             flush된 건수 (flush하지 않았으면 0)
@@ -200,8 +207,8 @@ class CollectorAgent:
         elapsed = now - self._tick_buffer_last_flush
         should_flush = (
             force
-            or len(self._tick_buffer) >= TICK_BUFFER_MAX
-            or (self._tick_buffer and elapsed >= TICK_BUFFER_FLUSH_SEC)
+            or len(self._tick_buffer) >= self._tick_batch_size
+            or (self._tick_buffer and elapsed >= self._tick_flush_interval)
         )
         if not should_flush or not self._tick_buffer:
             return 0
@@ -270,11 +277,18 @@ class CollectorAgent:
         except Exception:
             return None
 
-    async def _issue_ws_approval_key(self) -> str:
+    async def _ensure_ws_approval_key(self) -> str:
         """
-        KIS WebSocket 접속용 approval_key 발급.
+        KIS WebSocket 접속용 approval_key 반환.
+        Redis 캐시 우선 조회 → 미스 시 KIS API 발급 → Redis 저장.
         """
         scope = self._account_scope()
+        redis = await get_redis()
+        cache_key = kis_approval_key(scope)
+        cached = await redis.get(cache_key)
+        if cached:
+            return cached
+
         app_key = kis_app_key_for_scope(self.settings, scope)
         app_secret = kis_app_secret_for_scope(self.settings, scope)
         if not self._has_kis_market_credentials():
@@ -294,6 +308,8 @@ class CollectorAgent:
         approval_key = data.get("approval_key")
         if not approval_key:
             raise RuntimeError(f"KIS approval_key 발급 실패: {data}")
+
+        await redis.set(cache_key, approval_key, ex=TTL_KIS_APPROVAL_KEY)
         return approval_key
 
     async def _fetch_quote(self, ticker: str) -> Optional[dict]:
@@ -864,7 +880,7 @@ class CollectorAgent:
 
         while True:
             try:
-                approval_key = await self._issue_ws_approval_key()
+                approval_key = await self._ensure_ws_approval_key()
                 scope = self._account_scope()
                 async with websockets.connect(
                     self.settings.kis_websocket_url_for_scope(scope),
@@ -903,7 +919,7 @@ class CollectorAgent:
                                 await self._beat(
                                     status="healthy",
                                     last_action=f"실시간 수집 종료 ({received}건)",
-                                    metrics={"received_ticks": received, "mode": "kis_ws"},
+                                    metrics={"received_ticks": received, "mode": "websocket"},
                                     force_db=True,
                                 )
                                 return received
@@ -916,7 +932,7 @@ class CollectorAgent:
                             await self._beat(
                                 status="healthy",
                                 last_action=f"실시간 수집 대기중 ({received}건)",
-                                metrics={"received_ticks": received, "mode": "kis_ws"},
+                                metrics={"received_ticks": received, "mode": "websocket"},
                             )
                             continue
 
@@ -985,11 +1001,25 @@ class CollectorAgent:
                         await self._beat(
                             status="healthy",
                             last_action=f"KIS 틱 수집중 ({received}건)",
-                            metrics={"received_ticks": received, "mode": "kis_ws"},
+                            metrics={
+                                "received_ticks": received,
+                                "mode": "websocket",
+                                "last_data_at": int(time.time()),
+                            },
                         )
             except Exception as e:
                 reconnects += 1
                 logger.warning("KIS WebSocket 오류 (%d/%d): %s", reconnects, reconnect_max, e)
+                await self._beat(
+                    status="error" if reconnects > reconnect_max else "degraded",
+                    last_action=f"WebSocket 오류 ({reconnects}/{reconnect_max}): {type(e).__name__}",
+                    metrics={
+                        "received_ticks": received,
+                        "mode": "websocket",
+                        "error_count": reconnects,
+                    },
+                    force_db=True,
+                )
                 try:
                     await insert_collector_error(
                         source="kis_websocket",
@@ -1006,6 +1036,12 @@ class CollectorAgent:
 
         if fallback_on_error:
             logger.warning("WebSocket 실패로 폴백: FDR 스냅샷 수집 모드")
+            await self._beat(
+                status="degraded",
+                last_action="WebSocket 실패 → FDR 폴백",
+                metrics={"received_ticks": received, "mode": "fdr", "error_count": reconnects},
+                force_db=True,
+            )
             for _ in range(3):
                 await self.collect_daily_bars(tickers=subscribed, lookback_days=2)
                 await asyncio.sleep(10)
