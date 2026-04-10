@@ -212,7 +212,7 @@ class TestComputeBacktestMetrics:
 
         m = compute_backtest_metrics(snapshots, trades, config)
 
-        assert abs(m.win_rate - 0.6667) < 0.001
+        assert abs(m.win_rate - 66.6667) < 0.01
         assert m.total_trades == 3
 
     def test_excess_return(self):
