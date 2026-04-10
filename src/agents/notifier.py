@@ -92,6 +92,27 @@ class NotifierAgent:
         )
         return success
 
+    async def send_agent_health_alert(
+        self,
+        agent_id: str,
+        status: str,
+        mode: str = "",
+        error_count: int = 0,
+    ) -> bool:
+        """에이전트 건강 이상 감지 시 Telegram 알림."""
+        emoji = {"degraded": "⚠️", "error": "🔴", "offline": "⚫"}.get(status, "❓")
+        mode_label = f"\n- 모드: {mode}" if mode else ""
+        error_label = f"\n- 에러 횟수: {error_count}" if error_count else ""
+        text = (
+            f"{emoji} 에이전트 상태 이상\n"
+            f"- 에이전트: {agent_id}\n"
+            f"- 상태: {status}"
+            f"{mode_label}"
+            f"{error_label}\n"
+            f"- 시각(UTC): {datetime.utcnow().isoformat()}Z"
+        )
+        return await self.send("agent_health_alert", text)
+
     async def send_cycle_summary(self, collected: int, predicted: int, orders: int) -> bool:
         text = (
             "📊 Alpha 사이클 완료\n"
