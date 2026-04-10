@@ -27,9 +27,7 @@ from src.db.queries import (
     list_tickers,
     upsert_tournament_score,
 )
-from src.llm.claude_client import ClaudeClient
-from src.llm.gemini_client import GeminiClient
-from src.llm.gpt_client import GPTClient
+from src.llm.router import LLMRouter
 from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import TOPIC_SIGNALS, publish_message, set_heartbeat
 
@@ -49,9 +47,7 @@ class PredictorAgent:
         self.strategy = strategy
         self.llm_model = llm_model
         self.persona = persona
-        self.claude = ClaudeClient(model=llm_model if "claude" in llm_model.lower() else "claude-3-5-sonnet-latest")
-        self.gpt = GPTClient(model=llm_model if "gpt" in llm_model.lower() else "gpt-4o-mini")
-        self.gemini = GeminiClient(model=llm_model if "gemini" in llm_model.lower() else "gemini-1.5-pro")
+        self.router = LLMRouter()
         # 에이전트별 temperature 다양성 (동일 데이터에서 다른 응답 유도)
         self._temperature = self._compute_temperature(agent_id)
 
@@ -66,19 +62,6 @@ class PredictorAgent:
             "predictor_5": 0.4,
         }
         return temp_map.get(agent_id, 0.5)
-
-    def _provider_name(self) -> str:
-        model = self.llm_model.lower()
-        if "gpt" in model:
-            return "gpt"
-        if "gemini" in model:
-            return "gemini"
-        return "claude"
-
-    def _provider_order(self) -> list[str]:
-        primary = self._provider_name()
-        rest = [p for p in ["claude", "gpt", "gemini"] if p != primary]
-        return [primary, *rest]
 
     async def _llm_signal(self, ticker: str, candles: list[dict], position: dict | None = None) -> dict[str, Any]:
         compact = [
@@ -127,50 +110,19 @@ class PredictorAgent:
   "reasoning_summary": "한 줄 요약"
 }}
 """
-        attempted_providers: list[str] = []
-        temp = self._temperature
-        for provider in self._provider_order():
-            attempted_providers.append(provider)
-            try:
-                if provider == "gpt" and self.gpt.is_configured:
-                    raw = await self.gpt.ask_json(prompt, temperature=temp)
-                elif provider == "gemini" and self.gemini.is_configured:
-                    raw = await self.gemini.ask_json(prompt, temperature=temp)
-                elif provider == "claude" and self.claude.is_configured:
-                    raw = await self.claude.ask_json(prompt, temperature=temp)
-                else:
-                    continue
+        raw = await self.router.ask_json(self.llm_model, prompt, temperature=self._temperature)
 
-                signal = str(raw.get("signal", "HOLD")).upper()
-                if signal not in {"BUY", "SELL", "HOLD"}:
-                    signal = "HOLD"
-                confidence = raw.get("confidence")
-                return {
-                    "signal": signal,
-                    "confidence": float(confidence) if confidence is not None else 0.5,
-                    "target_price": raw.get("target_price"),
-                    "stop_loss": raw.get("stop_loss"),
-                    "reasoning_summary": raw.get("reasoning_summary") or "LLM reasoning omitted",
-                }
-            except Exception as e:
-                message = str(e)
-                if "일일 사용 한도" in message:
-                    logger.warning("%s 신호 생성 스킵 [%s]: %s", provider, ticker, message)
-                elif provider == "gemini" and (
-                    "Gemini 인증이 불가해 비활성화합니다" in message
-                    or "Gemini quota exhausted." in message
-                ):
-                    logger.warning("%s 신호 생성 스킵 [%s]: %s", provider, ticker, message)
-                else:
-                    logger.error(
-                        "%s 신호 생성 실패 [%s]: %s",
-                        provider, ticker, e,
-                        exc_info=True,
-                    )
-
-        raise RuntimeError(
-            f"사용 가능한 LLM provider가 없어 예측을 생성하지 못했습니다. providers={attempted_providers}, ticker={ticker}"
-        )
+        signal = str(raw.get("signal", "HOLD")).upper()
+        if signal not in {"BUY", "SELL", "HOLD"}:
+            signal = "HOLD"
+        confidence = raw.get("confidence")
+        return {
+            "signal": signal,
+            "confidence": float(confidence) if confidence is not None else 0.5,
+            "target_price": raw.get("target_price"),
+            "stop_loss": raw.get("stop_loss"),
+            "reasoning_summary": raw.get("reasoning_summary") or "LLM reasoning omitted",
+        }
 
     async def run_once(self, tickers: list[str] | None = None, limit: int = 10) -> list[PredictionSignal]:
         if tickers is None:
