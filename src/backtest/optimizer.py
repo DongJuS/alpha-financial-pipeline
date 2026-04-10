@@ -205,7 +205,7 @@ class BlendOptimizer:
                 tax_rate_pct=tax,
                 slippage_bps=slippage_bps,
             )
-            cost_model = CostModel(config)
+            cost_model = CostModel(config.commission_rate_pct, config.tax_rate_pct, config.slippage_bps)
 
             if strategy == "RL":
                 train_prices = [float(r["close"]) for r in train_rows]
