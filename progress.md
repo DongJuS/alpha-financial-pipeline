@@ -6,119 +6,102 @@
 
 ---
 
-## 📊 Phase 진행 현황
+## 이 프로젝트가 하는 일
+
+한국 주식(KOSPI/KOSDAQ)을 **AI가 자동으로 분석하고 매매**하는 시스템이다.
+5개의 AI 에이전트가 역할을 나눠 협업한다:
+
+- **CollectorAgent** — 주가 데이터를 수집한다 (일봉 + 실시간 틱)
+- **PredictorAgent** — AI(Claude/GPT/Gemini)로 종목을 분석하고 매수/매도 신호를 낸다
+- **PortfolioManagerAgent** — 리스크 규칙을 검증하고 실제 주문을 넣는다
+- **OrchestratorAgent** — 전체 흐름을 조율하고 에이전트 상태를 감시한다
+- **NotifierAgent** — 매매 결과, 이상 상황을 Telegram으로 알린다
+
+세 가지 전략을 동시에 운용한다:
+- **Strategy A (토너먼트)** — AI 5명이 각자 예측 → 성적 좋은 AI의 신호를 채택
+- **Strategy B (토론)** — AI끼리 찬반 토론 → 합의된 신호만 채택
+- **Strategy RL (강화학습)** — 과거 데이터로 학습한 모델이 자동 판단
+
+---
+
+## 📊 진행 현황
 
 ```
-Phase 1~12       코어 시스템               ██████████  100% ✅
-Step 3           RL 부트스트랩 + 블렌딩     ██████████  100% ✅
-Step 4           K3s 프로덕션 배포          ██████████  100% ✅
-Step 5           Alpha 안정화              ██████████  100% ✅
-Step 6           테스트 스위트 정비         ██████████  100% ✅
-Step 7           글로벌 데이터 레이크       ██████████  100% ✅
-Step 7b          Airflow 비교 스파이크     █████████░   90% 🔧
-Step 8           KIS WebSocket 실시간      ████████░░   80% 🔧 ← 다음 작업
-Step 8a          WS heartbeat+health 연동  ██████████  100% ✅
-Step 9           코드 추상화 (Factory)     █████░░░░░   50% 🔧 (후순위)
-Step 10          백테스트 시뮬레이션       ██████████  100% ✅
-Step 12          대시보드 UI (백테스트)    ██████████  100% ✅
-안정화 스프린트   Step 10 검증 + CI 정리   ██████████  100% ✅
-K3s LLM 인증     Claude CLI + Gemini ADC  ██████████  100% ✅
-KIS 모의투자      체결 동기화 + 지정가     ██████████  100% ✅
-벤치마크          pgbench/k6/fio/asyncpg   ██████████  100% ✅
-빈 테이블 활성화  9개 테이블               ██████████  100% ✅
+코어 시스템 (Phase 1~12)  AI 매매 기본 기능 전부       ██████████  100% ✅
+Step 3   RL 강화학습      과거 데이터로 학습 → 매매     ██████████  100% ✅
+Step 4   서버 배포        K3s(경량 쿠버네티스)에 배포   ██████████  100% ✅
+Step 5   시스템 안정화    전체 서비스 정상 기동 확인    ██████████  100% ✅
+Step 6   테스트 정비      자동 테스트 778개 통과       ██████████  100% ✅
+Step 7   글로벌 데이터    한국+미국 11.5M행 주가 수집  ██████████  100% ✅
+Step 8   실시간 시세 수집  증권사 WebSocket 연결+안정화  ██████████  100% ✅
+Step 8a  서버 건강 모니터링 에이전트 이상 감지 → 알림   ██████████  100% ✅
+Step 9   코드 정리        중복 코드 상수화+설정 통합    █████░░░░░   50% 🔧 (후순위)
+Step 10  전략 백테스트    과거 데이터로 전략 성과 검증  ██████████  100% ✅
+Step 12  대시보드 UI      백테스트 결과 웹 시각화      ██████████  100% ✅
 ```
 
 ---
 
 ## ✅ 최근 완료 (2026-04-10)
 
+### Step 8 완성: 실시간 시세 수집 모듈 안정화 — PR #129
+
+**문제:** 주가 데이터를 수집하는 코드가 1개 파일 1128줄에 전부 섞여 있었다
+(실시간 시세, 일봉 종가, 과거 대량 수집 등). 실시간 코드를 고치면 일봉 수집이 깨질 위험이 있었다.
+
+**해결:**
+- 1128줄 단일 파일을 역할별 5개 모듈로 분리
+- 종목 40개 초과 시 여러 WebSocket 연결을 동시에 열어 병렬 수집
+- 연결 끊김 시 자동 재연결 강화 (랜덤 지연 + 최대 30초 대기)
+- 틱 전용 데이터 모델 신규 생성
+- 테스트 18개 추가, 전체 798 tests passed
+
 ### 4에이전트 병렬 스프린트 — PR #125~#127
 
-4에이전트 병렬 실행으로 4개 태스크를 동시 완료.
+AI 에이전트 4개를 동시에 실행하여 4개 태스크를 1시간 만에 병렬 완료:
 
-| Agent | 작업 | PR |
-|-------|------|----|
-| 1 | Signal Replay 통합 테스트 (ReplaySignalSource 단위 + Engine 통합) | #125 |
-| 2 | 백테스트 UI 페이지 (목록+상세+차트, Recharts LineChart/BarChart) | #126 |
-| 3 | Orchestrator heartbeat 모니터링 + Telegram 알림 | (커밋 `25dae41`) |
-| 4 | Backtest API GET 엔드포인트 3개 (runs/detail/daily) | #127 |
+| 작업 | 무엇을 했나 | PR |
+|------|------------|----|
+| Signal Replay 테스트 | 과거 AI 예측 기록을 재생하여 "그때 이 전략을 썼으면 얼마나 벌었을까?" 검증 | #125 |
+| 백테스트 UI | 전략 성과를 웹 브라우저에서 그래프로 보는 페이지 (수익 곡선, 일별 수익률 차트) | #126 |
+| 서버 모니터링 알림 | AI 에이전트가 죽거나 이상하면 Telegram으로 즉시 알려주는 기능 | (커밋) |
+| 백테스트 API | 백테스트 결과를 앱에서 조회하는 REST API 3개 (목록/상세/일별) | #127 |
 
-### Step 8a 완성: heartbeat 모니터링 체인 완료
-- PR #123: WS 배치 환경변수화 + approval_key Redis 캐싱 + heartbeat Hash 확장
-- PR #124: Docker/K8s healthcheck 연동
-- PR #125~#127: Orchestrator가 heartbeat 읽고 이상 시 Telegram 알림 발송
+### 데이터 압축 최적화 — PR #128
 
-### Step 10 완성: 백테스트 전체 파이프라인 완료
-- RL 백테스트 엔진 + CLI → Signal Replay 통합 테스트 → API 3개 → UI 시각화
-- 전략 A/B/RL 모두 백테스트 가능, 결과 조회 + 시각화까지 E2E 완성
+클라우드 저장 비용을 줄이기 위한 압축 적용:
+- **S3 파일**: 압축 방식을 Snappy → zstd로 변경 (같은 데이터를 **30~40% 더 작게** 저장)
+- **PostgreSQL DB**: AI 토론 기록·예측 근거 같은 긴 텍스트에 lz4 압축 적용 (읽기 속도 3배 향상)
 
----
+### 클라우드 전환 결정
 
-## ✅ 이전 완료 (2026-03-31 ~ 04-09)
-
-### 핵심만 요약 (상세는 git log 참조)
-- Step 9 Phase 1: constants.py + 매직 넘버 교체 + Settings 단일화 — PR #107~110
-- Secret 단일 소스화 SOPS+age — PR #104
-- Gen 데이터 격리 alpha_gen_db — PR #105
-- RL adaptive split ε-greedy bandit — PR #102
-- Observability empty_signal events — PR #106
-- 안정화 스프린트 — PR #115~#121 (E2E 9/9, Docker healthy, gen 격리 정상, 746 tests)
+원래 Mac Mini를 사서 집에 서버를 두려 했으나, **AWS Lightsail**(클라우드 가상 서버)로 전환 결정:
+- 월 약 3.7만원 (Mac Mini 100만원 구매 대비, 서버 관리 부담 제거 + SLA 99.9% 안정성)
+- 기존 배포 스크립트 100% 재사용 가능, 마이그레이션 약 2시간
 
 ---
 
-## 🔄 진행 중 / 미완료
+## 🔄 다음 작업
 
-### Step 7b: Airflow 비교 스파이크
-- [x] docker-compose.airflow.yml + DAG 6/6 SUCCESS
-- [x] 비교 문서 작성 완료 (docs/airflow-comparison.md)
-- [ ] Airflow UI 스크린샷 캡처
+### Step 8b: 틱 데이터 저장소 + 멀티 타임프레임
 
-### Step 8: KIS WebSocket 실시간 — 모듈 분리 + 다중 연결 + 재연결 강화
+**왜 필요한가:** Step 8에서 실시간 시세를 안정적으로 수집할 수 있게 됐다.
+이제 하루 수십만 건의 틱 데이터를 효율적으로 저장하고,
+1분봉·5분봉·시간봉 등 다양한 시간 단위로 가공해서 AI 학습에 활용해야 한다.
 
-**배경:** 현재 `collector.py` 1128줄에 일봉/Yahoo/분봉/실시간 수집이 전부 섞여 있다.
-틱 기반 전략을 추가하려면 WebSocket 코드를 독립적으로 수정할 수 있어야 하고,
-종목 수 확대(40종목 초과)에 대비한 다중 연결과, 틱 유실을 최소화하는 재연결 강화가 필요하다.
+### Step 9 Phase 2: AI 모델 팩토리 (후순위)
 
-**팀 토론 결정 (2026-04-10):** 틱 전략 필수 + 클린 코드 추상화 전제로 범위 재정의.
-
-#### Phase 1: collector.py 패키지 전환 + 모듈 분리
-- [ ] `src/agents/collector/` 패키지로 전환 (기존 `from src.agents.collector import CollectorAgent` 호환 유지)
-- [ ] `_base.py`: 공통 로직 (heartbeat, ticker resolve, Redis 캐시)
-- [ ] `__init__.py`: CollectorAgent facade (Mixin 합성, 외부 인터페이스 유지)
-
-#### Phase 2a: `_realtime.py` — WebSocket 실시간 수집 전담
-- [ ] WebSocket 연결/파서/버퍼 로직을 `_realtime.py`로 이동
-- [ ] **다중 연결**: `asyncio.gather`로 `MAX_TICKERS_PER_WS`(40) 단위 청크 병렬 수집. 한 청크 실패해도 나머지 계속 수집 (`return_exceptions=True`)
-- [ ] **재연결 강화**: jitter 추가 (`random.uniform(0,1)`), 최대 대기 30초, 개별 청크만 FDR 폴백
-- [ ] **TickData DTO**: 틱 전용 데이터 모델 신규 생성. 현재 `MarketDataPoint`(일봉 스키마)에 틱을 억지로 넣는 문제 해결. DB flush 시에만 변환
-
-#### Phase 2b: `_daily.py` + `_historical.py` — 일봉/과거 수집 전담
-- [ ] FDR/Yahoo 일봉 수집 → `_daily.py`
-- [ ] 과거 데이터 bulk 수집 → `_historical.py`
-
-#### Phase 3: K8s + 환경변수 + 테스트
-- [ ] K8s ConfigMap에 4개 환경변수 반영: `WS_TICK_BATCH_SIZE`, `WS_TICK_FLUSH_INTERVAL`, `WS_RECONNECT_MAX`, `MAX_TICKERS_PER_WS`
-- [ ] `config.py`에 `ws_reconnect_max`, `max_tickers_per_ws` Settings 필드 추가
-- [ ] `test/test_collector_ws.py` 신규: 파서 유닛 + 재연결 mock + 다중연결 + 버퍼 조건 (10+ tests)
-- [ ] `test/fixtures/kis_ws_packets.json` synthetic fixture
-
-**실행 순서:** Phase 1 → (Phase 2a, 2b 병렬) → Phase 3
-
-### Step 9: 코드 추상화 (후순위)
-- [x] Phase 1: constants.py + 매직 넘버 교체 + Settings 단일화 — PR #107~110
-- [ ] Phase 2: src/llm/factory.py 생성 + 모델명 통합
-- 후순위 이유: 모델 교체 계획 없음, constants.py로 충분
+AI 모델(Claude/GPT/Gemini) 호출 코드가 여러 파일에 흩어져 있다.
+한 곳에서 관리하면 모델 교체가 쉬워진다. 단, 지금은 교체 계획이 없어서 후순위.
 
 ---
 
-## 📋 로드맵 (미정 / 보류)
+## 📋 보류 항목
 
-- **Step 8b** 틱 전용 DB + 멀티 타임프레임 — Step 8 완료 후 착수 (상세는 roadmap.md)
-- Step 9 Phase 2 LLM Factory — 모델 교체 시 착수
+- 뉴스/리서치 자동 검색 (SearchAgent) — 보류
 - RL 하이퍼파라미터 자동 탐색 (Optuna) — 보류
-- Pre-commit Lint 자동화 (ruff --fix) — 틈날 때
-- 스토리지 계층화 (Hot/Cold) — 성능 이슈 발생 시
-- SearchAgent (SearXNG) — 보류
+- 코드 린트 자동화 — 틈날 때
+- 오래된 데이터 자동 아카이브 — 데이터가 더 쌓이면
 
 ---
 
