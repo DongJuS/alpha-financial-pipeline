@@ -19,7 +19,7 @@ import httpx
 import websockets
 
 from src.db.models import MarketDataPoint
-from src.db.queries import insert_collector_error, upsert_market_data
+from src.db.queries import insert_collector_error, insert_tick_batch, upsert_market_data
 from src.constants import MAX_TICKERS_PER_WS
 from src.utils.config import kis_app_key_for_scope, kis_app_secret_for_scope
 from src.utils.logging import get_logger
@@ -49,14 +49,7 @@ class _RealtimeMixin:
     # ------------------------------------------------------------------
 
     async def _flush_tick_buffer(self, force: bool = False) -> int:
-        """틱 버퍼를 DB에 배치 flush합니다.
-
-        버퍼가 batch_size 이상이거나, 마지막 flush 이후
-        flush_interval이 경과했거나, force=True이면 flush합니다.
-
-        Returns:
-            flush된 건수 (flush하지 않았으면 0)
-        """
+        """틱 버퍼를 tick_data 테이블에 배치 flush합니다."""
         now = asyncio.get_event_loop().time()
         elapsed = now - self._tick_buffer_last_flush
         should_flush = (
@@ -71,22 +64,22 @@ class _RealtimeMixin:
         self._tick_buffer.clear()
         self._tick_buffer_last_flush = now
 
-        flushed = await upsert_market_data(batch)
+        # tick_data 테이블에 INSERT (ohlcv_daily 대신)
+        flushed = await insert_tick_batch(batch)
         logger.debug("틱 버퍼 flush: %d건", flushed)
 
         # S3(MinIO)에 틱 데이터 저장
         try:
             from src.services.datalake import store_tick_data
-            # MarketDataPoint → 틱 데이터 스키마로 변환
             tick_records = []
-            for point in batch:
+            for tick in batch:
                 tick_records.append({
-                    "ticker": point.instrument_id,
-                    "price": point.close,
-                    "volume": point.volume,
-                    "timestamp_kst": point.timestamp_kst,
-                    "change_pct": point.change_pct,
-                    "source": "kis_websocket",
+                    "ticker": tick.instrument_id,
+                    "price": int(tick.price),
+                    "volume": int(tick.volume),
+                    "timestamp_kst": tick.timestamp_kst,
+                    "change_pct": tick.change_pct,
+                    "source": tick.source,
                 })
             await store_tick_data(tick_records)
             logger.debug("S3 틱 데이터 저장 완료: %d건", len(tick_records))
@@ -94,6 +87,96 @@ class _RealtimeMixin:
             logger.warning("S3 틱 데이터 저장 스킵: %s", s3_err)
 
         return flushed
+
+    # ------------------------------------------------------------------
+    # Gap backfill (KIS REST 분봉)
+    # ------------------------------------------------------------------
+
+    async def _backfill_gap(
+        self,
+        tickers: list[str],
+        meta: dict,
+        gap_start: datetime,
+    ) -> int:
+        """KIS REST 분봉 API로 gap 구간을 backfill합니다.
+
+        API: FHKST03010100 (국내주식 분봉조회)
+        동시성: Semaphore(15) — KIS 초당 20회 제한 대비 여유
+        """
+        scope = self._account_scope()
+        token = await self._get_access_token()
+        if not token:
+            logger.warning("backfill 스킵: KIS 토큰 없음")
+            return 0
+
+        app_key = kis_app_key_for_scope(self.settings, scope)
+        app_secret = kis_app_secret_for_scope(self.settings, scope)
+        if not app_key or not app_secret:
+            return 0
+
+        sem = asyncio.Semaphore(15)
+        filled = 0
+
+        async def _fill_one(ticker: str) -> int:
+            async with sem:
+                mkt = meta.get(ticker, {}).get("market", "KOSPI")
+                inst_id = ticker_from_raw(ticker, mkt)
+                headers = {
+                    "authorization": f"Bearer {token}",
+                    "appkey": app_key,
+                    "appsecret": app_secret,
+                    "tr_id": "FHKST03010100",
+                    "custtype": "P",
+                }
+                params = {
+                    "FID_COND_MRKT_DIV_CODE": "J",
+                    "FID_INPUT_ISCD": ticker,
+                    "FID_INPUT_HOUR_1": gap_start.strftime("%H%M%S"),
+                    "FID_PW_DATA_INCU_YN": "Y",
+                }
+                url = f"{self.settings.kis_base_url_for_scope(scope)}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice"
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        resp = await client.get(url, headers=headers, params=params)
+                        resp.raise_for_status()
+                        data = resp.json()
+
+                    from src.agents.collector.models import TickData as _TD
+                    from src.db.queries import insert_tick_batch as _insert
+
+                    ticks = []
+                    for item in (data.get("output2") or []):
+                        price = int(item.get("stck_prpr") or 0)
+                        vol = int(item.get("cntg_vol") or 0)
+                        time_str = item.get("stck_cntg_hour", "")
+                        if not price or not time_str:
+                            continue
+                        ts = datetime.combine(
+                            gap_start.date(),
+                            datetime.strptime(time_str, "%H%M%S").time(),
+                            tzinfo=KST,
+                        )
+                        ticks.append(_TD(
+                            instrument_id=inst_id,
+                            price=float(price),
+                            volume=vol,
+                            timestamp_kst=ts,
+                            source="kis_rest_backfill",
+                        ))
+                    if ticks:
+                        await _insert(ticks)
+                    return len(ticks)
+                except Exception as e:
+                    logger.debug("backfill 실패 [%s]: %s", ticker, e)
+                    return 0
+
+        results = await asyncio.gather(
+            *[_fill_one(t) for t in tickers],
+            return_exceptions=True,
+        )
+        filled = sum(r for r in results if isinstance(r, int))
+        logger.info("gap backfill 완료: %d틱 복구 (%d종목)", filled, len(tickers))
+        return filled
 
     # ------------------------------------------------------------------
     # REST 시세 보정
@@ -343,24 +426,12 @@ class _RealtimeMixin:
                             source="kis_ws",
                         )
 
-                        # DB flush 용 MarketDataPoint 변환
-                        point = MarketDataPoint(
-                            instrument_id=tick.instrument_id,
-                            name=tick.name,
-                            market=tick.market,
-                            traded_at=tick.timestamp_kst.date(),
-                            open=tick.price,
-                            high=tick.price,
-                            low=tick.price,
-                            close=tick.price,
-                            volume=tick.volume,
-                            change_pct=tick.change_pct,
-                        )
-
-                        self._tick_buffer.append(point)
+                        # 틱 버퍼에 TickData 직접 추가 (MarketDataPoint 변환 제거)
+                        self._tick_buffer.append(tick)
                         await self._flush_tick_buffer()
+                        self._last_tick_at = tick.timestamp_kst
 
-                        await self._cache_latest_tick(point, source="kis_ws")
+                        await self._cache_latest_tick(tick, source="kis_ws")
                         await publish_message(
                             TOPIC_MARKET_DATA,
                             json.dumps(
@@ -412,6 +483,36 @@ class _RealtimeMixin:
                 if reconnects > reconnect_max:
                     logger.error("KIS WebSocket 재연결 한도 초과")
                     break
+
+                # WebSocket 재연결 직후 gap 감지 + backfill
+                gap_seconds = 0
+                if self._last_tick_at:
+                    gap_seconds = (datetime.now(KST) - self._last_tick_at).total_seconds()
+
+                if gap_seconds >= 60:
+                    logger.warning("틱 gap 감지: %.0f초 (backfill 시작)", gap_seconds)
+                    try:
+                        await self._backfill_gap(subscribed, meta, self._last_tick_at)
+                    except Exception as bf_err:
+                        logger.warning("gap backfill 실패: %s", bf_err)
+
+                if gap_seconds >= 1800:  # 30분
+                    try:
+                        from src.utils.redis_client import publish_message as _pub
+                        import json as _json
+                        await _pub(
+                            "alpha:alerts",
+                            _json.dumps({
+                                "type": "gap_warning",
+                                "agent_id": self.agent_id,
+                                "gap_seconds": int(gap_seconds),
+                                "message": f"WebSocket 틱 수집 {int(gap_seconds // 60)}분 중단",
+                            }, ensure_ascii=False),
+                        )
+                        logger.error("30분+ 틱 gap → Telegram 경고 발행")
+                    except Exception:
+                        pass
+
                 await asyncio.sleep(min(reconnects * 2, 30) + random.uniform(0, 1))
 
         return -1  # 재연결 한도 초과로 실패
