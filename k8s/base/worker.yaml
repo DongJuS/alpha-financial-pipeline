@@ -47,9 +47,17 @@ spec:
               memory: 2Gi
           livenessProbe:
             exec:
-              command: ["python", "-c", "import sys; sys.exit(0)"]
-            initialDelaySeconds: 30
-            periodSeconds: 60
+              command: ["python", "scripts/docker_healthcheck.py", "--service", "worker"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["python", "scripts/docker_healthcheck.py", "--service", "worker"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
             failureThreshold: 3
           volumeMounts:
             - name: rl-data
