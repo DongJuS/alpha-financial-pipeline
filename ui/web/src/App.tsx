@@ -20,6 +20,8 @@ const DataLakePage = lazy(() => import("@/pages/DataLake"));
 const NotificationsPage = lazy(() => import("@/pages/Notifications"));
 const AuditTrailPage = lazy(() => import("@/pages/AuditTrail"));
 const RealAccountPage = lazy(() => import("@/pages/RealAccount"));
+const BacktestPage = lazy(() => import("@/pages/Backtest"));
+const BacktestDetailPage = lazy(() => import("@/pages/BacktestDetail"));
 
 function RouteFallback() {
   return (
@@ -64,6 +66,8 @@ export default function App() {
           <Route path="/notifications" element={withSuspense(<NotificationsPage />)} />
           <Route path="/audit" element={withSuspense(<AuditTrailPage />)} />
           <Route path="/real-account" element={withSuspense(<RealAccountPage />)} />
+          <Route path="/backtest" element={withSuspense(<BacktestPage />)} />
+          <Route path="/backtest/:runId" element={withSuspense(<BacktestDetailPage />)} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
