@@ -144,11 +144,11 @@ services:
       - ${HOME}/.claude:/root/.claude:rw
     command: python scripts/run_orchestrator_worker.py
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      test: ["CMD", "python", "scripts/docker_healthcheck.py", "--service", "worker"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
   # gen / gen-collector 는 시뮬레이션(랜덤 시세) 전용. 기본 `docker compose up`
   # 에서는 뜨지 않고, `docker compose --profile gen up` 으로 명시 기동해야 한다.
