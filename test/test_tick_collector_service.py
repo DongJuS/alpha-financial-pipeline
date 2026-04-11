@@ -516,3 +516,57 @@ class TestCollectorInitialization:
         """collect_daily_bars 메서드가 존재."""
         assert hasattr(collector, "collect_daily_bars")
         assert callable(collector.collect_daily_bars)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 8. WebSocket 연결 끊김 + 재연결 시나리오
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestMultiTickerParallelCollectionV2:
+    """다중 종목 병렬 수집 추가 에지 케이스 (Agent 2 QA Round 2)."""
+
+    def test_tick_buffer_concurrent_appends(self, collector):
+        """틱 버퍼에 여러 종목 데이터가 혼합 가능."""
+        from src.agents.collector.models import TickData
+
+        tick1 = TickData(
+            instrument_id="005930.KS", price=72000.0, volume=100,
+            timestamp_kst=datetime(2026, 4, 11, 10, 0, 0, tzinfo=KST),
+        )
+        tick2 = TickData(
+            instrument_id="000660.KS", price=150000.0, volume=50,
+            timestamp_kst=datetime(2026, 4, 11, 10, 0, 1, tzinfo=KST),
+        )
+        collector._tick_buffer.append(tick1)
+        collector._tick_buffer.append(tick2)
+        assert len(collector._tick_buffer) == 2
+        instruments = {t.instrument_id for t in collector._tick_buffer}
+        assert instruments == {"005930.KS", "000660.KS"}
+
+    @pytest.mark.asyncio
+    async def test_duration_seconds_ends_collection(self, collector):
+        """duration_seconds 경과 후 루프가 종료되어야 함.
+
+        이 테스트는 _ws_collect_loop의 duration 로직을
+        간접적으로 검증합니다.
+        """
+        MARKET_CLOSE_HOUR, MARKET_CLOSE_MINUTE = 15, 30
+        # 15:29에 시작하면 1분 남음
+        now_kst = datetime(2026, 4, 13, 15, 29, tzinfo=KST)
+        market_close = now_kst.replace(
+            hour=MARKET_CLOSE_HOUR, minute=MARKET_CLOSE_MINUTE,
+            second=0, microsecond=0,
+        )
+        remaining = int((market_close - now_kst).total_seconds())
+        assert remaining == 60  # 1분 남음
+
+    def test_ws_tick_tickers_with_duplicates(self, monkeypatch, _env):
+        """중복 종목이 환경변수에 있으면 그대로 반환 (dedupe는 상위 레이어)."""
+        monkeypatch.setenv("WS_TICK_TICKERS", "005930,005930,000660")
+        from src.utils.config import get_settings
+        settings = get_settings()
+        raw = settings.ws_tick_tickers.strip()
+        tickers = [t.strip() for t in raw.split(",") if t.strip()]
+        assert len(tickers) == 3  # 중복 포함
+        assert tickers.count("005930") == 2

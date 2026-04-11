@@ -120,11 +120,9 @@ class TestUploadBytes:
             await upload_bytes(b"{}", "test/data.json", content_type="application/json")
 
         call_kwargs = mock_client.upload_fileobj.call_args
-        extra = call_kwargs.kwargs.get("ExtraArgs") or call_kwargs[1].get("ExtraArgs") if len(call_kwargs) > 1 else None
-        if extra is None and len(call_kwargs.args) > 3:
-            extra = call_kwargs.args[3]
-        # Check that content type was set
-        assert mock_client.upload_fileobj.called
+        extra = call_kwargs.kwargs.get("ExtraArgs")
+        assert extra is not None, "ExtraArgs should be passed to upload_fileobj"
+        assert extra["ContentType"] == "application/json"
 
     @pytest.mark.asyncio
     async def test_upload_with_metadata(self):
@@ -288,3 +286,142 @@ class TestObjectExists:
             result = await object_exists("nonexistent/file.txt")
 
         assert result is False
+
+
+# ── S3 Client 에지케이스 (Agent 4 QA Round 2) ────────────────────────────────
+
+
+class TestEnsureBucketEdgeCases:
+    """ensure_bucket: 비-404 에러, 재발생."""
+
+    @pytest.mark.asyncio
+    async def test_non_404_error_propagates(self):
+        """404가 아닌 에러(예: 403 Forbidden)는 예외로 전파."""
+        from botocore.exceptions import ClientError
+
+        mock_client, mock_settings = _mock_s3_setup()
+        mock_client.head_bucket = MagicMock(
+            side_effect=ClientError(
+                {"Error": {"Code": "403", "Message": "Forbidden"}},
+                "HeadBucket",
+            )
+        )
+
+        with (
+            patch("src.utils.s3_client._get_s3_client", return_value=mock_client),
+            patch("src.utils.s3_client.get_settings", return_value=mock_settings),
+        ):
+            from src.utils.s3_client import ensure_bucket
+
+            with pytest.raises(ClientError):
+                await ensure_bucket()
+
+        mock_client.create_bucket.assert_not_called()
+
+
+class TestUploadBytesEdgeCases:
+    """upload_bytes: 빈 데이터, 특수 키 경로."""
+
+    @pytest.mark.asyncio
+    async def test_empty_bytes_upload(self):
+        """빈 바이트 데이터도 정상 업로드."""
+        mock_client, mock_settings = _mock_s3_setup()
+        mock_client.upload_fileobj = MagicMock()
+
+        with (
+            patch("src.utils.s3_client._get_s3_client", return_value=mock_client),
+            patch("src.utils.s3_client.get_settings", return_value=mock_settings),
+        ):
+            from src.utils.s3_client import upload_bytes
+
+            result = await upload_bytes(b"", "empty/file.txt")
+
+        assert result == "s3://test-bucket/empty/file.txt"
+        mock_client.upload_fileobj.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_nested_key_path(self):
+        """깊은 경로의 키도 정상 처리."""
+        mock_client, mock_settings = _mock_s3_setup()
+        mock_client.upload_fileobj = MagicMock()
+
+        with (
+            patch("src.utils.s3_client._get_s3_client", return_value=mock_client),
+            patch("src.utils.s3_client.get_settings", return_value=mock_settings),
+        ):
+            from src.utils.s3_client import upload_bytes
+
+            key = "tick_data/2026/04/11/005930/hour_09.parquet"
+            result = await upload_bytes(b"data", key)
+
+        assert result == f"s3://test-bucket/{key}"
+
+    @pytest.mark.asyncio
+    async def test_upload_with_extra_args_structure(self):
+        """ExtraArgs에 ContentType과 Metadata가 올바르게 전달."""
+        mock_client, mock_settings = _mock_s3_setup()
+        mock_client.upload_fileobj = MagicMock()
+
+        with (
+            patch("src.utils.s3_client._get_s3_client", return_value=mock_client),
+            patch("src.utils.s3_client.get_settings", return_value=mock_settings),
+        ):
+            from src.utils.s3_client import upload_bytes
+
+            await upload_bytes(
+                b"parquet data",
+                "data.parquet",
+                content_type="application/x-parquet",
+                metadata={"ticker": "005930", "date": "2026-04-11"},
+            )
+
+        call_kwargs = mock_client.upload_fileobj.call_args
+        extra_args = call_kwargs.kwargs.get("ExtraArgs")
+        assert extra_args is not None
+        assert extra_args["ContentType"] == "application/x-parquet"
+        assert extra_args["Metadata"]["ticker"] == "005930"
+
+
+class TestObjectExistsEdgeCases:
+    """object_exists: 다양한 에러 코드."""
+
+    @pytest.mark.asyncio
+    async def test_any_client_error_returns_false(self):
+        """어떤 ClientError든 False 반환 (403, 500 등)."""
+        from botocore.exceptions import ClientError
+
+        mock_client, mock_settings = _mock_s3_setup()
+        mock_client.head_object = MagicMock(
+            side_effect=ClientError(
+                {"Error": {"Code": "403", "Message": "Forbidden"}},
+                "HeadObject",
+            )
+        )
+
+        with (
+            patch("src.utils.s3_client._get_s3_client", return_value=mock_client),
+            patch("src.utils.s3_client.get_settings", return_value=mock_settings),
+        ):
+            from src.utils.s3_client import object_exists
+
+            result = await object_exists("forbidden/file.txt")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_exists_with_custom_bucket(self):
+        """커스텀 버킷에서 존재 여부 확인."""
+        mock_client, mock_settings = _mock_s3_setup()
+        mock_client.head_object = MagicMock()
+
+        with (
+            patch("src.utils.s3_client._get_s3_client", return_value=mock_client),
+            patch("src.utils.s3_client.get_settings", return_value=mock_settings),
+        ):
+            from src.utils.s3_client import object_exists
+
+            result = await object_exists("file.txt", bucket="custom-bucket")
+
+        assert result is True
+        call_kwargs = mock_client.head_object.call_args
+        assert call_kwargs.kwargs.get("Bucket") == "custom-bucket"

@@ -806,3 +806,162 @@ class TestPredictorIntradayIntegration:
 
         prompt_arg = agent.router.ask_json.call_args[0][1]
         assert "장중 1시간봉" not in prompt_arg
+
+
+# =============================================================================
+# 에지케이스: 분봉 경계, gap backfill 트리거 조건, 대량 데이터
+# =============================================================================
+
+
+class TestInsertTickBatchEdgeCasesV2:
+    """insert_tick_batch 추가 에지 케이스 (Agent 2 QA Round 2)."""
+
+    async def test_duplicate_timestamps_handled(self, _env):
+        """동일 instrument_id + timestamp의 중복 틱은 ON CONFLICT로 처리."""
+        with patch("src.db.queries.executemany", new_callable=AsyncMock) as mock_exec:
+            from src.db.queries import insert_tick_batch
+            ts = datetime(2026, 4, 11, 10, 0, 0, tzinfo=KST)
+            ticks = [
+                _make_tick(price=70000.0, ts=ts),
+                _make_tick(price=70100.0, ts=ts),  # 동일 timestamp
+            ]
+            result = await insert_tick_batch(ticks)
+            assert result == 2  # 2건 시도 (ON CONFLICT는 DB 레벨에서 처리)
+            mock_exec.assert_called_once()
+
+    async def test_very_high_price(self, _env):
+        """극단적으로 높은 가격(int 범위 내)이 정상 처리."""
+        with patch("src.db.queries.executemany", new_callable=AsyncMock) as mock_exec:
+            from src.db.queries import insert_tick_batch
+            tick = _make_tick(price=99999999.0)
+            await insert_tick_batch([tick])
+            params = mock_exec.call_args[0][1][0]
+            assert params[2] == 99999999  # int 변환 확인
+
+    async def test_zero_volume_accepted(self, _env):
+        """volume=0인 틱도 정상 INSERT."""
+        with patch("src.db.queries.executemany", new_callable=AsyncMock) as mock_exec:
+            from src.db.queries import insert_tick_batch
+            tick = _make_tick(volume=0)
+            result = await insert_tick_batch([tick])
+            assert result == 1
+
+
+class TestMinuteBoundaryEdgeCases:
+    """분봉 집계 경계 조건 검증 (Agent 2 QA Round 2)."""
+
+    async def test_59sec_to_00sec_boundary(self, _env):
+        """09:59:59 → 10:00:00 전환 시 별도 분봉으로 집계."""
+        base_59 = datetime(2026, 4, 11, 9, 59, 0, tzinfo=KST)
+        base_00 = datetime(2026, 4, 11, 10, 0, 0, tzinfo=KST)
+        mock_rows = [
+            {"bucket": base_59, "open": 70000, "high": 70500,
+             "low": 69800, "close": 70200, "volume": 5000},
+            {"bucket": base_00, "open": 70200, "high": 70800,
+             "low": 70100, "close": 70600, "volume": 3000},
+        ]
+        with patch("src.db.queries.fetch", new_callable=AsyncMock, return_value=mock_rows):
+            from src.db.queries import get_ohlcv_bars
+            bars = await get_ohlcv_bars(
+                "005930.KS", "1min", base_59, base_00 + timedelta(minutes=1)
+            )
+            assert len(bars) == 2
+            assert bars[0]["timestamp_kst"] == base_59
+            assert bars[1]["timestamp_kst"] == base_00
+
+    async def test_empty_range_returns_empty(self, _env):
+        """시작 == 종료 범위에서 빈 결과."""
+        base = datetime(2026, 4, 11, 10, 0, 0, tzinfo=KST)
+        with patch("src.db.queries.fetch", new_callable=AsyncMock, return_value=[]):
+            from src.db.queries import get_ohlcv_bars
+            bars = await get_ohlcv_bars("005930.KS", "1min", base, base)
+            assert bars == []
+
+
+class TestGapBackfillEdgeCases:
+    """gap backfill 추가 에지 케이스 (Agent 2 QA Round 2)."""
+
+    @pytest.fixture()
+    def collector(self, _env):
+        from src.agents.collector import CollectorAgent
+        return CollectorAgent(agent_id="test_gap_edge")
+
+    async def test_backfill_empty_output2_returns_zero(self, collector):
+        """KIS REST가 빈 output2를 반환하면 0건 복구."""
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"output2": []}
+
+        class MockAsyncClient:
+            def __init__(self, **kwargs):
+                pass
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                return False
+            async def get(self, *args, **kwargs):
+                return mock_resp
+
+        with (
+            patch.object(collector, "_get_access_token", new_callable=AsyncMock, return_value="token"),
+            patch("src.agents.collector._realtime.httpx.AsyncClient", MockAsyncClient),
+        ):
+            count = await collector._backfill_gap(
+                ["005930"],
+                {"005930": {"name": "삼성전자", "market": "KOSPI"}},
+                datetime(2026, 4, 11, 10, 0, 0, tzinfo=KST),
+            )
+
+        assert count == 0
+
+    async def test_backfill_no_app_key_returns_zero(self, collector):
+        """app_key 미설정 시 0 반환 (token 있어도)."""
+        with (
+            patch.object(collector, "_get_access_token", new_callable=AsyncMock, return_value="token"),
+            patch("src.utils.config.kis_app_key_for_scope", return_value=None),
+            patch("src.utils.config.kis_app_secret_for_scope", return_value=None),
+        ):
+            count = await collector._backfill_gap(
+                ["005930"],
+                {"005930": {"name": "삼성전자", "market": "KOSPI"}},
+                datetime(2026, 4, 11, 10, 0, 0, tzinfo=KST),
+            )
+
+        assert count == 0
+
+    async def test_backfill_multiple_tickers_concurrent(self, collector):
+        """여러 종목 backfill이 asyncio.gather로 동시 실행."""
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {
+            "output2": [
+                {"stck_prpr": "70000", "cntg_vol": "100", "stck_cntg_hour": "100000"},
+            ],
+        }
+
+        class MockAsyncClient:
+            def __init__(self, **kwargs):
+                pass
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                return False
+            async def get(self, *args, **kwargs):
+                return mock_resp
+
+        with (
+            patch.object(collector, "_get_access_token", new_callable=AsyncMock, return_value="token"),
+            patch("src.agents.collector._realtime.httpx.AsyncClient", MockAsyncClient),
+            patch("src.db.queries.insert_tick_batch", new_callable=AsyncMock),
+        ):
+            count = await collector._backfill_gap(
+                ["005930", "000660", "035420"],
+                {
+                    "005930": {"name": "삼성전자", "market": "KOSPI"},
+                    "000660": {"name": "SK하이닉스", "market": "KOSPI"},
+                    "035420": {"name": "NAVER", "market": "KOSPI"},
+                },
+                datetime(2026, 4, 11, 10, 0, 0, tzinfo=KST),
+            )
+
+        assert count == 3  # 각 종목 1틱씩
