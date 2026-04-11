@@ -65,26 +65,9 @@ class _RealtimeMixin:
         self._tick_buffer_last_flush = now
 
         # tick_data 테이블에 INSERT (ohlcv_daily 대신)
+        # S3 저장은 장 종료 후 크론(15:40 KST)에서 flush_ticks_to_s3()로 일괄 처리
         flushed = await insert_tick_batch(batch)
         logger.debug("틱 버퍼 flush: %d건", flushed)
-
-        # S3(MinIO)에 틱 데이터 저장
-        try:
-            from src.services.datalake import store_tick_data
-            tick_records = []
-            for tick in batch:
-                tick_records.append({
-                    "ticker": tick.instrument_id,
-                    "price": int(tick.price),
-                    "volume": int(tick.volume),
-                    "timestamp_kst": tick.timestamp_kst,
-                    "change_pct": tick.change_pct,
-                    "source": tick.source,
-                })
-            await store_tick_data(tick_records)
-            logger.debug("S3 틱 데이터 저장 완료: %d건", len(tick_records))
-        except Exception as s3_err:
-            logger.warning("S3 틱 데이터 저장 스킵: %s", s3_err)
 
         return flushed
 
