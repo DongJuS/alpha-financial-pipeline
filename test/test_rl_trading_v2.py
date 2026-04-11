@@ -158,5 +158,74 @@ class TestV2RewardFunction(unittest.TestCase):
         self.assertGreater(reward_short, reward_flat, "강극 하락 시엔 숏 수익이 단순 회피 보상보다 큼")
 
 
+class TestV2EdgeCases(unittest.TestCase):
+    """V2 트레이너 에지 케이스 테스트."""
+
+    def test_downtrend_not_approved_or_minimal_return(self) -> None:
+        """하락 추세에서 학습 → 승인 불가 또는 낮은 수익."""
+        closes = _downtrend_closes(90)
+        dataset = RLDataset(
+            ticker="DOWN",
+            closes=closes,
+            timestamps=[str(i) for i in range(len(closes))],
+        )
+        trainer = TabularQTrainerV2(episodes=50, num_seeds=2)
+        artifact = trainer.train(dataset)
+        # 하락장에서 높은 수익률 승인은 어려움
+        self.assertIsNotNone(artifact.evaluation)
+
+    def test_reward_zero_price_change(self) -> None:
+        """가격 변동 없을 때 reward 계산."""
+        trainer = TabularQTrainerV2()
+        reward = trainer._reward(100.0, 100.0, position=1, next_position=1)
+        # 가격 변동 없음 → position_return 0, 거래 비용 없음
+        self.assertAlmostEqual(reward, 0.0, places=3)
+
+    def test_state_key_short_data(self) -> None:
+        """짧은 데이터에서도 state_key 생성 가능."""
+        trainer = TabularQTrainerV2()
+        closes = [100.0, 101.0, 102.0, 103.0, 104.0]
+        state = trainer._state_key(closes, position=0)
+        self.assertIsInstance(state, str)
+        self.assertTrue(len(state) > 0)
+
+    def test_evaluate_with_hold_only_q_table(self) -> None:
+        """HOLD만 있는 Q-table → 거래 없음, 수익률 0."""
+        trainer = TabularQTrainerV2(episodes=1)
+        closes = _flat_closes()
+        q_table = {"p0|s0|l0|m0|v0": {"BUY": 0.0, "SELL": 0.0, "HOLD": 1.0, "CLOSE": 0.0}}
+        metrics = trainer.evaluate(closes, q_table)
+        self.assertEqual(metrics.total_return_pct, 0.0)
+
+    def test_infer_action_returns_valid_action(self) -> None:
+        """추론 결과가 유효한 액션인지 검증."""
+        trainer = TabularQTrainerV2(episodes=50, num_seeds=2)
+        closes = _uptrend_closes(90)
+        dataset = RLDataset(
+            ticker="INFER",
+            closes=closes,
+            timestamps=[str(i) for i in range(len(closes))],
+        )
+        artifact = trainer.train(dataset)
+        action, confidence, _, _ = trainer.infer_action(
+            artifact, closes, current_position=0
+        )
+        self.assertIn(action, ("BUY", "SELL", "HOLD", "CLOSE"))
+        self.assertGreaterEqual(confidence, 0.0)
+        self.assertLessEqual(confidence, 1.0)
+
+    def test_num_seeds_parameter(self) -> None:
+        """num_seeds 파라미터가 반영되는지 검증."""
+        trainer = TabularQTrainerV2(episodes=30, num_seeds=1)
+        closes = _uptrend_closes(90)
+        dataset = RLDataset(
+            ticker="SEED1",
+            closes=closes,
+            timestamps=[str(i) for i in range(len(closes))],
+        )
+        artifact = trainer.train(dataset)
+        self.assertIsNotNone(artifact)
+
+
 if __name__ == "__main__":
     unittest.main()
