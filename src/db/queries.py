@@ -148,15 +148,19 @@ async def get_ohlcv_bars(
     ]
 
 
-async def list_tickers(limit: int = 30) -> list[dict]:
+async def list_tickers(mode: str = "paper", limit: int = 30) -> list[dict]:
     rows = await fetch(
         """
-        SELECT instrument_id, raw_code AS ticker, name, market_id AS market
-        FROM instruments
-        WHERE is_active = TRUE
-        ORDER BY instrument_id
-        LIMIT $1
+        SELECT i.instrument_id, i.ticker, sm.name, i.market_id AS market,
+               tu.priority, tu.max_weight_pct
+        FROM instruments i
+        JOIN trading_universe tu ON i.instrument_id = tu.instrument_id
+        LEFT JOIN krx_stock_master sm ON i.ticker = sm.ticker
+        WHERE tu.account_scope = $1 AND i.is_active = TRUE
+        ORDER BY tu.priority DESC, i.instrument_id
+        LIMIT $2
         """,
+        mode,
         limit,
     )
     return [dict(r) for r in rows]
@@ -182,9 +186,9 @@ async def fetch_recent_market_data(
     if days is None:
         days = 30
 
-    # instrument_id 또는 raw_code 모두 허용
+    # instrument_id 또는 ticker 모두 허용
     conditions = [
-        "(o.instrument_id = $1 OR i.raw_code = $1)",
+        "(o.instrument_id = $1 OR i.ticker = $1)",
     ]
     params: list[Any] = [ticker]
 
@@ -199,11 +203,12 @@ async def fetch_recent_market_data(
     rows = await fetch(
         f"""
         SELECT
-            o.instrument_id, i.raw_code AS ticker, i.name,
+            o.instrument_id, i.ticker, sm.name,
             o.traded_at, o.open, o.high, o.low, o.close, o.volume,
             o.change_pct, o.adj_close
         FROM ohlcv_daily o
         JOIN instruments i ON o.instrument_id = i.instrument_id
+        LEFT JOIN krx_stock_master sm ON i.ticker = sm.ticker
         WHERE {' AND '.join(conditions)}
         ORDER BY o.traded_at DESC
         {limit_sql}
@@ -222,12 +227,13 @@ async def fetch_ohlcv_range(ticker: str, start: date, end: date) -> list[dict]:
     rows = await fetch(
         """
         SELECT
-            o.instrument_id, i.raw_code AS ticker, i.name,
+            o.instrument_id, i.ticker, sm.name,
             o.traded_at, o.open, o.high, o.low, o.close, o.volume,
             o.change_pct, o.adj_close
         FROM ohlcv_daily o
         JOIN instruments i ON o.instrument_id = i.instrument_id
-        WHERE (o.instrument_id = $1 OR i.raw_code = $1)
+        LEFT JOIN krx_stock_master sm ON i.ticker = sm.ticker
+        WHERE (o.instrument_id = $1 OR i.ticker = $1)
           AND o.traded_at >= $2
           AND o.traded_at <= $3
         ORDER BY o.traded_at ASC
@@ -249,7 +255,7 @@ async def latest_close_price(ticker: str) -> Optional[float]:
         SELECT o.close
         FROM ohlcv_daily o
         JOIN instruments i ON o.instrument_id = i.instrument_id
-        WHERE o.instrument_id = $1 OR i.raw_code = $1
+        WHERE o.instrument_id = $1 OR i.ticker = $1
         ORDER BY o.traded_at DESC
         LIMIT 1
         """,

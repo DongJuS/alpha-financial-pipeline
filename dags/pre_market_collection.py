@@ -54,15 +54,15 @@ def _run_python(code: str) -> str:
 def pre_market_collection():
 
     @task()
-    def collect_stock_master() -> dict:
-        """종목 마스터 수집 — Alpha의 stock_master_daily 잡과 동일."""
+    def collect_krx_stock_master() -> dict:
+        """종목 마스터 수집 — Alpha의 krx_stock_master_daily 잡과 동일."""
         output = _run_python("""
 import asyncio, json
-from src.agents.stock_master_collector import StockMasterCollector
+from src.agents.krx_stock_master_collector import KrxStockMasterCollector
 async def main():
-    c = StockMasterCollector()
-    r = await c.collect_stock_master(include_etf=True)
-    print(json.dumps({"stock_master": r or 0}))
+    c = KrxStockMasterCollector()
+    r = await c.collect_krx_stock_master(include_etf=True)
+    print(json.dumps({"krx_stock_master": r or 0}))
 asyncio.run(main())
 """)
         return json.loads(output)
@@ -116,10 +116,10 @@ asyncio.run(main())
 
     @task()
     def validate_collection(
-        stock_master: dict, macro: dict, index: dict, daily_bars: dict,
+        krx_stock_master: dict, macro: dict, index: dict, daily_bars: dict,
     ) -> dict:
         """수집 결과 검증 — Alpha에는 없는 Airflow 부가가치."""
-        results = {**stock_master, **macro, **index, **daily_bars}
+        results = {**krx_stock_master, **macro, **index, **daily_bars}
         total = daily_bars.get("daily_bars_tickers", 0)
         # 주말/공휴일은 수집 데이터 없을 수 있음 — 경고만 출력
         if total == 0:
@@ -131,7 +131,7 @@ asyncio.run(main())
         """수집 완료 로그."""
         print(f"=== 장 전 수집 완료: {validation} ===")
 
-    master = collect_stock_master()
+    master = collect_krx_stock_master()
     macro = collect_macro()
     index = collect_index_warmup()
     bars = collect_daily_bars()

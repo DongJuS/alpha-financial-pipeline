@@ -327,7 +327,7 @@ class TestSchedulerTickJobRegistration:
             patch("src.agents.collector.CollectorAgent"),
             patch("src.agents.index_collector.IndexCollector"),
             patch("src.agents.macro_collector.MacroCollector"),
-            patch("src.agents.stock_master_collector.StockMasterCollector"),
+            patch("src.agents.krx_stock_master_collector.KrxStockMasterCollector"),
             patch("src.utils.market_hours.is_market_open_now", new_callable=AsyncMock, return_value=False),
         ):
             await mod.start_unified_scheduler()
@@ -365,7 +365,7 @@ class TestSchedulerTickJobRegistration:
             patch("src.agents.collector.CollectorAgent"),
             patch("src.agents.index_collector.IndexCollector"),
             patch("src.agents.macro_collector.MacroCollector"),
-            patch("src.agents.stock_master_collector.StockMasterCollector"),
+            patch("src.agents.krx_stock_master_collector.KrxStockMasterCollector"),
             patch("src.utils.market_hours.is_market_open_now", new_callable=AsyncMock, return_value=False),
         ):
             await mod.start_unified_scheduler()
