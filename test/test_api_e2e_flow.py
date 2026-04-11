@@ -295,3 +295,136 @@ class TestMultiStepWorkflow:
         assert resp.status_code == 200
         cycle = resp.json()
         assert cycle["llm_feedback"] is not None
+
+
+class TestFeedbackCompareWorkflow:
+    """E2E: 백테스트 실행 -> 전략 비교 -> LLM 컨텍스트 조회 흐름"""
+
+    @patch.object(auth, "fetchrow", new_callable=AsyncMock)
+    def test_backtest_all_strategies_then_compare_then_context(
+        self, mock_login_fetchrow: AsyncMock
+    ) -> None:
+        """두 전략의 백테스트를 실행한 뒤 비교하고 LLM 피드백 컨텍스트를 확인한다."""
+        mock_login_fetchrow.return_value = USER_ROW
+
+        app = _build_e2e_app()
+        client = TestClient(app, raise_server_exceptions=False)
+
+        # Step 1: Strategy A 백테스트
+        resp = client.post(
+            "/api/v1/feedback/backtest",
+            json={"strategy": "strategy_a", "initial_capital": 10_000_000},
+        )
+        assert resp.status_code == 200
+        bt_a = resp.json()
+        assert bt_a["strategy"] == "strategy_a"
+
+        # Step 2: Strategy B 백테스트
+        resp = client.post(
+            "/api/v1/feedback/backtest",
+            json={"strategy": "strategy_b", "initial_capital": 10_000_000},
+        )
+        assert resp.status_code == 200
+        bt_b = resp.json()
+        assert bt_b["strategy"] == "strategy_b"
+
+        # Step 3: 전략 비교
+        resp = client.post(
+            "/api/v1/feedback/backtest/compare",
+            json={"strategies": ["strategy_a", "strategy_b"]},
+        )
+        assert resp.status_code == 200
+        compare = resp.json()
+        assert "best_strategy" in compare
+        assert compare["best_strategy"] in ("strategy_a", "strategy_b")
+
+        # Step 4: 최적 전략의 LLM 컨텍스트 조회
+        best = compare["best_strategy"]
+        resp = client.get(f"/api/v1/feedback/llm-context/{best}")
+        assert resp.status_code == 200
+        ctx = resp.json()
+        assert ctx["strategy"] == best
+        assert "feedback_text" in ctx
+
+
+class TestFullFeedbackCycleE2E:
+    """E2E: 정확도 -> 백테스트 -> full 피드백 사이클 흐름"""
+
+    def test_accuracy_then_backtest_then_full_cycle(self) -> None:
+        """정확도 확인 -> 백테스트 -> full 피드백 사이클을 연속 실행한다."""
+        app = _build_e2e_app()
+        client = TestClient(app, raise_server_exceptions=False)
+
+        # Step 1: 정확도 확인
+        resp = client.get("/api/v1/feedback/accuracy?days=7")
+        assert resp.status_code == 200
+        accuracy = resp.json()
+        assert isinstance(accuracy, list)
+
+        # Step 2: 백테스트 실행
+        resp = client.post(
+            "/api/v1/feedback/backtest",
+            json={"strategy": "strategy_a"},
+        )
+        assert resp.status_code == 200
+        bt = resp.json()
+        assert "total_return" in bt
+        assert bt["strategy"] == "strategy_a"
+
+        # Step 3: backtest_only 사이클 실행
+        resp = client.post(
+            "/api/v1/feedback/cycle",
+            json={"scope": "backtest_only"},
+        )
+        assert resp.status_code == 200
+        cycle = resp.json()
+        assert cycle["scope"] == "backtest_only"
+        assert cycle["backtest"] is not None
+
+        # Step 4: llm_only 사이클 실행
+        resp = client.post(
+            "/api/v1/feedback/cycle",
+            json={"scope": "llm_only"},
+        )
+        assert resp.status_code == 200
+        cycle2 = resp.json()
+        assert cycle2["llm_feedback"] is not None
+
+
+class TestLoginThenSchedulerAndFeedback:
+    """E2E: 로그인 -> 스케줄러 확인 -> 피드백 사이클"""
+
+    @patch("src.api.routers.scheduler.get_scheduler_status")
+    @patch.object(auth, "fetchrow", new_callable=AsyncMock)
+    def test_login_scheduler_check_then_feedback(
+        self, mock_login_fetchrow: AsyncMock, mock_scheduler: AsyncMock
+    ) -> None:
+        """로그인 후 스케줄러 상태를 확인하고 피드백 사이클을 실행한다."""
+        mock_login_fetchrow.return_value = USER_ROW
+        mock_scheduler.return_value = {"running": False, "jobs": []}
+
+        app = _build_e2e_app()
+        client = TestClient(app, raise_server_exceptions=False)
+
+        # Step 1: 로그인
+        resp = client.post(
+            "/api/v1/auth/login",
+            json={"email": USER_EMAIL, "password": USER_PASSWORD},
+        )
+        assert resp.status_code == 200
+        token = resp.json()["token"]
+
+        # Step 2: 스케줄러 상태 확인
+        resp = client.get("/api/v1/scheduler/status")
+        assert resp.status_code == 200
+        scheduler_body = resp.json()
+        assert "running" in scheduler_body
+        assert scheduler_body["running"] is False
+
+        # Step 3: LLM 피드백 사이클
+        resp = client.post(
+            "/api/v1/feedback/cycle",
+            json={"scope": "llm_only"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["scope"] == "llm_only"
