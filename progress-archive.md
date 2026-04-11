@@ -118,3 +118,12 @@ AWS Lightsail(월 3.7만원) → Hetzner CX22 + Cloudflare R2(월 ~5,000원)로 
 Predictor에 당일 1시간봉 통합(get_ohlcv_bars('1hour') → LLM 프롬프트). 분봉 없으면 일봉만 fallback.
 S3: _make_s3_key(hour=N) Hive-style 파티셔닝. flush 분리: 매 틱 S3 PUT 제거 → 15:40 KST 크론 일괄 flush.
 PR #133.
+
+---
+
+## alpha_db 정리 + 스케줄러 연동 (2026-04-11)
+
+- gen_collector heartbeat 오염 제거 (370건), 무의미한 predictions 정리 (confidence=0, 5,637건)
+- K3s DB 일봉 시딩: 005930/000660/259960 × 2023-01~2026-04 (2,394건)
+- **스케줄러 미연동 버그 수정**: `run_orchestrator_worker.py`가 `unified_scheduler`를 시작하지 않아 크론 잡(일봉 수집 등) 10개가 미실행. `start_unified_scheduler()` 호출 추가.
+- 스케줄러 실패해도 Orchestrator는 계속 진행하도록 방어 처리.
