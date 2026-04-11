@@ -89,13 +89,7 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건). 틱 수집은 장중 WebSocke
 
 파티셔닝 문서: `.agent/partition/20260411-cloud-pre-qa-partition.md`
 
-### RL 레지스트리 자동 동기화 ✅
 
-instruments 테이블을 종목 SoT로 채택. 하드코딩 전면 제거, RL bootstrap 자동 등록. PR #136.
-
-### 일봉 수집 종목 확대 + 스크리너 도입 ✅
-
-수집 100종목(FDR 무료) + 스크리너 필터링 → 전략 실행 하드캡 10종목. PR #137.
 
 ### Predictor MTF 실효과 검증
 
