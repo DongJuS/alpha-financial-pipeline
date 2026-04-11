@@ -524,3 +524,76 @@ class TestEnvironmentEdgeCases:
             _, _, terminated, _, _ = env.step(ACTION_HOLD)
         summary = env.get_episode_summary()
         assert summary["total_return_pct"] > 0
+
+
+# ── GymTradingEnv Wrapper Tests ──────────────────────────────────────────────
+
+
+@pytest.mark.rl
+@pytest.mark.unit
+class TestGymTradingEnvWrapper:
+    """GymTradingEnv Gymnasium 호환 래퍼 테스트."""
+
+    def test_gym_env_import(self):
+        """GymTradingEnv가 임포트 가능한지 확인 (Gymnasium 있을 때)."""
+        from src.agents.rl_environment import HAS_GYMNASIUM
+        if not HAS_GYMNASIUM:
+            pytest.skip("gymnasium not installed")
+        from src.agents.rl_environment import GymTradingEnv
+        assert GymTradingEnv is not None
+
+    def test_gym_env_inherits_trading_env(self):
+        """GymTradingEnv가 TradingEnv를 상속하는지 검증."""
+        from src.agents.rl_environment import HAS_GYMNASIUM
+        if not HAS_GYMNASIUM:
+            pytest.skip("gymnasium not installed")
+        from src.agents.rl_environment import GymTradingEnv
+        assert issubclass(GymTradingEnv, TradingEnv)
+
+    @pytest.mark.xfail(
+        reason="BUG: GymTradingEnv MRO에서 gym.Env.reset이 TradingEnv.reset보다 우선 — "
+               "gym.Env.__init__도 호출되지 않아 reset()이 None 반환"
+    )
+    def test_gym_env_creation(self):
+        """GymTradingEnv 인스턴스 생성."""
+        from src.agents.rl_environment import HAS_GYMNASIUM
+        if not HAS_GYMNASIUM:
+            pytest.skip("gymnasium not installed")
+        from src.agents.rl_environment import GymTradingEnv
+        config = _make_config(_uptrend_closes())
+        env = GymTradingEnv(config)
+        assert env is not None
+        obs, info = env.reset()
+        assert isinstance(obs, np.ndarray)
+
+    @pytest.mark.xfail(
+        reason="BUG: GymTradingEnv MRO에서 gym.Env.step이 TradingEnv.step보다 우선 — "
+               "gym.Env.__init__도 호출되지 않아 step()이 NotImplementedError"
+    )
+    def test_gym_env_step(self):
+        """GymTradingEnv에서 step 실행."""
+        from src.agents.rl_environment import HAS_GYMNASIUM
+        if not HAS_GYMNASIUM:
+            pytest.skip("gymnasium not installed")
+        from src.agents.rl_environment import GymTradingEnv
+        config = _make_config(_uptrend_closes())
+        env = GymTradingEnv(config)
+        env.reset()
+        result = env.step(ACTION_BUY)
+        assert len(result) == 5
+
+    def test_gym_env_is_gymnasium_env(self):
+        """GymTradingEnv가 gym.Env를 상속하는지 검증."""
+        from src.agents.rl_environment import HAS_GYMNASIUM
+        if not HAS_GYMNASIUM:
+            pytest.skip("gymnasium not installed")
+        import gymnasium as gym
+        from src.agents.rl_environment import GymTradingEnv
+        config = _make_config(_uptrend_closes())
+        env = GymTradingEnv(config)
+        assert isinstance(env, gym.Env)
+
+    def test_has_gymnasium_flag(self):
+        """HAS_GYMNASIUM 플래그 존재 확인."""
+        from src.agents.rl_environment import HAS_GYMNASIUM
+        assert isinstance(HAS_GYMNASIUM, bool)

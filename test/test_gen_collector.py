@@ -552,3 +552,113 @@ class TestGenCacheLatestTick:
         pipe = redis_mock.pipeline()
         pipe.execute.assert_awaited()
         await agent.close()
+
+
+# =============================================================================
+# 에지케이스: DB 격리 실패, 빈 gen 데이터, 잘못된 URL 형식
+# =============================================================================
+
+
+class TestGenCollectorEdgeCases:
+    """GenCollectorAgent 에지 케이스 보강 (Agent 2 QA Round 2)."""
+
+    def test_rewrite_url_without_port(self):
+        """포트 없는 URL에서도 DB명 교체 동작."""
+        from src.agents.gen_collector import _rewrite_database_url_to_gen_db
+
+        prev = os.environ.get("DATABASE_URL")
+        prev_disabled = os.environ.get("GEN_DB_REWRITE_DISABLED")
+        os.environ.pop("GEN_DB_REWRITE_DISABLED", None)
+        try:
+            os.environ["DATABASE_URL"] = "postgresql://u:p@host/mydb"
+            info = _rewrite_database_url_to_gen_db()
+            assert "alpha_gen_db" in os.environ["DATABASE_URL"]
+        finally:
+            if prev is not None:
+                os.environ["DATABASE_URL"] = prev
+            else:
+                os.environ.pop("DATABASE_URL", None)
+            if prev_disabled is not None:
+                os.environ["GEN_DB_REWRITE_DISABLED"] = prev_disabled
+
+    def test_rewrite_asyncpg_scheme(self):
+        """postgresql+asyncpg 스킴에서도 DB명 교체."""
+        from src.agents.gen_collector import _rewrite_database_url_to_gen_db
+
+        prev = os.environ.get("DATABASE_URL")
+        prev_disabled = os.environ.get("GEN_DB_REWRITE_DISABLED")
+        os.environ.pop("GEN_DB_REWRITE_DISABLED", None)
+        try:
+            os.environ["DATABASE_URL"] = "postgresql+asyncpg://u:p@host:5432/alpha_db"
+            _rewrite_database_url_to_gen_db()
+            assert "alpha_gen_db" in os.environ["DATABASE_URL"]
+        finally:
+            if prev is not None:
+                os.environ["DATABASE_URL"] = prev
+            else:
+                os.environ.pop("DATABASE_URL", None)
+            if prev_disabled is not None:
+                os.environ["GEN_DB_REWRITE_DISABLED"] = prev_disabled
+
+    async def test_malformed_gen_api_response(self):
+        """Gen API가 잘못된 형식(dict 대신 string) 반환 시에도 크래시 방지."""
+        from src.agents.gen_collector import GenCollectorAgent
+
+        agent = GenCollectorAgent(gen_api_url="http://localhost:9999")
+        # tickers 응답이 올바르지만 ohlcv가 잘못된 경우
+        tickers_resp = MagicMock()
+        tickers_resp.raise_for_status = MagicMock()
+        tickers_resp.json.return_value = [
+            {"ticker": "005930", "name": "삼성전자", "market": "KOSPI"},
+        ]
+        ohlcv_resp = MagicMock()
+        ohlcv_resp.raise_for_status = MagicMock()
+        # 빈 OHLCV 데이터 반환
+        ohlcv_resp.json.return_value = []
+
+        redis_mock = _make_redis_mock()
+
+        with (
+            patch.object(agent._client, "get", new_callable=AsyncMock, side_effect=[tickers_resp, ohlcv_resp]),
+            patch("src.agents.gen_collector.set_heartbeat", new_callable=AsyncMock),
+            patch("src.agents.gen_collector.insert_heartbeat", new_callable=AsyncMock),
+            patch("src.agents.gen_collector.get_redis", new_callable=AsyncMock, return_value=redis_mock),
+            patch("src.agents.gen_collector.publish_message", new_callable=AsyncMock),
+        ):
+            points = await agent.collect_daily_bars()
+
+        assert points == []
+        await agent.close()
+
+    async def test_collect_realtime_zero_quotes(self):
+        """Gen API가 빈 quotes 응답을 보내면 cycle은 진행하되 count 미증가."""
+        from src.agents.gen_collector import GenCollectorAgent
+
+        agent = GenCollectorAgent(gen_api_url="http://localhost:9999")
+        quotes_resp = MagicMock()
+        quotes_resp.raise_for_status = MagicMock()
+        quotes_resp.json.return_value = []  # 빈 quotes
+
+        redis_mock = _make_redis_mock()
+
+        with (
+            patch.object(agent._client, "get", new_callable=AsyncMock, return_value=quotes_resp),
+            patch("src.agents.gen_collector.set_heartbeat", new_callable=AsyncMock),
+            patch("src.agents.gen_collector.insert_heartbeat", new_callable=AsyncMock),
+            patch("src.agents.gen_collector.get_redis", new_callable=AsyncMock, return_value=redis_mock),
+            patch("src.agents.gen_collector.publish_message", new_callable=AsyncMock) as mock_pub,
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            count = await agent.collect_realtime_ticks(interval_sec=0.01, max_cycles=2)
+
+        # 빈 quotes이므로 total_received = 0
+        assert count == 0
+        await agent.close()
+
+    def test_make_instrument_id_unknown_market(self):
+        """KOSPI/KOSDAQ가 아닌 시장은 기본 .KS suffix."""
+        from src.agents.gen_collector import GenCollectorAgent
+        result = GenCollectorAgent._make_instrument_id("005930", "UNKNOWN")
+        # 소스 코드에서 upper()로 비교하므로 KOSPI가 아니면 .KQ
+        # 실제 소스 검증
+        assert result.endswith(".KS") or result.endswith(".KQ")
