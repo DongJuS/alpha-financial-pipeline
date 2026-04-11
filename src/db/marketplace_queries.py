@@ -1,7 +1,7 @@
 """
 src/db/marketplace_queries.py — 마켓플레이스 확장 DB 쿼리
 
-stock_master, theme_stocks, macro_indicators, daily_rankings, watchlist 테이블 조회/삽입.
+krx_stock_master, theme_stocks, macro_indicators, daily_rankings, watchlist 테이블 조회/삽입.
 """
 
 from __future__ import annotations
@@ -13,21 +13,21 @@ from typing import Any, Optional
 from src.db.models import (
     DailyRanking,
     MacroIndicator,
-    StockMasterRecord,
+    KrxStockMasterRecord,
 )
 from src.utils.db_client import execute, executemany, fetch, fetchrow, fetchval
 
 
-# ── stock_master ─────────────────────────────────────────────────────────────
+# ── krx_stock_master ─────────────────────────────────────────────────────────────
 
 
-async def upsert_stock_master(records: list[StockMasterRecord]) -> int:
-    """stock_master 테이블에 bulk upsert하고 반영 건수를 반환합니다."""
+async def upsert_krx_stock_master(records: list[KrxStockMasterRecord]) -> int:
+    """krx_stock_master 테이블에 bulk upsert하고 반영 건수를 반환합니다."""
     if not records:
         return 0
 
     query = """
-        INSERT INTO stock_master (
+        INSERT INTO krx_stock_master (
             ticker, name, market, sector, industry, market_cap,
             listing_date, is_etf, is_etn, is_active, tier, updated_at
         ) VALUES (
@@ -38,10 +38,10 @@ async def upsert_stock_master(records: list[StockMasterRecord]) -> int:
         DO UPDATE SET
             name = EXCLUDED.name,
             market = EXCLUDED.market,
-            sector = COALESCE(EXCLUDED.sector, stock_master.sector),
-            industry = COALESCE(EXCLUDED.industry, stock_master.industry),
-            market_cap = COALESCE(EXCLUDED.market_cap, stock_master.market_cap),
-            listing_date = COALESCE(EXCLUDED.listing_date, stock_master.listing_date),
+            sector = COALESCE(EXCLUDED.sector, krx_stock_master.sector),
+            industry = COALESCE(EXCLUDED.industry, krx_stock_master.industry),
+            market_cap = COALESCE(EXCLUDED.market_cap, krx_stock_master.market_cap),
+            listing_date = COALESCE(EXCLUDED.listing_date, krx_stock_master.listing_date),
             is_etf = EXCLUDED.is_etf,
             is_etn = EXCLUDED.is_etn,
             is_active = EXCLUDED.is_active,
@@ -67,13 +67,13 @@ async def update_stock_sectors(sector_map: dict[str, tuple[Optional[str], Option
         return 0
 
     query = """
-        UPDATE stock_master
+        UPDATE krx_stock_master
         SET
-            sector   = COALESCE(stock_master.sector,   $2),
-            industry = COALESCE(stock_master.industry, $3),
+            sector   = COALESCE(krx_stock_master.sector,   $2),
+            industry = COALESCE(krx_stock_master.industry, $3),
             updated_at = NOW()
         WHERE ticker = $1
-          AND (stock_master.sector IS NULL OR stock_master.industry IS NULL)
+          AND (krx_stock_master.sector IS NULL OR krx_stock_master.industry IS NULL)
     """
     await executemany(query, [
         (ticker, sector, industry)
@@ -83,13 +83,13 @@ async def update_stock_sectors(sector_map: dict[str, tuple[Optional[str], Option
     return len(sector_map)
 
 
-async def get_stock_master(ticker: str) -> Optional[dict]:
+async def get_krx_stock_master(ticker: str) -> Optional[dict]:
     """단일 종목 마스터 조회."""
     row = await fetchrow(
         """
         SELECT ticker, name, market, sector, industry, market_cap,
                listing_date, is_etf, is_etn, is_active, tier, updated_at
-        FROM stock_master
+        FROM krx_stock_master
         WHERE ticker = $1
         """,
         ticker,
@@ -97,7 +97,7 @@ async def get_stock_master(ticker: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
-async def list_stock_master(
+async def list_krx_stock_master(
     *,
     market: Optional[str] = None,
     sector: Optional[str] = None,
@@ -135,7 +135,7 @@ async def list_stock_master(
         f"""
         SELECT ticker, name, market, sector, industry, market_cap,
                listing_date, is_etf, is_etn, is_active, tier
-        FROM stock_master
+        FROM krx_stock_master
         WHERE {where}
         ORDER BY market_cap DESC NULLS LAST, ticker
         LIMIT ${len(params) - 1} OFFSET ${len(params)}
@@ -145,7 +145,7 @@ async def list_stock_master(
     return [dict(r) for r in rows]
 
 
-async def count_stock_master(
+async def count_krx_stock_master(
     *,
     market: Optional[str] = None,
     sector: Optional[str] = None,
@@ -171,7 +171,7 @@ async def count_stock_master(
 
     where = " AND ".join(conditions)
     total = await fetchval(
-        f"SELECT COUNT(*) FROM stock_master WHERE {where}",
+        f"SELECT COUNT(*) FROM krx_stock_master WHERE {where}",
         *params,
     )
     return int(total or 0)
@@ -183,7 +183,7 @@ async def get_sectors() -> list[dict]:
         """
         SELECT sector, COUNT(*) AS stock_count,
                COALESCE(SUM(market_cap), 0) AS total_market_cap
-        FROM stock_master
+        FROM krx_stock_master
         WHERE is_active = TRUE AND sector IS NOT NULL AND sector != ''
           AND is_etf = FALSE AND is_etn = FALSE
         GROUP BY sector
@@ -198,7 +198,7 @@ async def search_stocks(query: str, limit: int = 20) -> list[dict]:
     rows = await fetch(
         """
         SELECT ticker, name, market, sector, is_etf, market_cap
-        FROM stock_master
+        FROM krx_stock_master
         WHERE is_active = TRUE
           AND (name ILIKE $1 OR ticker ILIKE $1)
         ORDER BY market_cap DESC NULLS LAST
@@ -257,7 +257,7 @@ async def get_theme_stocks(theme_slug: str) -> list[dict]:
         SELECT ts.ticker, ts.theme_name, ts.is_leader,
                sm.name, sm.market, sm.sector, sm.market_cap
         FROM theme_stocks ts
-        LEFT JOIN stock_master sm ON ts.ticker = sm.ticker
+        LEFT JOIN krx_stock_master sm ON ts.ticker = sm.ticker
         WHERE ts.theme_slug = $1
         ORDER BY sm.market_cap DESC NULLS LAST
         """,
@@ -464,7 +464,7 @@ async def get_watchlist(
                    w.price_alert_above, w.price_alert_below, w.added_at,
                    sm.market, sm.sector, sm.market_cap
             FROM watchlist w
-            LEFT JOIN stock_master sm ON w.ticker = sm.ticker
+            LEFT JOIN krx_stock_master sm ON w.ticker = sm.ticker
             WHERE w.user_id = $1::uuid AND w.group_name = $2
             ORDER BY w.added_at DESC
             """,
@@ -478,7 +478,7 @@ async def get_watchlist(
                    w.price_alert_above, w.price_alert_below, w.added_at,
                    sm.market, sm.sector, sm.market_cap
             FROM watchlist w
-            LEFT JOIN stock_master sm ON w.ticker = sm.ticker
+            LEFT JOIN krx_stock_master sm ON w.ticker = sm.ticker
             WHERE w.user_id = $1::uuid
             ORDER BY w.group_name, w.added_at DESC
             """,

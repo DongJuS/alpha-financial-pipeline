@@ -196,8 +196,8 @@ Tournament   Debate      RL Trading    Search/Research
 
 ## 📮 데이터 아키텍처
 
-> **상세 문서:** 수집 소스별 저장 경로, 테이블 전체 목록, Redis 키/TTL, S3 파티셔닝 구조, 저장소 일관성 매트릭스 등
-> 코드 레벨의 상세 내용은 **[DATA-STOCK_ARCHITECTURE.md](DATA-STOCK_ARCHITECTURE.md)** 를 참조하세요.
+> **테이블 전체 목록 + 관계:** [DATABASE_TABLES.md](docs/DATABASE_TABLES.md) → 테이블별 상세: [docs/db/](docs/db/)
+> **수집 소스별 저장 경로, 저장소 일관성 매트릭스:** [DATA-STOCK_ARCHITECTURE.md](DATA-STOCK_ARCHITECTURE.md)
 
 ### 메모리 3-Tier
 
@@ -218,7 +218,7 @@ Tournament   Debate      RL Trading    Search/Research
 | `trade_history` | PortfolioManagerAgent |
 | `debate_transcripts` | OrchestratorAgent |
 | `agent_heartbeats` | 모든 에이전트 (7일 롤링) |
-| `stock_master` | StockMasterCollector |
+| `krx_stock_master` | KrxStockMasterCollector |
 | `macro_indicators` | MacroCollector |
 | `broker_orders` | KIS Broker |
 | `trading_accounts` | KIS Broker |
@@ -235,7 +235,7 @@ Tournament   Debate      RL Trading    Search/Research
 | `krx:holidays:{year}` | 24h | KRX 휴장일 캘린더 |
 | `redis:cache:latest_ticks:{ticker}` | 60s | 실시간 시세 캐시 |
 | `redis:cache:market_index` | 120s | KOSPI/KOSDAQ 지수 |
-| `redis:cache:stock_master` | 24h | 전종목 마스터 |
+| `redis:cache:krx_stock_master` | 24h | 전종목 마스터 |
 | `redis:cache:macro:{category}` | 1h | 매크로 지표 |
 | `memory:macro_context` | 4h | 거시경제 컨텍스트 |
 

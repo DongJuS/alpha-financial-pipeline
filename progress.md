@@ -29,17 +29,19 @@
 
 ## 🔄 다음 작업
 
-### 클라우드 배포 전 QA Round 2 (미착수)
+### instruments + trading_universe 후속 작업 (코드 완료, 배포·시딩 미완)
 
-Round 1 품질 검증에서 발견된 미커버 항목 보강. 파티셔닝 문서: `.agent/partition/20260411-cloud-pre-qa-partition.md`
+코드 리팩터링은 완료(PR 대기). 하지만 아직 **실제 DB에 데이터가 없다.**
+시스템이 종목을 찾으려면 아래 3단계가 필요하다:
 
-**Agent 1 미커버:**
-- orchestrator: independent portfolio 모드(~90줄), dynamic weight 최적화, `_execute_blended_signals` 직접 테스트
-- RL: `GymTradingEnv` 래퍼, `get_policy_mode` paper/real 분기
-- ranking: `calculate_sector_heatmap`, tie-handling
-- strategy_a/b, portfolio_manager, rl_trading_v2 에지케이스 보강 (Round 1에서 누락 — diff 없음 확인됨)
+1. **K3s DB 마이그레이션** — instruments DDL 경량화(컬럼 축소) + trading_universe 테이블 생성 + stock_master → krx_stock_master 테이블 리네임을 실서버 DB에 반영
+2. **instruments 시딩** — krx_stock_master(2,700+ 종목 카탈로그)에서 실제 운용할 종목을 instruments(경량 등록 테이블)에 등록. `scripts/db/seed_all_instruments.py` 실행.
+3. **trading_universe 시딩** — "가상투자 계좌에서 이 종목들을 운용하겠다"는 매핑 데이터를 넣어야 함. 예: `(paper, 005930.KS)`, `(paper, 000660.KS)`. **시드 스크립트 미작성.**
 
-**Agent 2~4 미커버:** 각 에이전트별 품질 검증 미실시. Round 1과 동일한 4-에이전트 병렬 패턴으로 검증+보강 필요.
+3번이 완료되어야 `list_tickers(mode="paper")`가 종목을 반환하고, Orchestrator/Predictor/RL이 정상 작동한다.
+상세: `.agent/discussions/20260411-instruments-trading-universe-design.md`
+
+### ✅ 클라우드 배포 전 QA Round 2 (완료, PR #143, #144)
 
 ### 로컬 데이터 축적 (진행 중)
 
@@ -86,4 +88,4 @@ Hetzner CX22 + Cloudflare R2 결정 완료. Docker Compose 배포 + Cold migrati
 
 ---
 
-*Last updated: 2026-04-11*
+*Last updated: 2026-04-12*

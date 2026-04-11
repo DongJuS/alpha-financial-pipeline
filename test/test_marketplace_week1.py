@@ -11,17 +11,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from src.db.models import (
     DailyRanking,
     MacroIndicator,
-    StockMasterRecord,
+    KrxStockMasterRecord,
     WatchlistItem,
 )
 from src.data.themes import INITIAL_THEMES
 
 
-class TestStockMasterRecord(unittest.TestCase):
-    """StockMasterRecord Pydantic 모델 테스트."""
+class TestKrxStockMasterRecord(unittest.TestCase):
+    """KrxStockMasterRecord Pydantic 모델 테스트."""
 
     def test_basic_creation(self):
-        record = StockMasterRecord(
+        record = KrxStockMasterRecord(
             ticker="005930",
             name="삼성전자",
             market="KOSPI",
@@ -34,7 +34,7 @@ class TestStockMasterRecord(unittest.TestCase):
         self.assertEqual(record.tier, "universe")
 
     def test_etf_creation(self):
-        record = StockMasterRecord(
+        record = KrxStockMasterRecord(
             ticker="069500",
             name="KODEX 200",
             market="KOSPI",
@@ -46,7 +46,7 @@ class TestStockMasterRecord(unittest.TestCase):
     def test_market_validation(self):
         """유효하지 않은 market 값은 에러를 발생시켜야 합니다."""
         with self.assertRaises(Exception):
-            StockMasterRecord(
+            KrxStockMasterRecord(
                 ticker="000001",
                 name="테스트",
                 market="NYSE",  # 유효하지 않은 시장
@@ -54,13 +54,13 @@ class TestStockMasterRecord(unittest.TestCase):
 
     def test_tier_validation(self):
         for tier in ["core", "extended", "universe"]:
-            record = StockMasterRecord(
+            record = KrxStockMasterRecord(
                 ticker="005930", name="삼성전자", market="KOSPI", tier=tier
             )
             self.assertEqual(record.tier, tier)
 
     def test_optional_fields_default_none(self):
-        record = StockMasterRecord(ticker="005930", name="삼성전자", market="KOSPI")
+        record = KrxStockMasterRecord(ticker="005930", name="삼성전자", market="KOSPI")
         self.assertIsNone(record.sector)
         self.assertIsNone(record.industry)
         self.assertIsNone(record.market_cap)
@@ -254,7 +254,7 @@ class TestRedisKeyPatterns(unittest.TestCase):
             KEY_MACRO,
             KEY_ETF_LIST,
         )
-        self.assertIn("stock_master", KEY_STOCK_MASTER)
+        self.assertIn("krx_stock_master", KEY_STOCK_MASTER)
         self.assertIn("sector_map", KEY_SECTOR_MAP)
         self.assertIn("theme_map", KEY_THEME_MAP)
         self.assertIn("{ranking_type}", KEY_RANKINGS)
@@ -333,10 +333,10 @@ class TestMarketplaceAPIRouterImport(unittest.TestCase):
 class TestDBSchemaDefinitions(unittest.TestCase):
     """DB 스키마 정의 검증 (DDL 문자열 포함 확인)."""
 
-    def test_stock_master_table_exists_in_ddl(self):
+    def test_krx_stock_master_table_exists_in_ddl(self):
         from scripts.db.init_db import CREATE_TABLES
         ddl_text = " ".join(CREATE_TABLES)
-        self.assertIn("stock_master", ddl_text)
+        self.assertIn("krx_stock_master", ddl_text)
         self.assertIn("KOSPI", ddl_text)
         self.assertIn("KOSDAQ", ddl_text)
 
@@ -366,7 +366,7 @@ class TestDBSchemaDefinitions(unittest.TestCase):
 
     def test_drop_tables_includes_new_tables(self):
         from scripts.db.init_db import DROP_TABLES_SQL
-        for table in ["stock_master", "theme_stocks", "macro_indicators", "daily_rankings", "watchlist"]:
+        for table in ["krx_stock_master", "theme_stocks", "macro_indicators", "daily_rankings", "watchlist"]:
             self.assertIn(table, DROP_TABLES_SQL, f"DROP_TABLES_SQL에 '{table}'가 없습니다.")
 
 
