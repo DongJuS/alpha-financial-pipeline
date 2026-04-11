@@ -166,3 +166,157 @@ def _mark_integration_tests(request):
     """
     if "db_conn" in request.fixturenames or "redis_url" in request.fixturenames:
         request.node.add_marker(pytest.mark.integration)
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Mock DB 픽스처 (Agent 4 추가 — asyncpg mock)
+# ────────────────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def mock_db_pool():
+    """asyncpg pool mock — 실제 DB 없이 쿼리 함수 테스트에 사용.
+
+    사용법:
+        async def test_something(mock_db_pool):
+            mock_db_pool.fetch_results = [{"id": 1, "name": "test"}]
+            # ... 테스트 코드 ...
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    pool = AsyncMock()
+    conn = AsyncMock()
+
+    # 기본 반환값 설정
+    conn.execute = AsyncMock(return_value="INSERT 0 1")
+    conn.executemany = AsyncMock(return_value=None)
+    conn.fetch = AsyncMock(return_value=[])
+    conn.fetchrow = AsyncMock(return_value=None)
+    conn.fetchval = AsyncMock(return_value=None)
+
+    # context manager 패턴: async with pool.acquire() as conn
+    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    pool._mock_conn = conn
+    return pool
+
+
+@pytest.fixture
+def mock_db_client(mock_db_pool, monkeypatch):
+    """src.utils.db_client의 get_pool을 mock_db_pool로 대체.
+
+    이 픽스처를 사용하면 queries.py 함수들이 실제 DB 대신
+    mock_db_pool을 통해 실행됩니다.
+    """
+    from unittest.mock import AsyncMock
+
+    async def _mock_get_pool():
+        return mock_db_pool
+
+    monkeypatch.setattr("src.utils.db_client.get_pool", _mock_get_pool)
+    monkeypatch.setattr("src.utils.db_client._pool", mock_db_pool)
+    return mock_db_pool
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Mock Redis 픽스처 (Agent 4 추가)
+# ────────────────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def mock_redis():
+    """redis.asyncio.Redis mock — 실제 Redis 없이 테스트에 사용.
+
+    사용법:
+        async def test_something(mock_redis):
+            mock_redis.get.return_value = "cached_value"
+            # ... 테스트 코드 ...
+    """
+    from unittest.mock import AsyncMock
+
+    redis = AsyncMock()
+    redis.get = AsyncMock(return_value=None)
+    redis.set = AsyncMock(return_value=True)
+    redis.delete = AsyncMock(return_value=1)
+    redis.exists = AsyncMock(return_value=0)
+    redis.expire = AsyncMock(return_value=True)
+    redis.hset = AsyncMock(return_value=1)
+    redis.hgetall = AsyncMock(return_value={})
+    redis.publish = AsyncMock(return_value=1)
+    redis.lpush = AsyncMock(return_value=1)
+    redis.ltrim = AsyncMock(return_value=True)
+    redis.pipeline.return_value = AsyncMock()
+    redis.pipeline.return_value.lpush = AsyncMock()
+    redis.pipeline.return_value.ltrim = AsyncMock()
+    redis.pipeline.return_value.execute = AsyncMock(return_value=[1, True])
+    redis.eval = AsyncMock(return_value=1)
+    redis.aclose = AsyncMock()
+    return redis
+
+
+@pytest.fixture
+def mock_redis_client(mock_redis, monkeypatch):
+    """src.utils.redis_client의 get_redis를 mock_redis로 대체.
+
+    이 픽스처를 사용하면 redis_client 모듈의 함수들이
+    실제 Redis 대신 mock을 사용합니다.
+    """
+    from unittest.mock import AsyncMock
+
+    async def _mock_get_redis():
+        return mock_redis
+
+    monkeypatch.setattr("src.utils.redis_client.get_redis", _mock_get_redis)
+    monkeypatch.setattr("src.utils.redis_client._redis_client", mock_redis)
+    return mock_redis
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Mock S3 픽스처 (Agent 4 추가)
+# ────────────────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def mock_s3_client():
+    """boto3 S3 client mock — 실제 S3/MinIO 없이 테스트에 사용.
+
+    사용법:
+        async def test_something(mock_s3_client):
+            mock_s3_client.stored_objects["key"] = b"data"
+            # ... 테스트 코드 ...
+    """
+    from unittest.mock import MagicMock
+
+    client = MagicMock()
+    client.stored_objects = {}  # key -> bytes 저장소
+
+    def _upload_fileobj(fileobj, bucket, key, ExtraArgs=None):
+        client.stored_objects[f"{bucket}/{key}"] = fileobj.read()
+
+    def _download_fileobj(bucket, key, fileobj):
+        full_key = f"{bucket}/{key}"
+        if full_key in client.stored_objects:
+            fileobj.write(client.stored_objects[full_key])
+        else:
+            from botocore.exceptions import ClientError
+            raise ClientError(
+                {"Error": {"Code": "404", "Message": "Not Found"}},
+                "GetObject",
+            )
+
+    def _head_bucket(Bucket):
+        pass  # 버킷 존재 가정
+
+    def _head_object(Bucket, Key):
+        full_key = f"{Bucket}/{Key}"
+        if full_key not in client.stored_objects:
+            from botocore.exceptions import ClientError
+            raise ClientError(
+                {"Error": {"Code": "404", "Message": "Not Found"}},
+                "HeadObject",
+            )
+
+    client.upload_fileobj = MagicMock(side_effect=_upload_fileobj)
+    client.download_fileobj = MagicMock(side_effect=_download_fileobj)
+    client.head_bucket = MagicMock(side_effect=_head_bucket)
+    client.head_object = MagicMock(side_effect=_head_object)
+
+    return client

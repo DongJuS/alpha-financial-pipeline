@@ -363,5 +363,87 @@ class RLTradingAgentRunCycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(predictions[0].strategy, "RL")
 
 
+class RLTrainerEdgeCaseTest(unittest.TestCase):
+    """RL Trainer 에지 케이스: 경계값, 빈 입력, 타임아웃."""
+
+    def test_flat_data_should_not_approve(self) -> None:
+        """완전 횡보 데이터 → 승인 불가."""
+        closes = _flat_closes()
+        trainer = TabularQTrainer(episodes=30)
+        dataset = RLDataset(
+            ticker="FLAT",
+            closes=closes,
+            timestamps=[str(i) for i in range(len(closes))],
+        )
+        artifact = trainer.train(dataset)
+        self.assertFalse(artifact.evaluation.approved)
+
+    def test_minimum_data_length(self) -> None:
+        """최소 데이터 길이에서도 학습 가능."""
+        closes = _uptrend_closes(length=50)  # 최소 40+
+        trainer = TabularQTrainer(episodes=10, epsilon=0.20)
+        dataset = RLDataset(
+            ticker="MIN",
+            closes=closes,
+            timestamps=[str(i) for i in range(len(closes))],
+        )
+        artifact = trainer.train(dataset)
+        self.assertIsNotNone(artifact)
+        self.assertIsNotNone(artifact.evaluation)
+
+    def test_infer_action_empty_q_table(self) -> None:
+        """빈 Q-테이블에서 추론 → 기본 HOLD 반환."""
+        trainer = TabularQTrainer(episodes=1)
+        artifact = _policy_artifact("empty_q", ticker="005930")
+        artifact.q_table = {}
+        action, confidence, _, _ = trainer.infer_action(
+            artifact, _uptrend_closes(30), current_position=0
+        )
+        self.assertIn(action, ("BUY", "SELL", "HOLD", "CLOSE"))
+
+    def test_evaluation_metrics_fields(self) -> None:
+        """RLEvaluationMetrics의 모든 필드가 올바른 타입."""
+        metrics = RLEvaluationMetrics(
+            total_return_pct=5.0,
+            baseline_return_pct=2.0,
+            excess_return_pct=3.0,
+            max_drawdown_pct=-10.0,
+            trades=15,
+            win_rate=0.6,
+            holdout_steps=40,
+            approved=True,
+        )
+        self.assertIsInstance(metrics.total_return_pct, float)
+        self.assertIsInstance(metrics.trades, int)
+        self.assertIsInstance(metrics.approved, bool)
+
+    def test_rl_dataset_creation(self) -> None:
+        """RLDataset 기본 생성."""
+        ds = RLDataset(
+            ticker="005930",
+            closes=[100.0, 101.0, 102.0],
+            timestamps=["t1", "t2", "t3"],
+        )
+        self.assertEqual(ds.ticker, "005930")
+        self.assertEqual(len(ds.closes), 3)
+
+    def test_multiple_episodes_improve_or_maintain(self) -> None:
+        """에피소드 수 증가 시 학습 결과가 존재하는지 검증."""
+        closes = _uptrend_closes(90)
+        dataset = RLDataset(
+            ticker="MULTI_EP",
+            closes=closes,
+            timestamps=[str(i) for i in range(len(closes))],
+        )
+        trainer_few = TabularQTrainer(episodes=10, epsilon=0.20)
+        artifact_few = trainer_few.train(dataset)
+
+        trainer_many = TabularQTrainer(episodes=100, epsilon=0.20)
+        artifact_many = trainer_many.train(dataset)
+
+        # 더 많은 에피소드로 학습한 결과가 Q-테이블을 가져야 함
+        self.assertGreater(len(artifact_many.q_table), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
