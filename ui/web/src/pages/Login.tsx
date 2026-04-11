@@ -53,8 +53,8 @@ export default function Login() {
   const [searchParams] = useSearchParams();
   const token = localStorage.getItem("alpha_token");
 
-  const [email, setEmail] = useState("admin@example.com");
-  const [password, setPassword] = useState("admin1234");
+  const [email, setEmail] = useState("admin@alpha-trading.com");
+  const [password, setPassword] = useState("admin123");
   const [error, setError] = useState(
     searchParams.get("expired") === "true"
       ? "세션이 만료되었습니다. 다시 로그인해 주세요."
@@ -159,7 +159,7 @@ export default function Login() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@example.com"
+                placeholder="admin@alpha-trading.com"
               />
             </div>
 
@@ -196,7 +196,7 @@ export default function Login() {
                 Test account
               </p>
               <p className="mt-2 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                admin@example.com / admin1234
+                admin@alpha-trading.com / admin123
               </p>
             </div>
 
