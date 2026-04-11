@@ -88,3 +88,33 @@ PR #38/#39/#41/#51/#63/#64. 잔여: deploy.sh 수정 + K3s 실배포.
 ## Phase 1~5 — 인프라·에이전트·전략·UI (2026-03-12~13)
 
 인프라 → 코어 에이전트 → Strategy A/B → 대시보드 → 운용 검증
+
+---
+
+## Step 8b: 틱 데이터 전용 저장소 (2026-04-11)
+
+틱이 ohlcv_daily에 억지 변환되어 마지막 1건만 남던 기술부채 해결.
+tick_data PostgreSQL 파티션 테이블 도입 (일 117만 틱, 55MB — TimescaleDB/DuckDB 기각, PG로 충분).
+WebSocket gap 감지 + KIS REST backfill 추가.
+
+---
+
+## Step 9 Phase 2: LLMRouter (2026-04-11)
+
+AI 모델 호출 코드가 6개 파일에 흩어져 있어 LLMRouter로 통합.
+provider 판별 + fallback 체인을 한 곳에서 관리.
+
+---
+
+## 클라우드 전환 결정 변경 (2026-04-11)
+
+AWS Lightsail(월 3.7만원) → Hetzner CX22 + Cloudflare R2(월 ~5,000원)로 변경.
+비용 발생 시점을 최대한 늦추는 원칙 유지.
+
+---
+
+## Step 8b 후속: Predictor 분봉 통합 + S3 틱 최적화 (2026-04-11)
+
+Predictor에 당일 1시간봉 통합(get_ohlcv_bars('1hour') → LLM 프롬프트). 분봉 없으면 일봉만 fallback.
+S3: _make_s3_key(hour=N) Hive-style 파티셔닝. flush 분리: 매 틱 S3 PUT 제거 → 15:40 KST 크론 일괄 flush.
+PR #133.
