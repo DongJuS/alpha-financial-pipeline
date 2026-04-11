@@ -1,7 +1,8 @@
 """
 test/integration/test_api_portfolio.py — Portfolio API 통합 테스트
 
-K3s 클러스터에서 실행 중인 API에 HTTP 요청을 보내 포트폴리오 엔드포인트를 검증합니다.
+FastAPI TestClient로 포트폴리오 라우터를 격리 테스트한다.
+DB는 mock으로 대체.
 
 테스트 대상:
   - GET  /api/v1/portfolio/positions
@@ -21,263 +22,280 @@ K3s 클러스터에서 실행 중인 API에 HTTP 요청을 보내 포트폴리�
 
 from __future__ import annotations
 
-import os
-import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
-import httpx
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
-BASE_URL = os.getenv("API_BASE_URL", "http://localhost:18000")
-LOGIN_EMAIL = "admin@alpha-trading.com"
-LOGIN_PASSWORD = "admin123"
+from src.api.deps import get_admin_user, get_current_settings, get_current_user
+from src.api.routers import portfolio as portfolio_module
+from src.api.routers.portfolio import router as portfolio_router
 
+API_PREFIX = "/api/v1/portfolio"
 
-async def get_token() -> str:
-    """로그인하여 JWT 토큰을 획득합니다."""
-    async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-        resp = await client.post(
-            "/api/v1/auth/login",
-            json={"email": LOGIN_EMAIL, "password": LOGIN_PASSWORD},
-        )
-        resp.raise_for_status()
-        return resp.json()["token"]
+_PATCH_PREFIX = "src.api.routers.portfolio"
 
 
-@pytest.mark.integration
-class TestPortfolioPositions(unittest.IsolatedAsyncioTestCase):
+def _build_client(*, authenticated: bool = True) -> TestClient:
+    app = FastAPI()
+    app.include_router(portfolio_router, prefix=API_PREFIX)
+    if authenticated:
+        async def mock_user():
+            return {
+                "sub": str(uuid4()),
+                "email": "test@test.com",
+                "name": "Tester",
+                "is_admin": True,
+            }
+        app.dependency_overrides[get_current_user] = mock_user
+        app.dependency_overrides[get_admin_user] = mock_user
+    app.dependency_overrides[get_current_settings] = lambda: SimpleNamespace(
+        jwt_secret="test-secret",
+        real_trading_confirmation_code="CONFIRM-REAL",
+    )
+    return TestClient(app, raise_server_exceptions=False)
+
+
+class TestPortfolioPositions:
     """GET /api/v1/portfolio/positions"""
 
-    async def test_get_positions(self) -> None:
+    @patch(f"{_PATCH_PREFIX}.fetchrow", new_callable=AsyncMock, return_value=None)
+    @patch(f"{_PATCH_PREFIX}.fetch", new_callable=AsyncMock)
+    def test_get_positions(self, mock_fetch: AsyncMock, mock_fetchrow: AsyncMock) -> None:
         """현재 포트폴리오 포지션 목록을 조회한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/portfolio/positions",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        mock_fetch.return_value = [
+            {
+                "ticker": "005930", "name": "삼성전자",
+                "quantity": 10, "avg_price": 70000, "current_price": 72500,
+                "is_paper": True, "account_scope": "paper",
+            },
+        ]
 
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/positions")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIsInstance(body, (list, dict))
+        assert isinstance(body, dict)
+        assert "positions" in body
+        assert body["is_paper"] is True
 
 
-@pytest.mark.integration
-class TestPortfolioHistory(unittest.IsolatedAsyncioTestCase):
+class TestPortfolioHistory:
     """GET /api/v1/portfolio/history"""
 
-    async def test_get_history(self) -> None:
+    @patch(f"{_PATCH_PREFIX}.fetchrow", new_callable=AsyncMock, return_value=None)
+    @patch(f"{_PATCH_PREFIX}.fetch", new_callable=AsyncMock, return_value=[])
+    def test_get_history(self, mock_fetch: AsyncMock, mock_fetchrow: AsyncMock) -> None:
         """포트폴리오 거래 내역을 조회한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/portfolio/history",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/history")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIsInstance(body, (list, dict))
+        assert isinstance(body, dict)
+        assert "data" in body
 
 
-@pytest.mark.integration
-class TestPortfolioPerformance(unittest.IsolatedAsyncioTestCase):
+class TestPortfolioPerformance:
     """GET /api/v1/portfolio/performance"""
 
-    async def test_get_performance(self) -> None:
+    @patch(f"{_PATCH_PREFIX}.fetchrow", new_callable=AsyncMock, return_value=None)
+    @patch(f"{_PATCH_PREFIX}.fetch", new_callable=AsyncMock, return_value=[])
+    def test_get_performance(self, mock_fetch: AsyncMock, mock_fetchrow: AsyncMock) -> None:
         """포트폴리오 성과 요약을 조회한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/portfolio/performance",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/performance")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIsInstance(body, dict)
+        assert isinstance(body, dict)
+        assert "return_pct" in body
+        assert "max_drawdown_pct" in body
 
 
-@pytest.mark.integration
-class TestPortfolioPerformanceSeries(unittest.IsolatedAsyncioTestCase):
+class TestPortfolioPerformanceSeries:
     """GET /api/v1/portfolio/performance-series"""
 
-    async def test_get_performance_series(self) -> None:
+    @patch(f"{_PATCH_PREFIX}.fetchrow", new_callable=AsyncMock, return_value=None)
+    @patch(f"{_PATCH_PREFIX}.fetch", new_callable=AsyncMock, return_value=[])
+    def test_get_performance_series(
+        self, mock_fetch: AsyncMock, mock_fetchrow: AsyncMock
+    ) -> None:
         """포트폴리오 성과 시계열 데이터를 조회한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/portfolio/performance-series",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/performance-series")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIsInstance(body, (list, dict))
+        assert isinstance(body, dict)
+        assert "points" in body
 
 
-@pytest.mark.integration
-class TestPortfolioPaperOverview(unittest.IsolatedAsyncioTestCase):
+class TestPortfolioPaperOverview:
     """GET /api/v1/portfolio/paper-overview"""
 
-    async def test_get_paper_overview(self) -> None:
+    @patch(f"{_PATCH_PREFIX}.fetch_latest_paper_trading_run", new_callable=AsyncMock, return_value=None)
+    @patch(f"{_PATCH_PREFIX}.fetchrow", new_callable=AsyncMock)
+    def test_get_paper_overview(
+        self, mock_fetchrow: AsyncMock, mock_latest_run: AsyncMock
+    ) -> None:
         """페이퍼 트레이딩 개요를 조회한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/portfolio/paper-overview",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        mock_fetchrow.side_effect = [
+            None,  # _resolve_mode config
+            {"broker_name": "한국투자증권 KIS", "account_label": "KIS 모의투자"},
+            {"active_days": 10, "trade_count": 50, "traded_tickers": 5, "last_executed_at": None},
+        ]
 
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/paper-overview")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIsInstance(body, dict)
+        assert isinstance(body, dict)
+        assert "broker" in body
 
 
-@pytest.mark.integration
-class TestPortfolioAccountOverview(unittest.IsolatedAsyncioTestCase):
+class TestPortfolioAccountOverview:
     """GET /api/v1/portfolio/account-overview"""
 
-    async def test_get_account_overview(self) -> None:
+    @patch(f"{_PATCH_PREFIX}.build_account_overview", new_callable=AsyncMock)
+    @patch(f"{_PATCH_PREFIX}.fetchrow", new_callable=AsyncMock, return_value=None)
+    def test_get_account_overview(
+        self, mock_fetchrow: AsyncMock, mock_overview: AsyncMock
+    ) -> None:
         """실계좌 개요를 조회한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/portfolio/account-overview",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        mock_overview.return_value = {
+            "account_scope": "paper",
+            "broker_name": "KIS",
+            "account_label": "모의투자",
+            "base_currency": "KRW",
+            "seed_capital": 10_000_000,
+            "cash_balance": 8_000_000,
+            "buying_power": 8_000_000,
+            "position_market_value": 2_000_000,
+            "total_equity": 10_000_000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "total_pnl": 0,
+            "total_pnl_pct": 0.0,
+            "position_count": 1,
+            "last_snapshot_at": None,
+        }
 
-        self.assertIn(resp.status_code, (200, 503))
-        if resp.status_code == 200:
-            body = resp.json()
-            self.assertIsInstance(body, dict)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/account-overview")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert isinstance(body, dict)
 
 
-@pytest.mark.integration
-class TestPortfolioOrders(unittest.IsolatedAsyncioTestCase):
+class TestPortfolioOrders:
     """GET /api/v1/portfolio/orders"""
 
-    async def test_get_orders(self) -> None:
+    @patch(f"{_PATCH_PREFIX}.build_broker_order_activity", new_callable=AsyncMock, return_value=[])
+    @patch(f"{_PATCH_PREFIX}.fetchrow", new_callable=AsyncMock, return_value=None)
+    def test_get_orders(
+        self, mock_fetchrow: AsyncMock, mock_orders: AsyncMock
+    ) -> None:
         """주문 내역을 조회한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/portfolio/orders",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/orders")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIsInstance(body, (list, dict))
+        assert isinstance(body, dict)
+        assert "data" in body
 
 
-@pytest.mark.integration
-class TestPortfolioAccountSnapshots(unittest.IsolatedAsyncioTestCase):
+class TestPortfolioAccountSnapshots:
     """GET /api/v1/portfolio/account-snapshots"""
 
-    async def test_get_account_snapshots(self) -> None:
+    @patch(f"{_PATCH_PREFIX}.build_account_snapshot_series", new_callable=AsyncMock, return_value=[])
+    @patch(f"{_PATCH_PREFIX}.fetchrow", new_callable=AsyncMock, return_value=None)
+    def test_get_account_snapshots(
+        self, mock_fetchrow: AsyncMock, mock_snapshots: AsyncMock
+    ) -> None:
         """계좌 스냅샷 이력을 조회한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/portfolio/account-snapshots",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/account-snapshots")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIsInstance(body, (list, dict))
+        assert isinstance(body, dict)
+        assert "points" in body
 
 
-@pytest.mark.integration
-class TestPortfolioConfigGet(unittest.IsolatedAsyncioTestCase):
+class TestPortfolioConfigGet:
     """GET /api/v1/portfolio/config"""
 
-    async def test_get_config(self) -> None:
+    @patch(f"{_PATCH_PREFIX}.market_session_status", new_callable=AsyncMock, return_value="closed")
+    @patch(f"{_PATCH_PREFIX}.fetchrow", new_callable=AsyncMock, return_value=None)
+    def test_get_config(
+        self, mock_fetchrow: AsyncMock, mock_market_status: AsyncMock
+    ) -> None:
         """포트폴리오 설정을 조회한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/portfolio/config",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/config")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIsInstance(body, dict)
+        assert isinstance(body, dict)
+        assert "strategy_blend_ratio" in body
 
 
-@pytest.mark.integration
-class TestPortfolioConfigPost(unittest.IsolatedAsyncioTestCase):
+class TestPortfolioConfigPost:
     """POST /api/v1/portfolio/config"""
 
-    async def test_post_config_empty_body(self) -> None:
-        """빈 바디로 설정을 업데이트한다 (기존 값 유지 확인)."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.post(
-                "/api/v1/portfolio/config",
-                headers={"Authorization": f"Bearer {token}"},
-                json={},
-            )
-
-        self.assertIn(resp.status_code, (200, 422))
-        body = resp.json()
-        self.assertIsInstance(body, dict)
+    @patch(f"{_PATCH_PREFIX}.execute", new_callable=AsyncMock)
+    def test_post_config_empty_body(self, mock_execute: AsyncMock) -> None:
+        """빈 바디로 설정을 업데이트하면 422를 반환한다 (필수 필드 누락)."""
+        client = _build_client()
+        resp = client.post(f"{API_PREFIX}/config", json={})
+        assert resp.status_code == 422
 
 
-@pytest.mark.integration
-class TestPortfolioTradingMode(unittest.IsolatedAsyncioTestCase):
+class TestPortfolioTradingMode:
     """POST /api/v1/portfolio/trading-mode"""
 
-    async def test_post_trading_mode(self) -> None:
-        """트레이딩 모드 변경 요청을 보낸다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.post(
-                "/api/v1/portfolio/trading-mode",
-                headers={"Authorization": f"Bearer {token}"},
-                json={},
-            )
-
-        # 모드 변경은 성공(200) 또는 유효성 오류(422)를 반환할 수 있다
-        self.assertIn(resp.status_code, (200, 422))
-        body = resp.json()
-        self.assertIsInstance(body, dict)
+    def test_post_trading_mode(self) -> None:
+        """트레이딩 모드 변경 요청 (빈 바디)은 422를 반환한다."""
+        client = _build_client()
+        resp = client.post(f"{API_PREFIX}/trading-mode", json={})
+        assert resp.status_code == 422
 
 
-@pytest.mark.integration
-class TestPortfolioReadiness(unittest.IsolatedAsyncioTestCase):
+class TestPortfolioReadiness:
     """GET /api/v1/portfolio/readiness"""
 
-    async def test_get_readiness(self) -> None:
+    @patch(f"{_PATCH_PREFIX}.evaluate_real_trading_readiness", new_callable=AsyncMock)
+    def test_get_readiness(self, mock_readiness: AsyncMock) -> None:
         """포트폴리오 준비 상태를 조회한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/portfolio/readiness",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        mock_readiness.return_value = {
+            "ready": False,
+            "critical_ok": True,
+            "high_ok": False,
+            "checks": [
+                {"key": "db_connection", "ok": True, "message": "DB OK", "severity": "critical"},
+            ],
+        }
 
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/readiness")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIsInstance(body, dict)
-        # readiness 응답에는 ready 상태 필드가 있어야 한다
-        self.assertIn("ready", body)
+        assert isinstance(body, dict)
+        assert "ready" in body
 
 
-@pytest.mark.integration
-class TestPortfolioReadinessAudits(unittest.IsolatedAsyncioTestCase):
+class TestPortfolioReadinessAudits:
     """GET /api/v1/portfolio/readiness/audits"""
 
-    async def test_get_readiness_audits(self) -> None:
+    @patch(f"{_PATCH_PREFIX}.fetch_real_trading_audits", new_callable=AsyncMock, return_value=[])
+    @patch(f"{_PATCH_PREFIX}.fetch_operational_audits", new_callable=AsyncMock, return_value=[])
+    def test_get_readiness_audits(
+        self, mock_op_audits: AsyncMock, mock_rt_audits: AsyncMock
+    ) -> None:
         """포트폴리오 준비 상태 감사 이력을 조회한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/portfolio/readiness/audits",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/readiness/audits")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIsInstance(body, (list, dict))
+        assert isinstance(body, dict)
+        assert "operational_audits" in body
+        assert "mode_switch_audits" in body

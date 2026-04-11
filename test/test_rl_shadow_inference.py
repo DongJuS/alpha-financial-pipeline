@@ -579,3 +579,99 @@ class TestShadowEdgeCases:
         perf = engine.get_shadow_performance("p1")
         assert perf.hold_signals == 5
         assert perf.total_trades == 0
+
+
+# ── Policy Mode Branch Tests ──────────────────────────────────────────────────
+
+
+@pytest.mark.rl
+@pytest.mark.unit
+class TestPolicyModeBranches:
+    """get_policy_mode의 다양한 분기 테스트."""
+
+    def test_no_ticker_in_registry_no_shadow_records(self):
+        """레지스트리에 티커 없고 shadow 기록도 없으면 inactive."""
+        engine = _engine()
+        mode = engine.get_policy_mode("unknown_policy", "005930")
+        assert mode == "inactive"
+
+    def test_no_ticker_in_registry_with_shadow_records(self):
+        """레지스트리에 티커 없지만 shadow 기록 있으면 shadow."""
+        engine = _engine()
+        engine.create_shadow_signal(
+            policy_id="p1", ticker="005930", signal="BUY",
+            confidence=0.7, close_price=100.0,
+        )
+        mode = engine.get_policy_mode("p1", "005930")
+        assert mode == "shadow"
+
+    def test_ticker_in_registry_but_no_policy_entry(self):
+        """레지스트리에 티커는 있지만 해당 정책이 없으면 shadow/inactive."""
+        store = _mock_policy_store()
+        tp = MagicMock()
+        tp.get_policy.return_value = None
+        tp.active_policy_id = "other_policy"
+        store.load_registry.return_value.tickers = {"005930": tp}
+
+        engine = ShadowInferenceEngine(policy_store=store)
+        # shadow 기록 없으면 inactive
+        mode = engine.get_policy_mode("p1", "005930")
+        assert mode == "inactive"
+
+    def test_ticker_in_registry_policy_exists_but_not_active(self):
+        """정책이 존재하지만 활성이 아니면 shadow/inactive."""
+        store = _mock_policy_store()
+        tp = MagicMock()
+        tp.get_policy.return_value = MagicMock()  # policy exists
+        tp.active_policy_id = "other_policy"  # but not active
+        store.load_registry.return_value.tickers = {"005930": tp}
+
+        engine = ShadowInferenceEngine(policy_store=store)
+        engine.create_shadow_signal(
+            policy_id="p1", ticker="005930", signal="BUY",
+            confidence=0.7, close_price=100.0,
+        )
+        mode = engine.get_policy_mode("p1", "005930")
+        assert mode == "shadow"
+
+    def test_active_policy_paper_mode(self):
+        """활성 정책 + auto_promote_paper_only=True → paper."""
+        store = _mock_policy_store()
+        tp = MagicMock()
+        tp.get_policy.return_value = MagicMock()
+        tp.active_policy_id = "p1"
+        store.load_registry.return_value.tickers = {"005930": tp}
+        store.load_registry.return_value.promotion_gate.auto_promote_paper_only = True
+
+        engine = ShadowInferenceEngine(policy_store=store)
+        mode = engine.get_policy_mode("p1", "005930")
+        assert mode == "paper"
+
+    def test_active_policy_real_mode(self):
+        """활성 정책 + auto_promote_paper_only=False → real."""
+        store = _mock_policy_store()
+        tp = MagicMock()
+        tp.get_policy.return_value = MagicMock()
+        tp.active_policy_id = "p1"
+        store.load_registry.return_value.tickers = {"005930": tp}
+        store.load_registry.return_value.promotion_gate.auto_promote_paper_only = False
+
+        engine = ShadowInferenceEngine(policy_store=store)
+        mode = engine.get_policy_mode("p1", "005930")
+        assert mode == "real"
+
+    def test_different_tickers_different_modes(self):
+        """동일 정책이 티커에 따라 다른 모드일 수 있다."""
+        store = _mock_policy_store()
+        tp1 = MagicMock()
+        tp1.get_policy.return_value = MagicMock()
+        tp1.active_policy_id = "p1"
+        tp2 = MagicMock()
+        tp2.get_policy.return_value = None
+        tp2.active_policy_id = "other"
+        store.load_registry.return_value.tickers = {"005930": tp1, "035720": tp2}
+        store.load_registry.return_value.promotion_gate.auto_promote_paper_only = True
+
+        engine = ShadowInferenceEngine(policy_store=store)
+        assert engine.get_policy_mode("p1", "005930") == "paper"
+        assert engine.get_policy_mode("p1", "035720") == "inactive"
