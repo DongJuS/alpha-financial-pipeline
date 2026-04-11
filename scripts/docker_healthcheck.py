@@ -24,6 +24,9 @@ _SERVICE_AGENTS: dict[str, list[str]] = {
         "portfolio_manager_agent",
         "notifier_agent",
     ],
+    "tick-collector": [
+        "collector_agent",
+    ],
 }
 
 
