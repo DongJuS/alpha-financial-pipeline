@@ -2,7 +2,7 @@
 scripts/run_orchestrator_worker.py — Docker/운영용 Orchestrator 루프 실행기
 
 환경변수:
-  ORCH_TICKERS=005930,000660 (기본: 비어있음 = 기본 종목 사용)
+  ORCH_TICKERS=005930,000660 (기본: 비어있음 = DB instruments 테이블 사용)
   ORCH_INTERVAL_SECONDS=600 (기본: 600)
   ORCH_RUN_ONCE=false (true면 1회 사이클만 실행)
   ORCH_INDEPENDENT_PORTFOLIO=false (true면 독립 포트폴리오 모드)
@@ -67,7 +67,6 @@ _WORKER_AGENT_IDS = [
 ]
 
 _KEEPALIVE_INTERVAL = 30  # 초 — TTL_HEARTBEAT(90s)보다 충분히 짧게
-_DEFAULT_TICKERS = ["005930", "000660", "259960"]
 _KST = ZoneInfo("Asia/Seoul")
 
 
@@ -142,6 +141,21 @@ def _is_weekend_kst(now: datetime | None = None) -> bool:
     return current.weekday() > 4
 
 
+async def _fetch_tickers_from_db() -> list[str]:
+    """instruments 테이블에서 활성 종목의 instrument_id 목록을 조회합니다."""
+    try:
+        from src.db.queries import list_tickers
+
+        rows = await list_tickers()
+        ids = [row["instrument_id"] for row in rows]
+        if ids:
+            logger.info("DB에서 종목 %d개 로드: %s", len(ids), ids[:5])
+        return ids
+    except Exception as e:
+        logger.warning("DB 종목 조회 실패 (빈 목록 반환): %s", e)
+        return []
+
+
 async def _run_cycle_if_weekday(
     agent: OrchestratorAgent,
     tickers: list[str] | None,
@@ -153,7 +167,15 @@ async def _run_cycle_if_weekday(
     if _is_weekend_kst(current) and not get_settings().gen_api_url:
         logger.info("주말(%s)에는 Orchestrator 사이클을 건너뜁니다.", current.date().isoformat())
         return None
-    return await agent.run_cycle(tickers=tickers or _DEFAULT_TICKERS)
+
+    resolved = tickers
+    if not resolved:
+        resolved = await _fetch_tickers_from_db()
+    if not resolved:
+        logger.error("실행할 종목이 없습니다 (ORCH_TICKERS 미설정, DB 조회 결과 없음). 사이클 건너뜀.")
+        return None
+
+    return await agent.run_cycle(tickers=resolved)
 
 
 # ── Strategy Registration ────────────────────────────────────────────────────
