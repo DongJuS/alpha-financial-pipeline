@@ -97,3 +97,15 @@ RL/Strategy A/B 과거 데이터 성과 검증. 수익률·샤프·MDD·승률. 
 ### 데이터 압축 최적화 ✅
 
 Parquet 압축 Snappy→zstd(30~40% 감소). PostgreSQL 긴 텍스트 lz4 압축.
+
+---
+
+### RL 레지스트리 자동 동기화 ✅
+
+instruments 테이블을 종목 SoT로 채택. Orchestrator·RL 스케줄러 하드코딩 전면 제거 → DB 조회. RL bootstrap 시 신규 종목 자동 등록. PR #136.
+
+---
+
+### 일봉 수집 종목 확대 + 스크리너 도입 ✅
+
+수집 100종목(FDR 무료) + 스크리너(거래량 급등·변동률) 필터링 → 전략 실행 하드캡 10종목. PR #137.
