@@ -205,3 +205,99 @@ class TestClaudeClientAskJson:
         assert captured_prompt is not None
         assert "JSON" in captured_prompt
         assert "원본 프롬프트" in captured_prompt
+
+
+# ── Claude Client 에지케이스 (Agent 4 QA Round 2) ────────────────────────────
+
+
+class TestExtractJsonEdgeCases:
+    """_extract_json: 다양한 JSON 형식, 에러 케이스."""
+
+    def test_json_array_raises(self):
+        """JSON 배열은 dict가 아니므로 처리 방식 확인."""
+        from src.llm.claude_client import _extract_json
+
+        # _extract_json은 json.loads를 먼저 시도 — 배열도 파싱됨
+        # 하지만 함수는 dict를 반환해야 하므로, 배열이면 내부 {} 탐색
+        text = '[1, 2, 3]'
+        # json.loads 성공하지만 dict가 아닌 경우 — 함수 동작 확인
+        result = _extract_json(text)
+        # json.loads가 성공하면 그대로 반환 (타입 체크 없음)
+        assert isinstance(result, list)
+
+    def test_deeply_nested_json(self):
+        """깊이 중첩된 JSON도 정상 파싱."""
+        from src.llm.claude_client import _extract_json
+
+        text = '{"level1": {"level2": {"level3": "value"}}}'
+        result = _extract_json(text)
+        assert result["level1"]["level2"]["level3"] == "value"
+
+    def test_json_with_unicode_characters(self):
+        """한글/특수문자가 포함된 JSON."""
+        from src.llm.claude_client import _extract_json
+
+        text = '{"종목명": "삼성전자", "signal": "매수"}'
+        result = _extract_json(text)
+        assert result["종목명"] == "삼성전자"
+
+    def test_json_preceded_by_long_text(self):
+        """긴 텍스트 뒤에 JSON이 있는 경우."""
+        from src.llm.claude_client import _extract_json
+
+        text = "분석 결과입니다. " * 50 + '{"signal": "BUY"}'
+        result = _extract_json(text)
+        assert result["signal"] == "BUY"
+
+    def test_empty_string_raises(self):
+        """빈 문자열은 JSONDecodeError."""
+        from src.llm.claude_client import _extract_json
+
+        with pytest.raises(json.JSONDecodeError):
+            _extract_json("")
+
+
+class TestClaudeClientConfigEdgeCases:
+    """ClaudeClient: SDK 모드, CLI 폴백."""
+
+    def test_sdk_mode_when_api_key_set(self):
+        """API 키가 설정되면 SDK 모드."""
+        from src.llm.claude_client import ClaudeClient
+
+        mock_settings = MagicMock()
+        mock_settings.anthropic_api_key = "sk-ant-real-key-1234567890"
+        mock_settings.anthropic_cli_command = ""
+        mock_settings.llm_cli_timeout_seconds = 90
+
+        with (
+            patch("src.llm.claude_client.get_settings", return_value=mock_settings),
+            patch("src.llm.claude_client.build_cli_command", return_value=[]),
+            patch("src.llm.claude_client.is_placeholder_secret", return_value=False),
+        ):
+            with patch("anthropic.AsyncAnthropic") as MockAnthropic:
+                MockAnthropic.return_value = MagicMock()
+                client = ClaudeClient()
+
+        assert client.is_configured is True
+        assert client._client is not None
+
+    def test_cli_fallback_when_cli_not_found(self):
+        """CLI 명령이 있지만 실행할 수 없으면 SDK 모드로 폴백."""
+        from src.llm.claude_client import ClaudeClient
+
+        mock_settings = MagicMock()
+        mock_settings.anthropic_api_key = ""
+        mock_settings.anthropic_cli_command = "claude --json"
+        mock_settings.llm_cli_timeout_seconds = 90
+
+        with (
+            patch("src.llm.claude_client.get_settings", return_value=mock_settings),
+            patch("src.llm.claude_client.build_cli_command", return_value=["claude", "--json"]),
+            patch("src.llm.claude_client.is_cli_available", return_value=False),
+            patch("src.llm.claude_client.is_placeholder_secret", return_value=True),
+        ):
+            client = ClaudeClient()
+
+        # CLI가 없고 API 키도 없으면 미설정
+        assert client.is_configured is False
+        assert client._cli_command == []

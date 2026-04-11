@@ -393,5 +393,202 @@ class PortfolioManagerEdgeCaseTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(signal.is_shadow)
 
 
+class PortfolioManagerDailyLossBlockedTest(unittest.IsolatedAsyncioTestCase):
+    """_is_daily_loss_blocked 경계값 테스트."""
+
+    @patch("src.agents.portfolio_manager.compute_trade_performance")
+    @patch("src.agents.portfolio_manager.fetch_trade_rows_for_date", new_callable=AsyncMock)
+    async def test_exactly_at_limit_is_blocked(self, mock_fetch, mock_perf) -> None:
+        """pnl_pct가 정확히 -limit이면 blocked (<=)."""
+        mock_fetch.return_value = [{"row": 1}]
+        mock_perf.return_value = {"invested_capital": 1000, "realized_pnl": -30}
+        agent = PortfolioManagerAgent()
+        blocked, pnl = await agent._is_daily_loss_blocked(
+            "paper", {"daily_loss_limit_pct": 3}
+        )
+        self.assertTrue(blocked)
+        self.assertAlmostEqual(pnl, -3.0, places=1)
+
+    @patch("src.agents.portfolio_manager.compute_trade_performance")
+    @patch("src.agents.portfolio_manager.fetch_trade_rows_for_date", new_callable=AsyncMock)
+    async def test_just_above_limit_not_blocked(self, mock_fetch, mock_perf) -> None:
+        """pnl_pct가 limit보다 약간 높으면 not blocked."""
+        mock_fetch.return_value = [{"row": 1}]
+        mock_perf.return_value = {"invested_capital": 1000, "realized_pnl": -29}
+        agent = PortfolioManagerAgent()
+        blocked, pnl = await agent._is_daily_loss_blocked(
+            "paper", {"daily_loss_limit_pct": 3}
+        )
+        self.assertFalse(blocked)
+        self.assertAlmostEqual(pnl, -2.9, places=1)
+
+    @patch("src.agents.portfolio_manager.compute_trade_performance")
+    @patch("src.agents.portfolio_manager.fetch_trade_rows_for_date", new_callable=AsyncMock)
+    async def test_zero_invested_capital_returns_zero(self, mock_fetch, mock_perf) -> None:
+        """invested_capital=0이면 pnl_pct=0 → not blocked."""
+        mock_fetch.return_value = [{"row": 1}]
+        mock_perf.return_value = {"invested_capital": 0, "realized_pnl": 0}
+        agent = PortfolioManagerAgent()
+        blocked, pnl = await agent._is_daily_loss_blocked(
+            "paper", {"daily_loss_limit_pct": 3}
+        )
+        self.assertFalse(blocked)
+        self.assertAlmostEqual(pnl, 0.0)
+
+    @patch("src.agents.portfolio_manager.compute_trade_performance")
+    @patch("src.agents.portfolio_manager.fetch_trade_rows_for_date", new_callable=AsyncMock)
+    async def test_positive_pnl_not_blocked(self, mock_fetch, mock_perf) -> None:
+        """양의 수익 → not blocked."""
+        mock_fetch.return_value = [{"row": 1}]
+        mock_perf.return_value = {"invested_capital": 1000, "realized_pnl": 50}
+        agent = PortfolioManagerAgent()
+        blocked, pnl = await agent._is_daily_loss_blocked(
+            "paper", {"daily_loss_limit_pct": 3}
+        )
+        self.assertFalse(blocked)
+        self.assertGreater(pnl, 0)
+
+
+class PortfolioManagerRuleBasedExitsTest(unittest.IsolatedAsyncioTestCase):
+    """_check_rule_based_exits 다양한 조건 테스트."""
+
+    @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
+    async def test_take_profit_triggered(self, mock_positions) -> None:
+        """수익률이 take_profit_pct 이상이면 SELL 시그널."""
+        mock_positions.return_value = [
+            {"ticker": "005930", "quantity": 10, "avg_price": 100.0, "current_price": 106.0},
+        ]
+        agent = PortfolioManagerAgent()
+        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
+        self.assertEqual(len(signals), 1)
+        self.assertEqual(signals[0].signal, "SELL")
+        self.assertIn("익절", signals[0].reasoning_summary)
+
+    @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
+    async def test_stop_loss_triggered(self, mock_positions) -> None:
+        """수익률이 stop_loss_pct 이하이면 SELL 시그널."""
+        mock_positions.return_value = [
+            {"ticker": "005930", "quantity": 10, "avg_price": 100.0, "current_price": 96.0},
+        ]
+        agent = PortfolioManagerAgent()
+        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
+        self.assertEqual(len(signals), 1)
+        self.assertEqual(signals[0].signal, "SELL")
+        self.assertIn("손절", signals[0].reasoning_summary)
+
+    @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
+    async def test_no_exit_in_range(self, mock_positions) -> None:
+        """수익률이 익절/손절 범위 내이면 시그널 없음."""
+        mock_positions.return_value = [
+            {"ticker": "005930", "quantity": 10, "avg_price": 100.0, "current_price": 102.0},
+        ]
+        agent = PortfolioManagerAgent()
+        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
+        self.assertEqual(len(signals), 0)
+
+    @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
+    async def test_zero_quantity_skipped(self, mock_positions) -> None:
+        """수량 0인 포지션은 무시."""
+        mock_positions.return_value = [
+            {"ticker": "005930", "quantity": 0, "avg_price": 100.0, "current_price": 200.0},
+        ]
+        agent = PortfolioManagerAgent()
+        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
+        self.assertEqual(len(signals), 0)
+
+    @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
+    async def test_zero_avg_price_skipped(self, mock_positions) -> None:
+        """avg_price=0인 포지션은 무시."""
+        mock_positions.return_value = [
+            {"ticker": "005930", "quantity": 10, "avg_price": 0, "current_price": 100.0},
+        ]
+        agent = PortfolioManagerAgent()
+        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
+        self.assertEqual(len(signals), 0)
+
+    @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
+    async def test_empty_positions(self, mock_positions) -> None:
+        """포지션 없으면 빈 리스트."""
+        mock_positions.return_value = []
+        agent = PortfolioManagerAgent()
+        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
+        self.assertEqual(len(signals), 0)
+
+
+class PortfolioManagerProcessSignalEdgeCaseTest(unittest.IsolatedAsyncioTestCase):
+    """process_signal 추가 에지케이스."""
+
+    async def test_process_signal_zero_price_skipped(self) -> None:
+        """가격=0이면 주문 스킵."""
+        agent = PortfolioManagerAgent()
+        signal = PredictionSignal(
+            agent_id="test",
+            llm_model="manual",
+            strategy="A",
+            ticker="005930",
+            signal="BUY",
+            confidence=0.9,
+            trading_date=date.today(),
+        )
+        with patch.object(
+            agent, "_resolve_name_and_price",
+            new=AsyncMock(return_value=("삼성전자", 0)),
+        ):
+            result = await agent.process_signal(signal, risk_config={})
+        self.assertIsNone(result)
+
+    async def test_process_signal_sell_no_position_skipped(self) -> None:
+        """SELL 시 포지션이 없으면 주문 스킵."""
+        agent = PortfolioManagerAgent()
+        signal = PredictionSignal(
+            agent_id="test",
+            llm_model="manual",
+            strategy="A",
+            ticker="005930",
+            signal="SELL",
+            confidence=0.9,
+            trading_date=date.today(),
+        )
+        with (
+            patch.object(
+                agent, "_resolve_name_and_price",
+                new=AsyncMock(return_value=("삼성전자", 70000)),
+            ),
+            patch("src.agents.portfolio_manager.get_position", new=AsyncMock(return_value=None)),
+        ):
+            result = await agent.process_signal(signal, risk_config={})
+        self.assertIsNone(result)
+
+    async def test_process_signal_sell_zero_quantity_skipped(self) -> None:
+        """SELL 시 보유 수량이 0이면 주문 스킵."""
+        agent = PortfolioManagerAgent()
+        signal = PredictionSignal(
+            agent_id="test",
+            llm_model="manual",
+            strategy="A",
+            ticker="005930",
+            signal="SELL",
+            confidence=0.9,
+            trading_date=date.today(),
+        )
+        with (
+            patch.object(
+                agent, "_resolve_name_and_price",
+                new=AsyncMock(return_value=("삼성전자", 70000)),
+            ),
+            patch("src.agents.portfolio_manager.get_position", new=AsyncMock(
+                return_value={"quantity": 0, "current_price": 70000, "avg_price": 65000}
+            )),
+        ):
+            result = await agent.process_signal(signal, risk_config={})
+        self.assertIsNone(result)
+
+
 if __name__ == "__main__":
     unittest.main()

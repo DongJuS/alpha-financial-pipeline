@@ -337,3 +337,43 @@ class TestBlendingEdgeCases:
         blended = orch._blend_nway_predictions(predictions)
         assert len(blended) == 1
         assert blended[0].signal in ("BUY", "SELL", "HOLD")
+
+    def test_only_one_strategy_has_ticker(self):
+        """한 전략만 해당 티커를 가진 경우 그 전략의 신호가 그대로 반영."""
+        orch = OrchestratorAgent(strategy_blend_weights={"A": 0.5, "B": 0.5})
+        predictions = {
+            "A": [_make_signal("005930", "SELL", 0.95, "A")],
+            "B": [],
+        }
+        blended = orch._blend_nway_predictions(predictions)
+        assert len(blended) == 1
+        assert blended[0].signal == "SELL"
+        assert blended[0].ticker == "005930"
+
+    def test_five_strategies_blending(self):
+        """5개 전략이 참여하는 블렌딩."""
+        orch = OrchestratorAgent(
+            strategy_blend_weights={"A": 0.2, "B": 0.2, "RL": 0.2, "S": 0.2, "L": 0.2}
+        )
+        predictions = {
+            "A": [_make_signal("005930", "BUY", 0.9, "A")],
+            "B": [_make_signal("005930", "BUY", 0.8, "B")],
+            "RL": [_make_signal("005930", "SELL", 0.7, "RL")],
+            "S": [_make_signal("005930", "BUY", 0.6, "S")],
+            "L": [_make_signal("005930", "HOLD", 0.5, "L")],
+        }
+        blended = orch._blend_nway_predictions(predictions)
+        assert len(blended) == 1
+        # 3 BUY vs 1 SELL vs 1 HOLD → BUY 승리
+        assert blended[0].signal == "BUY"
+
+    def test_blending_with_very_low_confidence(self):
+        """매우 낮은 confidence 값도 블렌딩에 반영."""
+        orch = OrchestratorAgent(strategy_blend_weights={"A": 0.5, "B": 0.5})
+        predictions = {
+            "A": [_make_signal("005930", "BUY", 0.01, "A")],
+            "B": [_make_signal("005930", "SELL", 0.01, "B")],
+        }
+        blended = orch._blend_nway_predictions(predictions)
+        assert len(blended) == 1
+        assert blended[0].signal in ("BUY", "SELL")
