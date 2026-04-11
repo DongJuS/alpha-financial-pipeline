@@ -58,8 +58,7 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건, 2023-01~2026-04).
 K3s DB에 일봉 시딩 완료 (3종목 2,394건). 틱 수집은 장중 WebSocket으로 자동 진행.
 클라우드 전환 시 `pg_dump` + R2 sync로 이전.
 
-**실시간 틱 수집 자동화 결정 변경 (2026-04-11):** 초기에 크론잡 추가를 결정했으나, 100종목 스케일링 분석 결과 별도 `tick-collector` 서비스로 변경. 장애 격리(틱↔매매 독립) + 독립 재시작이 핵심 근거. 병행하여 `collector.run()` 누락(모듈 분리 시 유실)도 복원 필요.
-- 상세: `.agent/discussions/20260411-tick-collector-service-design.md`
+**✅ tick-collector 서비스 분리 완료 (PR #138):** collector.run() 복원 + 별도 tick-collector 서비스. 장애 격리(틱↔매매 독립) + 독립 재시작. unified_scheduler에서 tick 크론잡 2개 제거(12→10 잡). K3s 배포 후 데이터 축적 시작.
 
 ### RL 분봉 피처 확장 (선행 조건: 분봉 40영업일 축적)
 
@@ -69,17 +68,13 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건). 틱 수집은 장중 WebSocke
 선행 조건: Step 8b 완료 + 분봉 데이터 40영업일 축적.
 - 상세: `.agent/discussions/20260411-rl-intraday-feature-expansion.md`
 
-### RL 레지스트리 자동 동기화
+### RL 레지스트리 자동 동기화 ✅
 
-**왜 필요한가:** RL 학습 대상 종목이 registry.json에 수동 등록해야만 학습이 시작되는 구조. Orchestrator·RL 스케줄러 모두 하드코딩된 종목 목록을 사용하여, 종목 추가 시 3곳을 수동으로 맞춰야 했다.
+instruments 테이블을 종목 SoT로 채택. 하드코딩 전면 제거, RL bootstrap 자동 등록. PR #136.
 
-**결정 (2026-04-11):** instruments 테이블을 종목 SoT로 채택. 모든 컴포넌트가 DB에서 종목을 읽고, 코드 내 하드코딩 전면 제거. registry.json은 학습 이력 저장소로 역할 축소. RL bootstrap 시 DB에 있으나 registry에 없는 종목은 자동 등록.
-- 상세: `.agent/discussions/20260411-rl-registry-auto-sync.md`
+### 일봉 수집 종목 확대 + 스크리너 도입 ✅
 
-### 일봉 수집 종목 확대 + 스크리너 도입
-
-**왜 필요한가:** 3종목으로는 포트폴리오 분산 불가 + RL/백테스트 데이터 부족. 수집은 100종목으로 확대(FDR 무료, 비용 0원)하되, 일봉 기반 스크리너(거래량 급등·변동률)로 필터링한 종목만 LLM 전략 실행(하드캡 10종목). 월 비용 증가 없이 데이터 자산 축적 + 동적 종목 선정 달성.
-- 상세: `.agent/discussions/20260411-ohlcv-daily-ticker-expansion.md`
+수집 100종목(FDR 무료) + 스크리너 필터링 → 전략 실행 하드캡 10종목. PR #137.
 
 ### Predictor MTF 실효과 검증
 
