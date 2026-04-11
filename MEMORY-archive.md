@@ -231,4 +231,34 @@ SENTIMENT_TO_SIGNAL = {
 
 ---
 
+## 2026-04-11 — RL 종목 레지스트리 자동 동기화 (PR #136)
+
+instruments 테이블을 종목 SoT로 채택하여 Orchestrator·RL 스케줄러의 하드코딩(_DEFAULT_TICKERS 등) 전면 제거. RL bootstrap 크론잡이 DB에서 종목을 읽어 registry.json에 자동 등록. registry.json은 학습 이력 저장소로 역할 축소. ticker 정규화 중복(259960 vs 259960.KS) 병합.
+
+---
+
+## 2026-04-11 — 일봉 수집 100종목 확대 + 스크리너 도입 (PR #137)
+
+일봉 수집 3→100종목 확대(FDR 무료, 비용 0원) + 스크리너 모듈 도입. 거래량 급등(20일 평균 2배) + 변동률(±3%) 기반 필터링 → 전략 실행 하드캡 10종목. 전 종목 LLM 실행은 비용 폭발이라 2-tier(수집→스크리너→전략) 구조 채택.
+
+---
+
+## 2026-04-11 — Step 8b 후속: Predictor 분봉 통합 + S3 틱 최적화 (PR #133)
+
+(1) Predictor에 당일 1시간봉 통합 — get_ohlcv_bars('1hour')로 장중 데이터를 fetch하여 LLM 프롬프트에 포함, 데이터 없으면 일봉만 fallback. (2) S3 틱 최적화 — _make_s3_key()에 hour 파라미터 추가(Hive-style date+hour 2단계 파티셔닝), _flush_tick_buffer()에서 S3 제거 후 장 종료 크론(15:40 KST)으로 DB→S3 시간대별 일괄 flush.
+
+---
+
+## 2026-04-11 — S3 틱 데이터 최적화 설계
+
+로컬 MinIO 1초 flush 유지(이중 백업) + 장 종료 후 DB→클라우드 일괄 아카이브. _make_s3_key()에 optional hour 파라미터(Hive-style date+hour 2단계 파티셔닝). get_ticks_by_hour()로 시간대별 분리 쿼리 → 하루 ~7개 대형 Parquet. 클라우드 Lifecycle: tick_data/ prefix 30d→IA, 90d→Glacier IR. step8b-followup(PR #133)에 흡수 구현.
+
+---
+
+## 2026-04-11 — 실시간 틱 수집 스케줄링 방식 결정 (폐기)
+
+3종목 기준으로 크론잡 2개(시작+헬스체크) 추가를 결정했으나, 100종목 스케일링 분석 결과 별도 tick-collector 서비스(PR #138)로 재결정. 장애 격리(틱↔매매 독립) + 독립 재시작이 핵심 근거. 본 문서는 tick-collector-service-design.md가 대체.
+
+---
+
 *Archived from MEMORY.md on 2026-03-28*

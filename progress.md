@@ -35,28 +35,14 @@
 
 ## 🔄 다음 작업
 
-### RL 레지스트리 자동 동기화 (대기)
-
-instruments 테이블을 종목 SoT로 채택. Orchestrator·RL 스케줄러의 하드코딩 제거 → DB 조회로 교체. registry.json에 없는 종목은 bootstrap 시 자동 등록.
-상세: `.agent/discussions/20260411-rl-registry-auto-sync.md`
-
-### 일봉 수집 종목 확대 + 스크리너 도입 (대기)
-
-수집 100종목(FDR 무료) → 스크리너 필터링(연산 비용 0) → 전략 실행(하드캡 10종목).
-수집/전략 티커 분리, 스크리너 모듈 신규, Orchestrator 파이프라인 연결 필요.
-상세: `.agent/discussions/20260411-ohlcv-daily-ticker-expansion.md`
-
 ### 로컬 데이터 축적 (진행 중)
 
 로컬 K3s에서 틱/분봉 데이터를 먼저 축적. 클라우드 비용 발생을 늦추면서 RL 선행 조건 충족.
 클라우드 전환 시 `pg_dump` + R2 sync로 이전.
 
-**🔴 발견된 문제 (2026-04-11):**
-1. `collector.run()` 메서드 누락 — 모듈 분리 시 유실. 08:30 일봉 수집 크론잡이 실패 중 (4/9~ 일봉 누락)
-2. 실시간 틱 수집 자동 기동 경로 없음 — 어떤 서비스에서도 `collect_realtime_ticks()` 미호출
-
-**다음 구현:** `collector.run()` 복원 + 별도 `tick-collector` 서비스 신규 추가 (100종목 스케일링 대비 장애 격리).
-상세: `.agent/discussions/20260411-tick-collector-service-design.md`
+**✅ 해결 (2026-04-11, PR #138):**
+1. `collector.run()` 복원 → `collect_daily_bars()` 위임. 08:30 KST 일봉 수집 정상화.
+2. 별도 `tick-collector` 서비스 신규 추가 — 장애 격리(틱↔매매 독립), 독립 재시작. K3s 배포 필요.
 
 ### S3 Lifecycle 설정 (코드 변경 없음)
 
