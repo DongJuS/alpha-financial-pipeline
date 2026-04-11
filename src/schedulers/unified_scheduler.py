@@ -9,7 +9,7 @@ src/schedulers/unified_scheduler.py — 통합 스케줄러
     [장 전]
     rl_bootstrap        08:00 KST  RL 부트스트랩 (활성 정책 없으면 학습, 있으면 워밍업)
     predictor_warmup    08:05 KST  A/B Predictor LLM 클라이언트 워밍업
-    stock_master_daily  08:10 KST  StockMasterCollector
+    krx_stock_master_daily  08:10 KST  KrxStockMasterCollector
     macro_daily         08:20 KST  MacroCollector
     collector_daily     08:30 KST  CollectorAgent
     index_warmup        08:55 KST  IndexCollector (워밍업)
@@ -44,7 +44,7 @@ _LOCK_TTL: dict[str, int] = {
     # 장 전
     "rl_bootstrap": 3600,         # 60분 (멀티 티커 학습 포함 가능)
     "predictor_warmup": 60,      # 1분 (모듈 캐싱 + 가용성 확인)
-    "stock_master_daily": 300,   # 5분
+    "krx_stock_master_daily": 300,   # 5분
     "macro_daily": 300,          # 5분
     "collector_daily": 600,      # 10분
     "index_warmup": 60,          # 1분
@@ -107,10 +107,10 @@ async def start_unified_scheduler() -> None:
     from src.agents.collector import CollectorAgent
     from src.agents.index_collector import IndexCollector
     from src.agents.macro_collector import MacroCollector
-    from src.agents.stock_master_collector import StockMasterCollector
+    from src.agents.krx_stock_master_collector import KrxStockMasterCollector
     from src.utils.market_hours import is_market_open_now
 
-    stock_master = StockMasterCollector()
+    krx_stock_master = KrxStockMasterCollector()
     macro = MacroCollector()
     collector = CollectorAgent()
     index = IndexCollector()
@@ -137,7 +137,7 @@ async def start_unified_scheduler() -> None:
 
             from src.agents.rl_policy_registry import TickerPolicies
 
-            db_rows = await db_list_tickers(limit=500)
+            db_rows = await db_list_tickers(mode="paper", limit=500)
             db_tickers = [row["instrument_id"] for row in db_rows]
             existing_count = len(registry.tickers)
             newly_registered = 0
@@ -242,8 +242,8 @@ async def start_unified_scheduler() -> None:
         logger.info("Predictor 워밍업 완료: %s 사용 가능", available or "없음")
 
     # -- 기존 데이터 수집 잡 --
-    async def _run_stock_master() -> None:
-        await stock_master.collect_stock_master(include_etf=True)
+    async def _run_krx_stock_master() -> None:
+        await krx_stock_master.collect_krx_stock_master(include_etf=True)
 
     async def _run_macro() -> None:
         await macro.collect_all()
@@ -336,10 +336,10 @@ async def start_unified_scheduler() -> None:
     )
 
     scheduler.add_job(
-        _locked_job("stock_master_daily", _run_stock_master),
+        _locked_job("krx_stock_master_daily", _run_krx_stock_master),
         CronTrigger(hour=8, minute=10, day_of_week="0-4", timezone=str(KST)),
-        id="stock_master_daily",
-        name="StockMasterCollector daily (08:10 KST)",
+        id="krx_stock_master_daily",
+        name="KrxStockMasterCollector daily (08:10 KST)",
         misfire_grace_time=10,
         replace_existing=True,
     )

@@ -190,11 +190,11 @@ class TestNormalizeWithDb:
         assert result == "005930.KS"
 
     @pytest.mark.asyncio
-    async def test_stock_master_fallback(self):
+    async def test_krx_stock_master_fallback(self):
         from src.utils.ticker import clear_cache, normalize_with_db
 
         clear_cache()
-        # instruments returns None, stock_master returns row
+        # instruments returns None, krx_stock_master returns row
         with patch(
             "src.utils.db_client.fetchrow",
             new_callable=AsyncMock,
