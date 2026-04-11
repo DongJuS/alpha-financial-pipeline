@@ -413,7 +413,7 @@ class TestReconnectionEdgeCases:
             await collector._ws_collect_loop(
                 subscribed=["005930"],
                 meta={"005930": {"name": "삼성전자", "market": "KOSPI"}},
-                reconnect_max=0,
+                reconnect_max=1,  # 첫 번째 실패에서 gap 감지 → 두 번째 실패에서 break
             )
 
         mock_backfill.assert_awaited()

@@ -290,3 +290,137 @@ class TestCollectDailyBars:
         assert len(points) == 1
         # S3 실패 후에도 Pub/Sub 발행
         mock_pub.assert_awaited_once()
+
+
+# =============================================================================
+# 에지케이스: FDR 타임아웃 / 중복 upsert / 빈 응답 / 음수 Close
+# =============================================================================
+
+
+class TestDailyBarsEdgeCases:
+    """_DailyMixin 에지 케이스 보강 (Agent 2 QA Round 2)."""
+
+    def test_negative_close_skipped(self, collector):
+        """Close 값이 음수인 행은 건너뜀 (close_value <= 0 조건)."""
+        mock_fdr = MagicMock()
+        dates = pd.date_range("2026-01-02", periods=2, freq="B")
+        df = pd.DataFrame(
+            {
+                "Open": [70000, 70000],
+                "High": [71000, 71000],
+                "Low": [69000, 69000],
+                "Close": [70500, -100],
+                "Volume": [1000000, 500000],
+            },
+            index=dates,
+        )
+        mock_fdr.DataReader.return_value = df
+
+        with patch.object(collector, "_load_fdr", return_value=mock_fdr):
+            points = collector._fetch_daily_bars("005930", "삼성전자", "KOSPI", 120)
+
+        assert len(points) == 1
+        assert points[0].close == 70500.0
+
+    def test_fdr_exception_propagates_from_fetch(self, collector):
+        """FDR DataReader가 예외를 발생시키면 _fetch_daily_bars에서 전파."""
+        mock_fdr = MagicMock()
+        mock_fdr.DataReader.side_effect = TimeoutError("FDR timeout after 30s")
+
+        with patch.object(collector, "_load_fdr", return_value=mock_fdr):
+            with pytest.raises(TimeoutError):
+                collector._fetch_daily_bars("005930", "삼성전자", "KOSPI", 120)
+
+    async def test_collect_daily_bars_fdr_timeout_per_ticker(self, collector):
+        """개별 종목 FDR 타임아웃 시 에러 기록 후 계속 진행."""
+        mock_fdr = MagicMock()
+        mock_fdr.StockListing.return_value = pd.DataFrame({
+            "Code": ["005930", "000660"],
+            "Name": ["삼성전자", "SK하이닉스"],
+            "Market": ["KOSPI", "KOSPI"],
+        })
+        mock_fdr.DataReader.side_effect = TimeoutError("FDR timeout")
+
+        mock_pipe = MagicMock()
+        mock_pipe.set = MagicMock()
+        mock_pipe.lpush = MagicMock()
+        mock_pipe.ltrim = MagicMock()
+        mock_pipe.expire = MagicMock()
+        mock_pipe.execute = AsyncMock(return_value=[True] * 4)
+        redis_mock = AsyncMock()
+        redis_mock.pipeline = MagicMock(return_value=mock_pipe)
+
+        with (
+            patch.object(collector, "_load_fdr", return_value=mock_fdr),
+            patch("src.agents.collector._daily.upsert_market_data", new_callable=AsyncMock, return_value=0),
+            patch("src.agents.collector._daily.insert_collector_error", new_callable=AsyncMock) as mock_err,
+            patch("src.services.datalake.upload_bytes", new_callable=AsyncMock),
+            patch("src.agents.collector._base.get_redis", new_callable=AsyncMock, return_value=redis_mock),
+            patch("src.agents.collector._daily.publish_message", new_callable=AsyncMock),
+            patch("src.agents.collector._base.set_heartbeat", new_callable=AsyncMock),
+            patch("src.agents.collector._base.insert_heartbeat", new_callable=AsyncMock),
+        ):
+            points = await collector.collect_daily_bars(tickers=["005930", "000660"])
+
+        assert points == []
+        assert mock_err.await_count == 2  # 2종목 모두 에러
+
+    def test_change_pct_first_row_is_none(self, collector):
+        """첫 번째 행의 change_pct는 previous_close가 None이므로 None."""
+        mock_fdr = MagicMock()
+        mock_fdr.DataReader.return_value = _make_fdr_df(1)
+
+        with patch.object(collector, "_load_fdr", return_value=mock_fdr):
+            points = collector._fetch_daily_bars("005930", "삼성전자", "KOSPI", 120)
+
+        # compute_change_pct(close, None) -> None
+        assert points[0].change_pct is None
+
+    def test_kosdaq_market_preserved(self, collector):
+        """KOSDAQ 종목은 instrument_id에 .KQ suffix 적용."""
+        mock_fdr = MagicMock()
+        mock_fdr.DataReader.return_value = _make_fdr_df(1)
+
+        with patch.object(collector, "_load_fdr", return_value=mock_fdr):
+            points = collector._fetch_daily_bars("035720", "카카오", "KOSDAQ", 120)
+
+        assert points[0].instrument_id == "035720.KQ"
+        assert points[0].market == "KOSDAQ"
+
+    async def test_collect_daily_bars_all_empty_data(self, collector):
+        """모든 종목의 데이터가 빈 경우에도 정상 완료 (upsert 0건)."""
+        mock_fdr = MagicMock()
+        mock_fdr.StockListing.return_value = pd.DataFrame({
+            "Code": ["005930", "000660"],
+            "Name": ["삼성전자", "SK하이닉스"],
+            "Market": ["KOSPI", "KOSPI"],
+        })
+        mock_fdr.DataReader.return_value = pd.DataFrame()
+
+        mock_pipe = MagicMock()
+        mock_pipe.set = MagicMock()
+        mock_pipe.lpush = MagicMock()
+        mock_pipe.ltrim = MagicMock()
+        mock_pipe.expire = MagicMock()
+        mock_pipe.execute = AsyncMock(return_value=[True] * 4)
+        redis_mock = AsyncMock()
+        redis_mock.pipeline = MagicMock(return_value=mock_pipe)
+
+        with (
+            patch.object(collector, "_load_fdr", return_value=mock_fdr),
+            patch("src.agents.collector._daily.upsert_market_data", new_callable=AsyncMock, return_value=0) as mock_upsert,
+            patch("src.agents.collector._daily.insert_collector_error", new_callable=AsyncMock),
+            patch("src.services.datalake.upload_bytes", new_callable=AsyncMock),
+            patch("src.agents.collector._base.get_redis", new_callable=AsyncMock, return_value=redis_mock),
+            patch("src.agents.collector._daily.publish_message", new_callable=AsyncMock) as mock_pub,
+            patch("src.agents.collector._base.set_heartbeat", new_callable=AsyncMock),
+            patch("src.agents.collector._base.insert_heartbeat", new_callable=AsyncMock),
+        ):
+            points = await collector.collect_daily_bars(tickers=["005930", "000660"])
+
+        assert points == []
+        mock_upsert.assert_awaited_once()
+        # 빈 데이터여도 Pub/Sub 발행 (count=0)
+        mock_pub.assert_awaited_once()
+        pub_data = json.loads(mock_pub.call_args[0][1])
+        assert pub_data["count"] == 0
