@@ -337,3 +337,121 @@ class TestReconnectionLogic:
             )
 
         assert result == -1
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TestReconnectionEdgeCases — 재연결 에지 케이스 (Agent 2 추가)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestReconnectionEdgeCases:
+    """WebSocket 재연결 에지 케이스 검증."""
+
+    @pytest.mark.asyncio
+    async def test_reconnect_after_receiving_ticks(self, collector):
+        """틱 수신 후 연결 끊김 → 재연결 시도 시 received 카운트 유지."""
+        connect_count = 0
+
+        class _PartialThenFailWS:
+            def __init__(self, *args, **kwargs):
+                nonlocal connect_count
+                connect_count += 1
+
+            async def __aenter__(self):
+                if connect_count == 1:
+                    raise ConnectionError("connection lost after ticks")
+                raise ConnectionError("still failing")
+
+            async def __aexit__(self, *args):
+                return False
+
+        with (
+            patch("src.agents.collector._realtime.websockets.connect", _PartialThenFailWS),
+            patch.object(collector, "_ensure_ws_approval_key", new_callable=AsyncMock, return_value="fake-key"),
+            patch.object(collector, "_beat", new_callable=AsyncMock),
+            patch("src.agents.collector._realtime.insert_collector_error", new_callable=AsyncMock),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            result = await collector._ws_collect_loop(
+                subscribed=["005930"],
+                meta={"005930": {"name": "삼성전자", "market": "KOSPI"}},
+                reconnect_max=1,
+            )
+
+        assert result == -1
+        assert connect_count == 2
+
+    @pytest.mark.asyncio
+    async def test_gap_backfill_triggered_on_reconnect(self, collector):
+        """재연결 시 gap >= 60초이면 _backfill_gap 호출."""
+        from datetime import timedelta
+
+        connect_count = 0
+
+        class _FailOnceWS:
+            def __init__(self, *args, **kwargs):
+                nonlocal connect_count
+                connect_count += 1
+
+            async def __aenter__(self):
+                raise ConnectionError("test fail")
+
+            async def __aexit__(self, *args):
+                return False
+
+        # _last_tick_at을 2분 전으로 설정하여 gap 감지
+        collector._last_tick_at = datetime.now() - timedelta(seconds=120)
+
+        with (
+            patch("src.agents.collector._realtime.websockets.connect", _FailOnceWS),
+            patch.object(collector, "_ensure_ws_approval_key", new_callable=AsyncMock, return_value="fake-key"),
+            patch.object(collector, "_beat", new_callable=AsyncMock),
+            patch.object(collector, "_backfill_gap", new_callable=AsyncMock, return_value=5) as mock_backfill,
+            patch("src.agents.collector._realtime.insert_collector_error", new_callable=AsyncMock),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            await collector._ws_collect_loop(
+                subscribed=["005930"],
+                meta={"005930": {"name": "삼성전자", "market": "KOSPI"}},
+                reconnect_max=0,
+            )
+
+        mock_backfill.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_reconnect_max_zero_fails_immediately(self, collector):
+        """reconnect_max=0이면 첫 실패 후 즉시 종료."""
+        connect_count = 0
+
+        class _FailWS:
+            def __init__(self, *args, **kwargs):
+                nonlocal connect_count
+                connect_count += 1
+
+            async def __aenter__(self):
+                raise ConnectionError("fail")
+
+            async def __aexit__(self, *args):
+                return False
+
+        with (
+            patch("src.agents.collector._realtime.websockets.connect", _FailWS),
+            patch.object(collector, "_ensure_ws_approval_key", new_callable=AsyncMock, return_value="fake-key"),
+            patch.object(collector, "_beat", new_callable=AsyncMock),
+            patch("src.agents.collector._realtime.insert_collector_error", new_callable=AsyncMock),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            result = await collector._ws_collect_loop(
+                subscribed=["005930"],
+                meta={"005930": {"name": "삼성전자", "market": "KOSPI"}},
+                reconnect_max=0,
+            )
+
+        assert result == -1
+        assert connect_count == 1
+
+    def test_parse_multi_ticker_filters_unsubscribed(self, collector, packets):
+        """여러 종목 구독 중 패킷의 ticker가 구독에 없으면 필터링."""
+        subscribed = {"000660", "035420"}  # 005930은 제외
+        result = collector._parse_ws_tick_packet(packets["tick_normal"], subscribed)
+        assert result is None  # 005930 틱이므로 필터됨
