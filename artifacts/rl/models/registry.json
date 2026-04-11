@@ -250,15 +250,10 @@
           "discount_factor": 0.95,
           "epsilon": 0.3,
           "trade_penalty_bps": 2
-        }
-      ]
-    },
-    "259960": {
-      "active_policy_id": null,
-      "policies": [
+        },
         {
           "policy_id": "rl_259960_20260314T052904Z",
-          "ticker": "259960",
+          "ticker": "259960.KS",
           "algorithm": "tabular_q_learning",
           "state_version": "qlearn_v1",
           "return_pct": 0.0,
@@ -340,5 +335,5 @@
     "max_approved_per_ticker": 5,
     "keep_latest_failed": true
   },
-  "last_updated": "2026-03-17T09:56:26.196998Z"
+  "last_updated": "2026-04-11T00:00:00.000000Z"
 }
