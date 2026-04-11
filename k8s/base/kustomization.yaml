@@ -12,6 +12,7 @@ resources:
   # k8s/helm/bitnami-values/ 참조.
   - api.yaml
   - worker.yaml
+  - tick-collector.yaml
   - ui.yaml
   - ingress.yaml
   # gen 시뮬레이터(gen + gen-collector) 는 별도 overlay 로 분리되었다.

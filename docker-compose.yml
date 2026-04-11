@@ -150,6 +150,35 @@ services:
       retries: 3
       start_period: 60s
 
+  tick-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://alpha_user:alpha_pass@postgres:5432/alpha_db
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+      TICK_TICKERS: ""
+      TICK_MARKET_HOURS_ONLY: "true"
+      TICK_RECONNECT_MAX: "10"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+    command: python scripts/run_tick_collector.py
+    healthcheck:
+      test: ["CMD", "python", "scripts/docker_healthcheck.py", "--service", "tick-collector"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   # gen / gen-collector 는 시뮬레이션(랜덤 시세) 전용. 기본 `docker compose up`
   # 에서는 뜨지 않고, `docker compose --profile gen up` 으로 명시 기동해야 한다.
   # 데이터는 별도 데이터베이스 alpha_gen_db 에만 쓰며, 실 데이터(alpha_db)와
