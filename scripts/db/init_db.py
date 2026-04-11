@@ -107,32 +107,20 @@ CREATE_TABLES: list[str] = [
     ON CONFLICT (market_id) DO NOTHING;
     """,
 
-    # 2-c. instruments (신규 종목 마스터 테이블)
+    # 2-c. instruments (경량 운용 등록부 — 메타데이터는 krx_stock_master에 위임)
     """
     CREATE TABLE IF NOT EXISTS instruments (
-        instrument_id  VARCHAR(20)  PRIMARY KEY,
-        raw_code       VARCHAR(15)  NOT NULL,
-        name           TEXT         NOT NULL,
-        name_en        TEXT,
+        instrument_id  VARCHAR(20)  PRIMARY KEY,       -- 005930.KS
+        ticker         VARCHAR(15)  NOT NULL,           -- 005930 (krx_stock_master 연결용)
         market_id      VARCHAR(10)  NOT NULL REFERENCES markets(market_id),
-        sector         TEXT,
-        industry       TEXT,
-        asset_type     VARCHAR(10)  NOT NULL DEFAULT 'stock',
-        isin           VARCHAR(15),
-        listed_at      DATE,
-        delisted_at    DATE,
-        market_cap     BIGINT,
-        total_shares   BIGINT,
-        is_active      BOOLEAN      NOT NULL DEFAULT true,
+        is_active      BOOLEAN      NOT NULL DEFAULT true,  -- 상폐 여부
         created_at     TIMESTAMPTZ  DEFAULT now(),
         updated_at     TIMESTAMPTZ  DEFAULT now(),
 
-        CONSTRAINT uq_instruments_market_code UNIQUE (market_id, raw_code)
+        CONSTRAINT uq_instruments_market_ticker UNIQUE (market_id, ticker)
     );
-    CREATE INDEX IF NOT EXISTS idx_instruments_market    ON instruments(market_id, is_active);
-    CREATE INDEX IF NOT EXISTS idx_instruments_sector    ON instruments(market_id, sector) WHERE is_active = true;
-    CREATE INDEX IF NOT EXISTS idx_instruments_asset     ON instruments(asset_type, is_active);
-    CREATE INDEX IF NOT EXISTS idx_instruments_raw_code  ON instruments(raw_code);
+    CREATE INDEX IF NOT EXISTS idx_instruments_active ON instruments(is_active) WHERE is_active = true;
+    CREATE INDEX IF NOT EXISTS idx_instruments_ticker ON instruments(ticker);
     """,
 
     # 2-d. ohlcv_daily (신규 일봉 파티셔닝 테이블)
@@ -394,6 +382,19 @@ CREATE_TABLES: list[str] = [
         ('paper', '한국투자증권 KIS', 'KIS 모의투자 계좌', 'KRW', 10000000, 10000000, 10000000, 10000000, TRUE),
         ('real', '한국투자증권 KIS', 'KIS 실거래 계좌', 'KRW', 0, 0, 0, 0, FALSE)
     ON CONFLICT (account_scope) DO NOTHING;
+    """,
+
+    # 8-b. trading_universe (모드별 종목 매핑 — paper/real 운용 정책)
+    """
+    CREATE TABLE IF NOT EXISTS trading_universe (
+        account_scope   VARCHAR(10)  NOT NULL REFERENCES trading_accounts(account_scope),
+        instrument_id   VARCHAR(20)  NOT NULL REFERENCES instruments(instrument_id),
+        priority        INTEGER      NOT NULL DEFAULT 0,
+        max_weight_pct  NUMERIC(5,2),
+        added_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+        memo            TEXT,
+        PRIMARY KEY (account_scope, instrument_id)
+    );
     """,
 
     # 9. 포트폴리오 포지션 (현재 보유)
@@ -829,7 +830,7 @@ CREATE_TABLES: list[str] = [
 
     # 22. 종목 마스터 (KRX 전종목 + ETF/ETN)
     """
-    CREATE TABLE IF NOT EXISTS stock_master (
+    CREATE TABLE IF NOT EXISTS krx_stock_master (
         ticker          VARCHAR(10) PRIMARY KEY,
         name            TEXT NOT NULL,
         market          VARCHAR(10) NOT NULL CHECK (market IN ('KOSPI', 'KOSDAQ', 'KONEX')),
@@ -843,14 +844,14 @@ CREATE_TABLES: list[str] = [
         tier            VARCHAR(10) DEFAULT 'universe' CHECK (tier IN ('core', 'extended', 'universe')),
         updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-    CREATE INDEX IF NOT EXISTS idx_stock_master_market
-        ON stock_master (market, is_active);
-    CREATE INDEX IF NOT EXISTS idx_stock_master_sector
-        ON stock_master (sector);
-    CREATE INDEX IF NOT EXISTS idx_stock_master_tier
-        ON stock_master (tier, market_cap DESC NULLS LAST);
-    CREATE INDEX IF NOT EXISTS idx_stock_master_etf
-        ON stock_master (is_etf) WHERE is_etf = TRUE;
+    CREATE INDEX IF NOT EXISTS idx_krx_stock_master_market
+        ON krx_stock_master (market, is_active);
+    CREATE INDEX IF NOT EXISTS idx_krx_stock_master_sector
+        ON krx_stock_master (sector);
+    CREATE INDEX IF NOT EXISTS idx_krx_stock_master_tier
+        ON krx_stock_master (tier, market_cap DESC NULLS LAST);
+    CREATE INDEX IF NOT EXISTS idx_krx_stock_master_etf
+        ON krx_stock_master (is_etf) WHERE is_etf = TRUE;
     """,
 
     # 22-b. 티커 마스터 (정규화된 티커 통합 관리)
@@ -1132,7 +1133,7 @@ DROP TABLE IF EXISTS
     theme_stocks,
     agent_registry,
     ticker_master,
-    stock_master,
+    krx_stock_master,
     research_outputs,
     page_extractions,
     search_results,

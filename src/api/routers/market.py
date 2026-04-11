@@ -79,19 +79,19 @@ async def list_tickers(
     """추적 중인 종목 목록을 반환합니다."""
     offset = (page - 1) * per_page
 
-    base_query = "FROM instruments"
+    base_query = "FROM instruments i LEFT JOIN krx_stock_master sm ON i.ticker = sm.ticker"
     params: list = [per_page, offset]
-    where = " WHERE is_active = TRUE"
+    where = " WHERE i.is_active = TRUE"
 
     if market:
-        where += " AND market_id = $3"
+        where += " AND i.market_id = $3"
         params.append(market)
 
     rows = await fetch(
         f"""
-        SELECT instrument_id AS ticker, name, market_id AS market
+        SELECT i.instrument_id AS ticker, sm.name, i.market_id AS market
         {base_query}{where}
-        ORDER BY instrument_id
+        ORDER BY i.instrument_id
         LIMIT $1 OFFSET $2
         """,
         *params,
@@ -111,11 +111,11 @@ async def get_ohlcv(
     to_date: Optional[str] = Query(default=None, alias="to"),
 ) -> OHLCVResponse:
     """특정 종목의 OHLCV 이력을 반환합니다."""
-    # ticker가 raw_code(005930)이면 instrument_id 패턴(005930.%)으로 매칭
+    # ticker가 raw code(005930)이면 instrument_id 패턴(005930.%)으로 매칭
     is_raw = "." not in ticker
     if is_raw:
         instrument_row = await fetchrow(
-            "SELECT instrument_id FROM instruments WHERE raw_code = $1 AND is_active = TRUE LIMIT 1",
+            "SELECT instrument_id FROM instruments WHERE ticker = $1 AND is_active = TRUE LIMIT 1",
             ticker,
         )
         instrument_id = instrument_row["instrument_id"] if instrument_row else ticker
@@ -146,9 +146,10 @@ async def get_ohlcv(
         *params,
     )
 
-    # 종목 이름 조회
+    # 종목 이름 조회 (krx_stock_master JOIN)
     meta = await fetchrow(
-        "SELECT name FROM instruments WHERE instrument_id = $1 LIMIT 1", instrument_id
+        "SELECT sm.name FROM instruments i LEFT JOIN krx_stock_master sm ON i.ticker = sm.ticker WHERE i.instrument_id = $1 LIMIT 1",
+        instrument_id,
     )
     if not meta:
         raise HTTPException(
@@ -241,11 +242,11 @@ async def get_quote(
         return QuoteResponse(**data)
 
     # DB에서 최신 종가 조회 (fallback) — instruments + ohlcv_daily JOIN
-    # ticker가 raw_code(005930)이면 instruments에서 instrument_id를 찾음
+    # ticker가 raw code(005930)이면 instruments에서 instrument_id를 찾음
     is_raw = "." not in ticker
     if is_raw:
         instrument_row = await fetchrow(
-            "SELECT instrument_id FROM instruments WHERE raw_code = $1 AND is_active = TRUE LIMIT 1",
+            "SELECT instrument_id FROM instruments WHERE ticker = $1 AND is_active = TRUE LIMIT 1",
             ticker,
         )
         instrument_id = instrument_row["instrument_id"] if instrument_row else ticker
@@ -255,12 +256,13 @@ async def get_quote(
     row = await fetchrow(
         """
         SELECT
-            i.instrument_id AS ticker, i.name,
+            i.instrument_id AS ticker, sm.name,
             o.close::float AS current_price, o.change_pct::float,
             o.volume,
             to_char(o.traded_at, 'YYYY-MM-DD') AS updated_at
         FROM ohlcv_daily o
         JOIN instruments i ON i.instrument_id = o.instrument_id
+        LEFT JOIN krx_stock_master sm ON i.ticker = sm.ticker
         WHERE o.instrument_id = $1
         ORDER BY o.traded_at DESC
         LIMIT 1
@@ -314,11 +316,11 @@ async def get_realtime_series(
         return RealtimeSeriesResponse(ticker=ticker, name=name, points=points)
 
     # 캐시가 비어 있으면 DB 최신 일봉으로 최소 시계열 구성
-    # ticker가 raw_code(005930)이면 instruments에서 instrument_id를 찾음
+    # ticker가 raw code(005930)이면 instruments에서 instrument_id를 찾음
     is_raw = "." not in ticker
     if is_raw:
         instrument_row = await fetchrow(
-            "SELECT instrument_id FROM instruments WHERE raw_code = $1 AND is_active = TRUE LIMIT 1",
+            "SELECT instrument_id FROM instruments WHERE ticker = $1 AND is_active = TRUE LIMIT 1",
             ticker,
         )
         instrument_id = instrument_row["instrument_id"] if instrument_row else ticker
@@ -328,13 +330,14 @@ async def get_realtime_series(
     rows = await fetch(
         """
         SELECT
-            i.name,
+            sm.name,
             o.close::float AS current_price,
             o.volume,
             COALESCE(o.change_pct, 0)::float AS change_pct,
             to_char(o.traded_at, 'YYYY-MM-DD"T"15:30:00+09:00') AS ts
         FROM ohlcv_daily o
         JOIN instruments i ON i.instrument_id = o.instrument_id
+        LEFT JOIN krx_stock_master sm ON i.ticker = sm.ticker
         WHERE o.instrument_id = $1
         ORDER BY o.traded_at DESC
         LIMIT $2

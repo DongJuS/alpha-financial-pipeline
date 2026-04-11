@@ -11,6 +11,7 @@
 - `SOUL.md` — 에이전트 원칙과 철학
 - `USER.md` — 사용자 컨텍스트
 - `HEARTBEAT.md` — 상태 모니터링 규격
+- `DATABASE_TABLES.md` — DB 테이블 종류/역할/관계 일람
 
 기술 비교:
 
