@@ -29,7 +29,7 @@ class TestJobRegistration:
 
     @pytest.mark.asyncio
     async def test_all_jobs_registered(self):
-        """9개 잡이 모두 등록되는지 확인."""
+        """10개 잡이 모두 등록되는지 확인."""
         import src.schedulers.unified_scheduler as mod
 
         mock_scheduler = MagicMock()
@@ -62,6 +62,7 @@ class TestJobRegistration:
             "collector_daily",
             "index_warmup",
             "index_collection",
+            "s3_tick_flush",
             "rl_retrain",
             "blend_weight_adjust",
         }
@@ -346,7 +347,7 @@ class TestScheduleTiming:
 
     @pytest.mark.asyncio
     async def test_all_9_jobs_registered_with_timing(self):
-        """장 전/중/후 9개 잡이 모두 올바르게 등록되는지 확인."""
+        """장 전/중/후 10개 잡이 모두 올바르게 등록되는지 확인."""
         import src.schedulers.unified_scheduler as mod
 
         mock_scheduler = MagicMock()
@@ -380,12 +381,12 @@ class TestScheduleTiming:
         assert "index_collection" in added_jobs
 
         # 장 후 잡 (15:30 이후)
-        post_market_ids = {"rl_retrain", "blend_weight_adjust"}
+        post_market_ids = {"s3_tick_flush", "rl_retrain", "blend_weight_adjust"}
         for job_id in post_market_ids:
             assert job_id in added_jobs, f"{job_id} not registered"
 
-        # 총 9개
-        assert len(added_jobs) == 9
+        # 총 10개
+        assert len(added_jobs) == 10
 
     @pytest.mark.asyncio
     async def test_scheduler_start_called(self):

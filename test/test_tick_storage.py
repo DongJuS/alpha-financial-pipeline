@@ -416,7 +416,7 @@ class TestFlushTickBuffer:
         return CollectorAgent(agent_id="test_tick_storage")
 
     async def test_flush_calls_insert_tick_batch(self, collector):
-        """flush 시 insert_tick_batch가 호출됨."""
+        """flush 시 insert_tick_batch가 호출됨 (S3는 크론에서 별도 처리)."""
         ticks = [
             _make_tick(price=70000.0 + i, ts=datetime(2026, 4, 11, 10, 0, i, tzinfo=KST))
             for i in range(5)
@@ -424,17 +424,11 @@ class TestFlushTickBuffer:
         collector._tick_buffer = list(ticks)
         collector._tick_buffer_last_flush = 0.0
 
-        mock_store = AsyncMock()
-        with (
-            patch(
-                "src.agents.collector._realtime.insert_tick_batch",
-                new_callable=AsyncMock,
-                return_value=5,
-            ) as mock_insert,
-            patch.dict("sys.modules", {
-                "src.services.datalake": MagicMock(store_tick_data=mock_store),
-            }),
-        ):
+        with patch(
+            "src.agents.collector._realtime.insert_tick_batch",
+            new_callable=AsyncMock,
+            return_value=5,
+        ) as mock_insert:
             result = await collector._flush_tick_buffer(force=True)
             assert result == 5
             mock_insert.assert_called_once()
@@ -451,40 +445,32 @@ class TestFlushTickBuffer:
             assert result == 0
             mock_insert.assert_not_called()
 
-    async def test_s3_error_does_not_break_flush(self, collector):
-        """S3 저장 실패해도 DB flush는 성공."""
+    async def test_flush_does_not_call_s3(self, collector):
+        """flush 시 S3를 호출하지 않음 (크론에서 별도 처리)."""
         collector._tick_buffer = [_make_tick()]
         collector._tick_buffer_last_flush = 0.0
 
-        mock_store = AsyncMock(side_effect=Exception("S3 down"))
         with (
             patch(
                 "src.agents.collector._realtime.insert_tick_batch",
                 new_callable=AsyncMock,
                 return_value=1,
             ),
-            patch.dict("sys.modules", {
-                "src.services.datalake": MagicMock(store_tick_data=mock_store),
-            }),
+            patch("src.services.datalake.store_tick_data", new_callable=AsyncMock) as mock_s3,
         ):
             result = await collector._flush_tick_buffer(force=True)
-            assert result == 1  # DB flush 성공
+            assert result == 1
+            mock_s3.assert_not_called()
 
     async def test_buffer_cleared_after_flush(self, collector):
         """flush 후 버퍼가 비워진다."""
         collector._tick_buffer = [_make_tick(ts=datetime(2026, 4, 11, 10, 0, i, tzinfo=KST)) for i in range(3)]
         collector._tick_buffer_last_flush = 0.0
 
-        mock_store = AsyncMock()
-        with (
-            patch(
-                "src.agents.collector._realtime.insert_tick_batch",
-                new_callable=AsyncMock,
-                return_value=3,
-            ),
-            patch.dict("sys.modules", {
-                "src.services.datalake": MagicMock(store_tick_data=mock_store),
-            }),
+        with patch(
+            "src.agents.collector._realtime.insert_tick_batch",
+            new_callable=AsyncMock,
+            return_value=3,
         ):
             await collector._flush_tick_buffer(force=True)
             assert len(collector._tick_buffer) == 0
@@ -619,3 +605,204 @@ class TestGapTelegramWarning:
             payload = json.loads(mock_pub.call_args[0][1])
             assert payload["agent_id"] == agent_id
             assert "40분" in payload["message"]
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TestS3HourPartitioning — S3 키 hour 파티셔닝 테스트
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestS3HourPartitioning:
+    """_make_s3_key의 hour 파라미터 검증."""
+
+    def test_without_hour_keeps_original_format(self, _env):
+        """hour 미지정 시 기존 date-only 파티셔닝 유지."""
+        from src.services.datalake import DataType, _make_s3_key
+
+        key = _make_s3_key(DataType.TICK_DATA, date(2026, 4, 11))
+        assert key.startswith("tick_data/date=2026-04-11/")
+        assert "hour=" not in key
+        assert key.endswith(".parquet")
+
+    def test_with_hour_adds_hour_partition(self, _env):
+        """hour 지정 시 date/hour 2단계 파티셔닝."""
+        from src.services.datalake import DataType, _make_s3_key
+
+        key = _make_s3_key(DataType.TICK_DATA, date(2026, 4, 11), hour=9)
+        assert "tick_data/date=2026-04-11/hour=09/" in key
+        assert key.endswith(".parquet")
+
+    def test_hour_zero_padded(self, _env):
+        """hour가 한 자릿수일 때 0-padding."""
+        from src.services.datalake import DataType, _make_s3_key
+
+        key = _make_s3_key(DataType.TICK_DATA, date(2026, 4, 11), hour=9)
+        assert "/hour=09/" in key
+
+    def test_hour_14(self, _env):
+        """hour=14 → hour=14."""
+        from src.services.datalake import DataType, _make_s3_key
+
+        key = _make_s3_key(DataType.TICK_DATA, date(2026, 4, 11), hour=14)
+        assert "/hour=14/" in key
+
+    def test_other_datatypes_unaffected(self, _env):
+        """hour 파라미터 없이 다른 DataType은 기존 형식 유지."""
+        from src.services.datalake import DataType, _make_s3_key
+
+        key = _make_s3_key(DataType.DAILY_BARS, date(2026, 4, 11))
+        assert key.startswith("daily_bars/date=2026-04-11/")
+        assert "hour=" not in key
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TestFlushTicksToS3 — flush_ticks_to_s3 일괄 flush 테스트
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestFlushTicksToS3:
+    """flush_ticks_to_s3 함수 검증."""
+
+    async def test_no_data_returns_empty(self, _env):
+        """데이터 없으면 빈 리스트 반환."""
+        with patch("src.db.queries.fetch", new_callable=AsyncMock, return_value=[]):
+            from src.services.datalake import flush_ticks_to_s3
+
+            uris = await flush_ticks_to_s3(date(2026, 4, 11))
+            assert uris == []
+
+    async def test_groups_by_hour(self, _env):
+        """시간대별로 그룹핑하여 별도 파일 생성."""
+        mock_rows = [
+            {"ticker": "005930.KS", "price": 70000, "volume": 100,
+             "timestamp_kst": datetime(2026, 4, 11, 9, 30, 0), "change_pct": None, "source": "kis_ws"},
+            {"ticker": "005930.KS", "price": 70100, "volume": 200,
+             "timestamp_kst": datetime(2026, 4, 11, 9, 45, 0), "change_pct": None, "source": "kis_ws"},
+            {"ticker": "005930.KS", "price": 70200, "volume": 150,
+             "timestamp_kst": datetime(2026, 4, 11, 10, 15, 0), "change_pct": None, "source": "kis_ws"},
+        ]
+        with (
+            patch("src.db.queries.fetch", new_callable=AsyncMock, return_value=mock_rows),
+            patch("src.services.datalake._upload_with_retry", new_callable=AsyncMock, return_value="s3://test") as mock_upload,
+        ):
+            from src.services.datalake import flush_ticks_to_s3
+
+            uris = await flush_ticks_to_s3(date(2026, 4, 11))
+            assert len(uris) == 2  # hour=09, hour=10
+            assert mock_upload.call_count == 2
+            # hour 파티셔닝 키 확인
+            keys = [call.args[1] for call in mock_upload.call_args_list]
+            assert any("hour=09" in k for k in keys)
+            assert any("hour=10" in k for k in keys)
+
+    async def test_upload_failure_continues(self, _env):
+        """한 시간대 실패해도 다른 시간대는 계속 처리."""
+        mock_rows = [
+            {"ticker": "005930.KS", "price": 70000, "volume": 100,
+             "timestamp_kst": datetime(2026, 4, 11, 9, 30, 0), "change_pct": None, "source": "kis_ws"},
+            {"ticker": "005930.KS", "price": 70200, "volume": 150,
+             "timestamp_kst": datetime(2026, 4, 11, 10, 15, 0), "change_pct": None, "source": "kis_ws"},
+        ]
+        call_count = 0
+
+        async def _failing_upload(data, key, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ConnectionError("S3 down")
+            return "s3://test"
+
+        with (
+            patch("src.db.queries.fetch", new_callable=AsyncMock, return_value=mock_rows),
+            patch("src.services.datalake._upload_with_retry", side_effect=_failing_upload),
+        ):
+            from src.services.datalake import flush_ticks_to_s3
+
+            uris = await flush_ticks_to_s3(date(2026, 4, 11))
+            assert len(uris) == 1  # 1개 성공, 1개 실패
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TestPredictorIntradayIntegration — Predictor 분봉 통합 테스트
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestPredictorIntradayIntegration:
+    """PredictorAgent의 분봉 데이터 통합 검증."""
+
+    def _make_candles(self, count=20):
+        return [
+            {
+                "timestamp_kst": f"2026-04-{count - i:02d}T15:30:00+09:00",
+                "open": 70000 - 50,
+                "high": 70000 + 100,
+                "low": 70000 - 100,
+                "close": 70000,
+                "volume": 100000,
+            }
+            for i in range(count)
+        ]
+
+    def _make_intraday_bars(self):
+        return [
+            {"timestamp_kst": datetime(2026, 4, 11, 9, 0), "open": 70000, "high": 70500,
+             "low": 69800, "close": 70200, "volume": 50000},
+            {"timestamp_kst": datetime(2026, 4, 11, 10, 0), "open": 70200, "high": 70800,
+             "low": 70100, "close": 70600, "volume": 40000},
+        ]
+
+    async def test_prompt_includes_intraday_when_available(self, _env):
+        """분봉 데이터가 있으면 프롬프트에 포함."""
+        from src.agents.predictor import PredictorAgent
+
+        agent = PredictorAgent()
+        mock_response = {
+            "signal": "BUY", "confidence": 0.8,
+            "target_price": 71000, "stop_loss": 69500,
+            "reasoning_summary": "test",
+        }
+        agent.router = MagicMock()
+        agent.router.ask_json = AsyncMock(return_value=mock_response)
+
+        result = await agent._llm_signal(
+            "005930", self._make_candles(),
+            intraday_bars=self._make_intraday_bars(),
+        )
+
+        prompt_arg = agent.router.ask_json.call_args[0][1]
+        assert "장중 1시간봉" in prompt_arg
+        assert result["signal"] == "BUY"
+
+    async def test_prompt_excludes_intraday_when_empty(self, _env):
+        """분봉 데이터가 없으면 프롬프트에 미포함."""
+        from src.agents.predictor import PredictorAgent
+
+        agent = PredictorAgent()
+        mock_response = {
+            "signal": "HOLD", "confidence": 0.5,
+            "reasoning_summary": "test",
+        }
+        agent.router = MagicMock()
+        agent.router.ask_json = AsyncMock(return_value=mock_response)
+
+        await agent._llm_signal("005930", self._make_candles(), intraday_bars=[])
+
+        prompt_arg = agent.router.ask_json.call_args[0][1]
+        assert "장중 1시간봉" not in prompt_arg
+
+    async def test_prompt_excludes_intraday_when_none(self, _env):
+        """intraday_bars=None이면 프롬프트에 미포함."""
+        from src.agents.predictor import PredictorAgent
+
+        agent = PredictorAgent()
+        mock_response = {
+            "signal": "HOLD", "confidence": 0.5,
+            "reasoning_summary": "test",
+        }
+        agent.router = MagicMock()
+        agent.router.ask_json = AsyncMock(return_value=mock_response)
+
+        await agent._llm_signal("005930", self._make_candles(), intraday_bars=None)
+
+        prompt_arg = agent.router.ask_json.call_args[0][1]
+        assert "장중 1시간봉" not in prompt_arg
