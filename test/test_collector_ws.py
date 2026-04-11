@@ -383,12 +383,17 @@ class TestReconnectionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_gap_backfill_triggered_on_reconnect(self, collector):
-        """재연결 시 gap >= 60초이면 _backfill_gap 호출."""
+        """재연결 시 gap >= 60초이면 _backfill_gap 호출.
+
+        reconnect_max=1 → 첫 실패(reconnects=1)는 한도 미초과이므로
+        backfill 코드에 도달. 두 번째 실패(reconnects=2>1)에서 break.
+        """
         from datetime import timedelta
+        from zoneinfo import ZoneInfo
 
         connect_count = 0
 
-        class _FailOnceWS:
+        class _FailWS:
             def __init__(self, *args, **kwargs):
                 nonlocal connect_count
                 connect_count += 1
@@ -400,10 +405,10 @@ class TestReconnectionEdgeCases:
                 return False
 
         # _last_tick_at을 2분 전으로 설정하여 gap 감지
-        collector._last_tick_at = datetime.now() - timedelta(seconds=120)
+        collector._last_tick_at = datetime.now(ZoneInfo("Asia/Seoul")) - timedelta(seconds=120)
 
         with (
-            patch("src.agents.collector._realtime.websockets.connect", _FailOnceWS),
+            patch("src.agents.collector._realtime.websockets.connect", _FailWS),
             patch.object(collector, "_ensure_ws_approval_key", new_callable=AsyncMock, return_value="fake-key"),
             patch.object(collector, "_beat", new_callable=AsyncMock),
             patch.object(collector, "_backfill_gap", new_callable=AsyncMock, return_value=5) as mock_backfill,
@@ -413,7 +418,7 @@ class TestReconnectionEdgeCases:
             await collector._ws_collect_loop(
                 subscribed=["005930"],
                 meta={"005930": {"name": "삼성전자", "market": "KOSPI"}},
-                reconnect_max=0,
+                reconnect_max=1,
             )
 
         mock_backfill.assert_awaited()

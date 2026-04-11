@@ -806,3 +806,98 @@ class TestPredictorIntradayIntegration:
 
         prompt_arg = agent.router.ask_json.call_args[0][1]
         assert "장중 1시간봉" not in prompt_arg
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TestInsertTickBatchEdgeCases — insert_tick_batch 에지 케이스 (Agent 2 추가)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestInsertTickBatchEdgeCases:
+    """insert_tick_batch 에지 케이스 검증."""
+
+    async def test_large_batch_1000_ticks(self, _env):
+        """1000건 배치 INSERT 정상 동작."""
+        with patch("src.db.queries.executemany", new_callable=AsyncMock) as mock_exec:
+            from src.db.queries import insert_tick_batch
+            base_ts = datetime(2026, 4, 11, 10, 0, 0, tzinfo=KST)
+            ticks = [
+                _make_tick(
+                    price=70000.0 + i,
+                    volume=100 + i,
+                    ts=base_ts + timedelta(milliseconds=i),
+                )
+                for i in range(1000)
+            ]
+            result = await insert_tick_batch(ticks)
+            assert result == 1000
+            mock_exec.assert_called_once()
+
+    async def test_multiple_instruments_in_batch(self, _env):
+        """다른 종목의 틱이 같은 배치에 포함."""
+        with patch("src.db.queries.executemany", new_callable=AsyncMock) as mock_exec:
+            from src.db.queries import insert_tick_batch
+            ticks = [
+                _make_tick(instrument_id="005930.KS", price=70000),
+                _make_tick(instrument_id="000660.KS", price=150000),
+                _make_tick(instrument_id="035420.KS", price=350000),
+            ]
+            result = await insert_tick_batch(ticks)
+            assert result == 3
+            params = mock_exec.call_args[0][1]
+            instrument_ids = {p[0] for p in params}
+            assert instrument_ids == {"005930.KS", "000660.KS", "035420.KS"}
+
+    async def test_change_pct_none_handled(self, _env):
+        """change_pct=None인 틱이 정상 처리."""
+        with patch("src.db.queries.executemany", new_callable=AsyncMock) as mock_exec:
+            from src.db.queries import insert_tick_batch
+            tick = _make_tick(change_pct=None)
+            await insert_tick_batch([tick])
+            params = mock_exec.call_args[0][1][0]
+            assert params[4] is None  # change_pct index
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TestFlushTickBufferEdgeCases — _flush_tick_buffer 에지 케이스 (Agent 2 추가)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestFlushTickBufferEdgeCases:
+    """_flush_tick_buffer 에지 케이스 검증."""
+
+    @pytest.fixture()
+    def collector(self, _env):
+        from src.agents.collector import CollectorAgent
+        return CollectorAgent(agent_id="test_flush_edge")
+
+    async def test_flush_interval_elapsed(self, collector):
+        """interval 경과 시 batch_size 미달이어도 flush."""
+        collector._tick_batch_size = 1000
+        collector._tick_flush_interval = 0.1
+        collector._tick_buffer = [_make_tick()]
+        collector._tick_buffer_last_flush = 0.0  # 아주 오래 전
+
+        with patch(
+            "src.agents.collector._realtime.insert_tick_batch",
+            new_callable=AsyncMock,
+            return_value=1,
+        ):
+            result = await collector._flush_tick_buffer()
+
+        assert result == 1
+
+    async def test_flush_db_error_propagation(self, collector):
+        """DB INSERT 실패 시 예외 전파."""
+        collector._tick_buffer = [_make_tick()]
+        collector._tick_buffer_last_flush = 0.0
+
+        with (
+            patch(
+                "src.agents.collector._realtime.insert_tick_batch",
+                new_callable=AsyncMock,
+                side_effect=ConnectionError("DB down"),
+            ),
+            pytest.raises(ConnectionError, match="DB down"),
+        ):
+            await collector._flush_tick_buffer(force=True)

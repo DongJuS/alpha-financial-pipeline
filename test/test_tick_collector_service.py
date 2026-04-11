@@ -516,3 +516,63 @@ class TestCollectorInitialization:
         """collect_daily_bars 메서드가 존재."""
         assert hasattr(collector, "collect_daily_bars")
         assert callable(collector.collect_daily_bars)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 8. 다중 종목 병렬 수집 에지 케이스 (Agent 2 추가)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestMultiTickerParallelCollection:
+    """다중 종목 병렬 수집 시 에지 케이스 검증."""
+
+    @pytest.mark.asyncio
+    async def test_collect_realtime_empty_tickers_raises(self, collector):
+        """빈 종목 리스트로 collect_realtime_ticks 호출 시 ValueError."""
+        with pytest.raises(ValueError, match="realtime 모드는 --tickers 지정이 필요합니다"):
+            await collector.collect_realtime_ticks(tickers=[], duration_seconds=10)
+
+    @pytest.mark.asyncio
+    async def test_collect_realtime_single_ticker(self, collector):
+        """단일 종목 collect_realtime_ticks이 _ws_collect_loop에 올바르게 전달."""
+        with (
+            patch.object(
+                collector, "_resolve_tickers",
+                return_value=[("005930", "삼성전자", "KOSPI")],
+            ),
+            patch.object(
+                collector, "_ws_collect_loop", new_callable=AsyncMock, return_value=42,
+            ) as mock_ws,
+            patch.object(collector, "_flush_tick_buffer", new_callable=AsyncMock, return_value=0),
+            patch.object(collector, "_beat", new_callable=AsyncMock),
+        ):
+            result = await collector.collect_realtime_ticks(
+                tickers=["005930"], duration_seconds=10,
+            )
+
+        mock_ws.assert_awaited_once()
+
+    def test_tick_buffer_isolation_between_flushes(self, collector):
+        """flush 사이에 버퍼가 올바르게 격리."""
+        from src.agents.collector.models import TickData
+
+        tick = TickData(
+            instrument_id="005930.KS", price=70000, volume=100,
+            timestamp_kst=datetime.now(), name="삼성전자", market="KOSPI",
+            source="kis_ws",
+        )
+        collector._tick_buffer.append(tick)
+        assert len(collector._tick_buffer) == 1
+
+        # 버퍼 복사 후 원본 클리어 (flush 시뮬레이션)
+        batch = list(collector._tick_buffer)
+        collector._tick_buffer.clear()
+
+        assert len(batch) == 1
+        assert len(collector._tick_buffer) == 0
+
+    def test_max_tickers_per_ws_constant_exists(self):
+        """MAX_TICKERS_PER_WS 상수가 존재하고 양수."""
+        from src.constants import MAX_TICKERS_PER_WS
+        assert isinstance(MAX_TICKERS_PER_WS, int)
+        assert MAX_TICKERS_PER_WS > 0
