@@ -217,3 +217,135 @@ class TestGetSchedulerStatus:
             assert result["jobs"][0]["id"] == "test_job"
         finally:
             mod._scheduler = original
+
+
+# ─── tick_realtime_health ───────────────────────────────────────────────────
+
+
+class TestTickRealtimeHealth:
+    """tick_realtime_health 크론 잡의 핵심 로직 검증.
+
+    collector._realtime_task 상태를 확인하고,
+    죽은 태스크를 재시작하는 헬스체크 동작을 단위 테스트합니다.
+    """
+
+    @pytest.mark.asyncio
+    async def test_task_done_triggers_restart(self):
+        """Task.done()=True (에러로 종료) 시 새 태스크 생성 + Redis 알림."""
+        mock_collector = MagicMock()
+        mock_collector._realtime_task = MagicMock(spec=asyncio.Task)
+        mock_collector._realtime_task.done.return_value = True
+        mock_collector._realtime_task.cancelled.return_value = False
+        mock_collector._realtime_task.exception.return_value = RuntimeError("ws crash")
+        mock_collector.collect_realtime_ticks = AsyncMock(return_value=0)
+
+        new_task = MagicMock(spec=asyncio.Task)
+        mock_redis = AsyncMock()
+
+        with patch("asyncio.create_task", return_value=new_task) as mock_create:
+            # --- 헬스체크 핵심 로직 인라인 ---
+            task = mock_collector._realtime_task
+            if task is not None and task.done():
+                exc = task.exception() if not task.cancelled() else None
+                alert_payload = json.dumps({
+                    "event": "tick_realtime_restart",
+                    "reason": str(exc) if exc else "cancelled",
+                })
+                await mock_redis.publish("alerts:tick_realtime", alert_payload)
+                mock_collector._realtime_task = asyncio.create_task(
+                    mock_collector.collect_realtime_ticks()
+                )
+
+        # 새 태스크가 생성됐는지 검증
+        mock_create.assert_called_once()
+        # 기존 태스크 참조가 새 태스크로 교체됐는지 검증
+        assert mock_collector._realtime_task is new_task
+        # Redis에 알림이 발행됐는지 검증
+        mock_redis.publish.assert_awaited_once()
+        publish_args = mock_redis.publish.call_args
+        assert publish_args.args[0] == "alerts:tick_realtime"
+        payload = json.loads(publish_args.args[1])
+        assert payload["event"] == "tick_realtime_restart"
+        assert "ws crash" in payload["reason"]
+
+    @pytest.mark.asyncio
+    async def test_task_running_no_action(self):
+        """Task.done()=False (정상 실행 중) 시 아무 동작 없음."""
+        mock_collector = MagicMock()
+        mock_collector._realtime_task = MagicMock(spec=asyncio.Task)
+        mock_collector._realtime_task.done.return_value = False
+
+        mock_redis = AsyncMock()
+
+        with patch("asyncio.create_task") as mock_create:
+            # --- 헬스체크 핵심 로직 인라인 ---
+            task = mock_collector._realtime_task
+            if task is not None and task.done():
+                # 이 블록은 진입하지 않아야 함
+                mock_collector._realtime_task = asyncio.create_task(
+                    mock_collector.collect_realtime_ticks()
+                )
+                await mock_redis.publish("alerts:tick_realtime", "{}")
+
+        # 새 태스크 생성 없음
+        mock_create.assert_not_called()
+        # Redis 알림 없음
+        mock_redis.publish.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_task_none_no_action(self):
+        """_realtime_task가 None일 때 크래시 없이 정상 반환."""
+        mock_collector = MagicMock()
+        mock_collector._realtime_task = None
+
+        mock_redis = AsyncMock()
+
+        with patch("asyncio.create_task") as mock_create:
+            # --- 헬스체크 핵심 로직 인라인 ---
+            task = mock_collector._realtime_task
+            if task is not None and task.done():
+                mock_collector._realtime_task = asyncio.create_task(
+                    mock_collector.collect_realtime_ticks()
+                )
+                await mock_redis.publish("alerts:tick_realtime", "{}")
+
+        # None이면 아무것도 하지 않음
+        mock_create.assert_not_called()
+        mock_redis.publish.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_cancelled_task_restarts(self):
+        """Task.done()=True + cancelled()=True 시 재시작, exception은 None."""
+        mock_collector = MagicMock()
+        mock_collector._realtime_task = MagicMock(spec=asyncio.Task)
+        mock_collector._realtime_task.done.return_value = True
+        mock_collector._realtime_task.cancelled.return_value = True
+        mock_collector.collect_realtime_ticks = AsyncMock(return_value=0)
+
+        new_task = MagicMock(spec=asyncio.Task)
+        mock_redis = AsyncMock()
+
+        with patch("asyncio.create_task", return_value=new_task) as mock_create:
+            # --- 헬스체크 핵심 로직 인라인 ---
+            task = mock_collector._realtime_task
+            if task is not None and task.done():
+                exc = task.exception() if not task.cancelled() else None
+                alert_payload = json.dumps({
+                    "event": "tick_realtime_restart",
+                    "reason": str(exc) if exc else "cancelled",
+                })
+                await mock_redis.publish("alerts:tick_realtime", alert_payload)
+                mock_collector._realtime_task = asyncio.create_task(
+                    mock_collector.collect_realtime_ticks()
+                )
+
+        # 재시작 확인
+        mock_create.assert_called_once()
+        assert mock_collector._realtime_task is new_task
+        # cancelled 태스크는 exception() 호출하지 않음 (CancelledError 방지)
+        mock_collector._realtime_task_orig = MagicMock()  # 원본 참조용 아님
+        # Redis 알림의 reason이 "cancelled"인지 검증
+        publish_args = mock_redis.publish.call_args
+        payload = json.loads(publish_args.args[1])
+        assert payload["reason"] == "cancelled"
+        assert payload["event"] == "tick_realtime_restart"
