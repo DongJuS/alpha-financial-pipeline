@@ -15,7 +15,9 @@ src/schedulers/unified_scheduler.py — 통합 스케줄러
     index_warmup        08:55 KST  IndexCollector (워밍업)
 
     [장 중]
-    index_collection    30초 인터벌  IndexCollector (장중)
+    index_collection      30초 인터벌  IndexCollector (장중)
+    tick_realtime_start   09:00 KST   실시간 틱 수집 시작 (백그라운드 태스크)
+    tick_realtime_health  5분 인터벌   틱 수집 태스크 생존 체크 + 자동 재시작
 
     [장 후]
     s3_tick_flush       15:40 KST  DB→S3 틱 데이터 일괄 flush (hour 파티셔닝)
@@ -24,6 +26,9 @@ src/schedulers/unified_scheduler.py — 통합 스케줄러
 """
 
 from __future__ import annotations
+
+import asyncio
+from datetime import datetime
 
 from zoneinfo import ZoneInfo
 
@@ -37,6 +42,13 @@ from src.utils.logging import get_logger
 logger = get_logger(__name__)
 KST = ZoneInfo("Asia/Seoul")
 
+# 실시간 틱 수집 기본 대상 종목 (Samsung, SK Hynix, NAVER)
+_DEFAULT_TICK_TICKERS: list[str] = ["005930", "000660", "035420"]
+
+# 장 마감 시각 (15:30 KST) — 틱 수집 remaining 계산용
+_MARKET_CLOSE_HOUR = 15
+_MARKET_CLOSE_MINUTE = 30
+
 _scheduler: AsyncIOScheduler | None = None
 
 # 분산 락 TTL (초) — 잡 최대 실행 예상 시간보다 넉넉하게
@@ -49,6 +61,8 @@ _LOCK_TTL: dict[str, int] = {
     "collector_daily": 600,      # 10분
     "index_warmup": 60,          # 1분
     "index_collection": 25,      # 30초 인터벌보다 짧게
+    "tick_realtime_start": 120,  # 2분 (태스크 spawn만)
+    "tick_realtime_health": 30,  # 30초 (상태 체크만)
     # 장 후
     "s3_tick_flush": 600,        # 10분 (DB→S3 일괄 flush)
     "rl_retrain": 3600,          # 60분 (멀티 티커 학습)
@@ -130,6 +144,33 @@ async def start_unified_scheduler() -> None:
 
         store = RLPolicyStoreV2()
         registry = store.load_registry()
+
+        # ── instruments DB 에서 종목 가져와 레지스트리에 자동 등록 ──
+        try:
+            from src.db.queries import list_tickers as db_list_tickers
+
+            from src.agents.rl_policy_registry import TickerPolicies
+
+            db_rows = await db_list_tickers(limit=500)
+            db_tickers = [row["instrument_id"] for row in db_rows]
+            existing_count = len(registry.tickers)
+            newly_registered = 0
+            for ticker in db_tickers:
+                if ticker not in registry.tickers:
+                    registry.tickers[ticker] = TickerPolicies()
+                    newly_registered += 1
+                    logger.info("RL registry: 신규 종목 자동 등록 — %s", ticker)
+            if newly_registered:
+                store.save_registry()
+            logger.info(
+                "RL bootstrap: %d tickers from instruments, %d already in registry, %d newly registered",
+                len(db_tickers),
+                existing_count,
+                newly_registered,
+            )
+        except Exception as exc:
+            logger.warning("RL bootstrap: instruments DB 조회 실패, 기존 레지스트리로 진행 — %s", exc)
+
         active_map = registry.list_active_policies()
         all_tickers = registry.list_all_tickers()
 
@@ -222,7 +263,12 @@ async def start_unified_scheduler() -> None:
         await macro.collect_all()
 
     async def _run_collector() -> None:
-        await collector.run()
+        import os
+
+        from src.constants import DEFAULT_COLLECTOR_DAILY_LIMIT
+
+        limit = int(os.getenv("COLLECTOR_DAILY_LIMIT", str(DEFAULT_COLLECTOR_DAILY_LIMIT)))
+        await collector.collect_daily_bars(tickers=None, lookback_days=120, limit=limit)
 
     async def _run_index_warmup() -> None:
         await index.collect_once()
@@ -231,6 +277,103 @@ async def start_unified_scheduler() -> None:
         if await is_market_open_now():
             await index.collect_once()
 
+    # -- 장 중: 실시간 틱 수집 시작 (09:00 KST) --
+    async def _run_tick_realtime_start() -> None:
+        """장 시작 시 WebSocket 틱 수집을 백그라운드 태스크로 실행한다."""
+        if collector._realtime_task and not collector._realtime_task.done():
+            logger.info("틱 수집 태스크 이미 실행 중 — 스킵")
+            return
+
+        from src.utils.config import get_settings
+
+        settings = get_settings()
+        raw = settings.ws_tick_tickers.strip()
+        tickers = [t.strip() for t in raw.split(",") if t.strip()] if raw else []
+        if not tickers:
+            tickers = list(_DEFAULT_TICK_TICKERS)
+            logger.info("WS_TICK_TICKERS 미설정 — 기본 종목 사용: %s", tickers)
+
+        # 09:00 → 15:30 = 6.5시간 = 23400초
+        collector._realtime_task = asyncio.create_task(
+            collector.collect_realtime_ticks(
+                tickers=tickers,
+                duration_seconds=23400,
+            ),
+            name="tick_realtime",
+        )
+        logger.info("실시간 틱 수집 태스크 시작: %s (%d종목)", tickers, len(tickers))
+
+    # -- 장 중: 틱 수집 헬스체크 (5분 인터벌) --
+    async def _run_tick_realtime_health() -> None:
+        """틱 수집 태스크 생존을 확인하고 죽었으면 재시작한다."""
+        task = collector._realtime_task
+        if task is None:
+            logger.debug("틱 수집 헬스체크: 태스크 없음 (아직 미시작)")
+            return
+
+        if not task.done():
+            logger.debug("틱 수집 헬스체크: 정상 실행 중")
+            return
+
+        # 태스크가 죽었음 — 원인 로깅
+        exc = task.exception() if not task.cancelled() else None
+        if exc:
+            logger.error("틱 수집 태스크 비정상 종료: %s", exc)
+        else:
+            logger.warning("틱 수집 태스크 종료됨 (cancelled=%s)", task.cancelled())
+
+        # Telegram 알림
+        try:
+            from src.utils.redis_client import publish_message as _pub
+            import json as _json
+
+            await _pub(
+                "alpha:alerts",
+                _json.dumps(
+                    {
+                        "type": "tick_health",
+                        "agent_id": collector.agent_id,
+                        "message": f"틱 수집 태스크 재시작 (원인: {type(exc).__name__ if exc else 'unknown'})",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        except Exception:
+            pass
+
+        # 잔여 시간 계산: 장 마감(15:30) - 현재 시각
+        now_kst = datetime.now(KST)
+        market_close = now_kst.replace(
+            hour=_MARKET_CLOSE_HOUR,
+            minute=_MARKET_CLOSE_MINUTE,
+            second=0,
+            microsecond=0,
+        )
+        remaining = int((market_close - now_kst).total_seconds())
+        if remaining <= 0:
+            logger.info("틱 수집 헬스체크: 장 마감 후 — 재시작 안함")
+            return
+
+        # 재시작
+        from src.utils.config import get_settings
+
+        settings = get_settings()
+        raw = settings.ws_tick_tickers.strip()
+        tickers = [t.strip() for t in raw.split(",") if t.strip()] if raw else []
+        if not tickers:
+            tickers = list(_DEFAULT_TICK_TICKERS)
+        if not tickers:
+            return
+
+        collector._realtime_task = asyncio.create_task(
+            collector.collect_realtime_ticks(
+                tickers=tickers,
+                duration_seconds=remaining,
+            ),
+            name="tick_realtime",
+        )
+        logger.info("틱 수집 태스크 재시작 완료: %d종목 (잔여 %d초)", len(tickers), remaining)
+
     # -- 장 후: RL 재학습 (16:00 KST) --
     async def _run_rl_retrain() -> None:
         """장 마감 후 모든 RL 정책을 재학습한다."""
@@ -238,6 +381,7 @@ async def start_unified_scheduler() -> None:
 
         improver = RLContinuousImprover()
         outcomes = await improver.retrain_all()
+        logger.info("RL retrain: %d target tickers", len(outcomes))
         success = sum(1 for o in outcomes if o.success)
         logger.info(
             "RL 재학습 완료: %d/%d 성공",
@@ -346,6 +490,27 @@ async def start_unified_scheduler() -> None:
         id="index_collection",
         name="Index collection every 30s",
         misfire_grace_time=5,
+        replace_existing=True,
+    )
+
+    # -- 장 중: 실시간 틱 수집 --
+    scheduler.add_job(
+        _locked_job("tick_realtime_start", _run_tick_realtime_start),
+        CronTrigger(hour=9, minute=0, day_of_week="0-4", timezone=str(KST)),
+        id="tick_realtime_start",
+        name="Tick realtime start (09:00 KST)",
+        misfire_grace_time=60,
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
+        _locked_job("tick_realtime_health", _run_tick_realtime_health),
+        CronTrigger(
+            hour="9-15", minute="*/5", day_of_week="0-4", timezone=str(KST),
+        ),
+        id="tick_realtime_health",
+        name="Tick realtime health check (every 5min)",
+        misfire_grace_time=30,
         replace_existing=True,
     )
 
