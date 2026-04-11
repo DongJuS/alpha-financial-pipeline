@@ -38,7 +38,7 @@ logger = get_logger(__name__)
 
 
 async def seed_instruments(markets: list[str]) -> int:
-    """FDR StockListing으로 instruments 테이블에 종목 등록."""
+    """FDR StockListing으로 instruments 테이블에 종목 등록 (경량 등록부)."""
     total = 0
 
     for market_id in markets:
@@ -47,21 +47,10 @@ async def seed_instruments(markets: list[str]) -> int:
 
         if market_id in ("KOSPI", "KOSDAQ"):
             suffix = ".KS" if market_id == "KOSPI" else ".KQ"
-            code_col, name_col = "Code", "Name"
-            sector_col = None
-            industry_col = None
-            isin_col = "ISU_CD" if "ISU_CD" in listing.columns else None
-            marcap_col = "Marcap" if "Marcap" in listing.columns else None
-            stocks_col = "Stocks" if "Stocks" in listing.columns else None
+            code_col = "Code"
         else:
             suffix = ".US"
             code_col = "Symbol"
-            name_col = "Name"
-            sector_col = None
-            industry_col = "Industry" if "Industry" in listing.columns else None
-            isin_col = None
-            marcap_col = None
-            stocks_col = None
 
         rows = []
         for _, row in listing.iterrows():
@@ -69,33 +58,12 @@ async def seed_instruments(markets: list[str]) -> int:
             if not raw_code or len(raw_code) > 15:
                 continue
             instrument_id = f"{raw_code}{suffix}"
-            name = str(row[name_col]).strip() if row[name_col] else raw_code
-
-            rows.append((
-                instrument_id,
-                raw_code,
-                name,
-                market_id,
-                str(row[sector_col]) if sector_col and row.get(sector_col) else None,
-                str(row[industry_col]) if industry_col and row.get(industry_col) else None,
-                "stock",
-                str(row[isin_col]) if isin_col and row.get(isin_col) else None,
-                int(row[marcap_col]) if marcap_col and row.get(marcap_col) else None,
-                int(row[stocks_col]) if stocks_col and row.get(stocks_col) else None,
-            ))
+            rows.append((instrument_id, raw_code, market_id))
 
         query = """
-            INSERT INTO instruments (
-                instrument_id, raw_code, name, market_id,
-                sector, industry, asset_type, isin,
-                market_cap, total_shares
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            INSERT INTO instruments (instrument_id, ticker, market_id)
+            VALUES ($1, $2, $3)
             ON CONFLICT (instrument_id) DO UPDATE SET
-                name = EXCLUDED.name,
-                sector = EXCLUDED.sector,
-                industry = EXCLUDED.industry,
-                market_cap = EXCLUDED.market_cap,
-                total_shares = EXCLUDED.total_shares,
                 updated_at = now()
         """
         await executemany(query, rows)
@@ -118,7 +86,7 @@ async def seed_ohlcv(markets: list[str], batch_size: int = 50) -> dict:
         # 해당 시장 종목 조회
         async with pool.acquire() as conn:
             instruments = await conn.fetch(
-                "SELECT instrument_id, raw_code FROM instruments "
+                "SELECT instrument_id, ticker FROM instruments "
                 "WHERE market_id = $1 AND is_active = true ORDER BY instrument_id",
                 market_id,
             )
@@ -128,7 +96,7 @@ async def seed_ohlcv(markets: list[str], batch_size: int = 50) -> dict:
 
         for i, inst in enumerate(instruments, 1):
             instrument_id = inst["instrument_id"]
-            raw_code = inst["raw_code"]
+            raw_code = inst["ticker"]
 
             try:
                 # FDR 최대 기간 조회

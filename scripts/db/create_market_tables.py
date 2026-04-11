@@ -56,30 +56,18 @@ ON CONFLICT (market_id) DO NOTHING;
 
 DDL_INSTRUMENTS = """
 CREATE TABLE IF NOT EXISTS instruments (
-    instrument_id  VARCHAR(20)  PRIMARY KEY,
-    raw_code       VARCHAR(15)  NOT NULL,
-    name           TEXT         NOT NULL,
-    name_en        TEXT,
+    instrument_id  VARCHAR(20)  PRIMARY KEY,       -- 005930.KS
+    ticker         VARCHAR(15)  NOT NULL,           -- 005930 (krx_stock_master 연결용)
     market_id      VARCHAR(10)  NOT NULL REFERENCES markets(market_id),
-    sector         TEXT,
-    industry       TEXT,
-    asset_type     VARCHAR(10)  NOT NULL DEFAULT 'stock',
-    isin           VARCHAR(15),
-    listed_at      DATE,
-    delisted_at    DATE,
-    market_cap     BIGINT,
-    total_shares   BIGINT,
-    is_active      BOOLEAN      NOT NULL DEFAULT true,
+    is_active      BOOLEAN      NOT NULL DEFAULT true,  -- 상폐 여부
     created_at     TIMESTAMPTZ  DEFAULT now(),
     updated_at     TIMESTAMPTZ  DEFAULT now(),
 
-    CONSTRAINT uq_instruments_market_code UNIQUE (market_id, raw_code)
+    CONSTRAINT uq_instruments_market_ticker UNIQUE (market_id, ticker)
 );
 
-CREATE INDEX IF NOT EXISTS idx_instruments_market    ON instruments(market_id, is_active);
-CREATE INDEX IF NOT EXISTS idx_instruments_sector    ON instruments(market_id, sector) WHERE is_active = true;
-CREATE INDEX IF NOT EXISTS idx_instruments_asset     ON instruments(asset_type, is_active);
-CREATE INDEX IF NOT EXISTS idx_instruments_raw_code  ON instruments(raw_code);
+CREATE INDEX IF NOT EXISTS idx_instruments_active ON instruments(is_active) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_instruments_ticker ON instruments(ticker);
 """
 
 DDL_OHLCV_DAILY = """

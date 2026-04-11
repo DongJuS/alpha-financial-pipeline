@@ -60,8 +60,8 @@ def _build_client(*, authenticated: bool = True) -> TestClient:
 class TestMarketplaceStocks:
     """GET /api/v1/marketplace/stocks"""
 
-    @patch(f"{_PATCH_PREFIX}.count_stock_master", new_callable=AsyncMock, return_value=2)
-    @patch(f"{_PATCH_PREFIX}.list_stock_master", new_callable=AsyncMock)
+    @patch(f"{_PATCH_PREFIX}.count_krx_stock_master", new_callable=AsyncMock, return_value=2)
+    @patch(f"{_PATCH_PREFIX}.list_krx_stock_master", new_callable=AsyncMock)
     def test_get_stocks(
         self, mock_list: AsyncMock, mock_count: AsyncMock
     ) -> None:
@@ -236,8 +236,8 @@ class TestMarketplaceETF:
     """GET /api/v1/marketplace/etf"""
 
     @patch(f"{_PATCH_PREFIX}.get_redis", new_callable=AsyncMock)
-    @patch(f"{_PATCH_PREFIX}.count_stock_master", new_callable=AsyncMock, return_value=1)
-    @patch(f"{_PATCH_PREFIX}.list_stock_master", new_callable=AsyncMock)
+    @patch(f"{_PATCH_PREFIX}.count_krx_stock_master", new_callable=AsyncMock, return_value=1)
+    @patch(f"{_PATCH_PREFIX}.list_krx_stock_master", new_callable=AsyncMock)
     def test_get_etf(
         self, mock_list: AsyncMock, mock_count: AsyncMock, mock_redis: AsyncMock
     ) -> None:

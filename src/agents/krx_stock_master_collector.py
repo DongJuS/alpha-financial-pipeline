@@ -1,12 +1,12 @@
 """
-src/agents/stock_master_collector.py — 종목 마스터 수집기
+src/agents/krx_stock_master_collector.py — 종목 마스터 수집기
 
 KRX 전종목(KOSPI/KOSDAQ ~2,650) + ETF/ETN(~700) 마스터 데이터를 수집하여
-stock_master 테이블에 upsert하고 Redis 캐시를 갱신합니다.
+krx_stock_master 테이블에 upsert하고 Redis 캐시를 갱신합니다.
 
 사용법:
-    python -m src.agents.stock_master_collector
-    python -m src.agents.stock_master_collector --include-etf
+    python -m src.agents.krx_stock_master_collector
+    python -m src.agents.krx_stock_master_collector --include-etf
 """
 
 from __future__ import annotations
@@ -25,12 +25,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
-from src.db.models import AgentHeartbeatRecord, StockMasterRecord
+from src.db.models import AgentHeartbeatRecord, KrxStockMasterRecord
 from src.db.marketplace_queries import (
     get_sectors,
-    list_stock_master,
+    list_krx_stock_master,
     update_stock_sectors,
-    upsert_stock_master,
+    upsert_krx_stock_master,
 )
 from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import (
@@ -51,10 +51,10 @@ logger = get_logger(__name__)
 KST = ZoneInfo("Asia/Seoul")
 
 
-class StockMasterCollector:
+class KrxStockMasterCollector:
     """KRX 전종목 + ETF 마스터 데이터 수집기."""
 
-    def __init__(self, agent_id: str = "stock_master_collector") -> None:
+    def __init__(self, agent_id: str = "krx_stock_master_collector") -> None:
         self.agent_id = agent_id
 
     @staticmethod
@@ -74,12 +74,12 @@ class StockMasterCollector:
             )
         )
 
-    def _fetch_krx_listing(self) -> list[StockMasterRecord]:
+    def _fetch_krx_listing(self) -> list[KrxStockMasterRecord]:
         """FinanceDataReader로 KRX 전종목 목록을 조회합니다."""
         fdr = self._load_fdr()
         listing = fdr.StockListing("KRX")
 
-        records: list[StockMasterRecord] = []
+        records: list[KrxStockMasterRecord] = []
         for _, row in listing.iterrows():
             ticker = str(row.get("Code", "")).strip()
             if not ticker:
@@ -113,7 +113,7 @@ class StockMasterCollector:
                     break
 
             records.append(
-                StockMasterRecord(
+                KrxStockMasterRecord(
                     ticker=ticker,
                     name=name,
                     market=market_raw,  # type: ignore[arg-type]
@@ -129,10 +129,10 @@ class StockMasterCollector:
         logger.info("KRX 종목 조회 완료: %d건", len(records))
         return records
 
-    def _fetch_etf_listing(self) -> list[StockMasterRecord]:
+    def _fetch_etf_listing(self) -> list[KrxStockMasterRecord]:
         """FinanceDataReader로 ETF/ETN 목록을 조회합니다."""
         fdr = self._load_fdr()
-        records: list[StockMasterRecord] = []
+        records: list[KrxStockMasterRecord] = []
 
         for listing_type, is_etf, is_etn in [("ETF/KR", True, False)]:
             try:
@@ -148,7 +148,7 @@ class StockMasterCollector:
                     name = str(row.get("Name", ticker)).strip()
 
                     records.append(
-                        StockMasterRecord(
+                        KrxStockMasterRecord(
                             ticker=ticker,
                             name=name,
                             market="KOSPI",  # ETF는 대부분 KOSPI 상장
@@ -222,7 +222,7 @@ class StockMasterCollector:
         logger.info("섹터 데이터 시딩 완료: %d건 대상 처리", updated)
         return updated
 
-    async def collect_stock_master(self, include_etf: bool = True) -> int:
+    async def collect_krx_stock_master(self, include_etf: bool = True) -> int:
         """전체 종목 마스터 수집 + DB upsert."""
         # KRX 전종목
         records = await asyncio.to_thread(self._fetch_krx_listing)
@@ -233,7 +233,7 @@ class StockMasterCollector:
             records.extend(etf_records)
 
         # DB upsert
-        saved = await upsert_stock_master(records)
+        saved = await upsert_krx_stock_master(records)
 
         # 섹터 데이터 보강 — KOSPI/KOSDAQ 리스팅에서 NULL 섹터 충전
         try:
@@ -242,7 +242,7 @@ class StockMasterCollector:
             logger.warning("섹터 시딩 실패 (비필수): %s", e)
 
         # Redis 캐시 갱신
-        await self.refresh_stock_master_cache()
+        await self.refresh_krx_stock_master_cache()
         await self.refresh_sector_cache()
         if include_etf:
             await self.refresh_etf_cache()
@@ -255,9 +255,9 @@ class StockMasterCollector:
         logger.info("종목 마스터 수집 완료: %d건 upsert", saved)
         return saved
 
-    async def refresh_stock_master_cache(self) -> None:
+    async def refresh_krx_stock_master_cache(self) -> None:
         """전체 종목 마스터를 Redis에 캐싱합니다."""
-        stocks = await list_stock_master(limit=5000)
+        stocks = await list_krx_stock_master(limit=5000)
         redis = await get_redis()
         await redis.set(
             KEY_STOCK_MASTER,
@@ -279,7 +279,7 @@ class StockMasterCollector:
 
     async def refresh_etf_cache(self) -> None:
         """ETF/ETN 목록을 Redis에 캐싱합니다."""
-        etfs = await list_stock_master(is_etf=True, limit=2000)
+        etfs = await list_krx_stock_master(is_etf=True, limit=2000)
         redis = await get_redis()
         await redis.set(
             KEY_ETF_LIST,
@@ -290,8 +290,8 @@ class StockMasterCollector:
 
 
 async def _main_async(args: argparse.Namespace) -> None:
-    collector = StockMasterCollector()
-    await collector.collect_stock_master(include_etf=args.include_etf)
+    collector = KrxStockMasterCollector()
+    await collector.collect_krx_stock_master(include_etf=args.include_etf)
 
 
 def main() -> None:

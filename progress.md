@@ -29,17 +29,20 @@
 
 ## 🔄 다음 작업
 
-### 클라우드 배포 전 QA Round 2 (미착수)
+### ✅ instruments 경량화 + trading_universe + stock_master 리네임 (코드 완료, K3s 배포 필요)
 
-Round 1 품질 검증에서 발견된 미커버 항목 보강. 파티셔닝 문서: `.agent/partition/20260411-cloud-pre-qa-partition.md`
+**완료 (2026-04-11):**
+1. instruments DDL 경량화 — PK/FK만 남김 (instrument_id, ticker, market_id, is_active)
+2. trading_universe 테이블 신설 — (account_scope, instrument_id) 복합 PK, 모드별 종목 분리
+3. stock_master → krx_stock_master 전체 리네임 (33파일, 183건)
+4. 27개 쿼리 리팩터링 — instruments 메타데이터 → krx_stock_master JOIN
+5. list_tickers(mode="paper") — 모드별 유니버스 반환으로 시그니처 변경
+6. 테스트 2054개 전체 통과
 
-**Agent 1 미커버:**
-- orchestrator: independent portfolio 모드(~90줄), dynamic weight 최적화, `_execute_blended_signals` 직접 테스트
-- RL: `GymTradingEnv` 래퍼, `get_policy_mode` paper/real 분기
-- ranking: `calculate_sector_heatmap`, tie-handling
-- strategy_a/b, portfolio_manager, rl_trading_v2 에지케이스 보강 (Round 1에서 누락 — diff 없음 확인됨)
+**남은 작업:** K3s 배포 + DB 마이그레이션 (DDL 변경 반영)
+상세: `.agent/discussions/20260411-instruments-trading-universe-design.md`
 
-**Agent 2~4 미커버:** 각 에이전트별 품질 검증 미실시. Round 1과 동일한 4-에이전트 병렬 패턴으로 검증+보강 필요.
+### ✅ 클라우드 배포 전 QA Round 2 (완료, PR #143, #144)
 
 ### 로컬 데이터 축적 (진행 중)
 
@@ -86,4 +89,4 @@ Hetzner CX22 + Cloudflare R2 결정 완료. Docker Compose 배포 + Cold migrati
 
 ---
 
-*Last updated: 2026-04-11*
+*Last updated: 2026-04-12*
