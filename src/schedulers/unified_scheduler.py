@@ -130,6 +130,33 @@ async def start_unified_scheduler() -> None:
 
         store = RLPolicyStoreV2()
         registry = store.load_registry()
+
+        # ── instruments DB 에서 종목 가져와 레지스트리에 자동 등록 ──
+        try:
+            from src.db.queries import list_tickers as db_list_tickers
+
+            from src.agents.rl_policy_registry import TickerPolicies
+
+            db_rows = await db_list_tickers(limit=500)
+            db_tickers = [row["instrument_id"] for row in db_rows]
+            existing_count = len(registry.tickers)
+            newly_registered = 0
+            for ticker in db_tickers:
+                if ticker not in registry.tickers:
+                    registry.tickers[ticker] = TickerPolicies()
+                    newly_registered += 1
+                    logger.info("RL registry: 신규 종목 자동 등록 — %s", ticker)
+            if newly_registered:
+                store.save_registry()
+            logger.info(
+                "RL bootstrap: %d tickers from instruments, %d already in registry, %d newly registered",
+                len(db_tickers),
+                existing_count,
+                newly_registered,
+            )
+        except Exception as exc:
+            logger.warning("RL bootstrap: instruments DB 조회 실패, 기존 레지스트리로 진행 — %s", exc)
+
         active_map = registry.list_active_policies()
         all_tickers = registry.list_all_tickers()
 
@@ -238,6 +265,7 @@ async def start_unified_scheduler() -> None:
 
         improver = RLContinuousImprover()
         outcomes = await improver.retrain_all()
+        logger.info("RL retrain: %d target tickers", len(outcomes))
         success = sum(1 for o in outcomes if o.success)
         logger.info(
             "RL 재학습 완료: %d/%d 성공",
