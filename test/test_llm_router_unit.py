@@ -215,3 +215,105 @@ class TestGetClient:
             MockGemini.return_value = MagicMock()
             client = router._get_client("gemini")
             assert client is not None
+
+    def test_client_caching(self):
+        """동일 provider에 대해 _get_client가 동일 인스턴스를 반환 (캐시)."""
+        from src.llm.router import LLMRouter
+
+        router = LLMRouter()
+        mock_instance = MagicMock()
+        with patch("src.llm.claude_client.ClaudeClient", return_value=mock_instance):
+            first = router._get_client("claude")
+            second = router._get_client("claude")
+        assert first is second
+
+
+# ── LLM 라우터 에지케이스 (Agent 4 QA Round 2) ───────────────────────────────
+
+
+class TestAllProvidersFailSimultaneously:
+    """모든 프로바이더가 동시에 다양한 방식으로 실패하는 시나리오."""
+
+    @pytest.mark.asyncio
+    async def test_mixed_unconfigured_and_exceptions(self):
+        """일부 미설정 + 나머지 예외: 에러 메시지에 모든 실패 사유 포함."""
+        router, _, mock_gpt, mock_gemini = _build_router(claude_cfg=False)
+        mock_gpt.ask_json = AsyncMock(side_effect=ConnectionError("connection refused"))
+        mock_gemini.ask_json = AsyncMock(side_effect=TimeoutError("timed out"))
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await router.ask_json("claude-3-5-sonnet", "test")
+
+        error_msg = str(exc_info.value)
+        assert "not configured" in error_msg  # claude
+        assert "connection refused" in error_msg  # gpt
+        assert "timed out" in error_msg  # gemini
+
+    @pytest.mark.asyncio
+    async def test_ask_text_mixed_failures(self):
+        """ask_text에서도 동일한 패턴의 에러 전파."""
+        router, mock_claude, _, mock_gemini = _build_router(gpt_cfg=False)
+        mock_claude.ask = AsyncMock(side_effect=RuntimeError("auth expired"))
+        mock_gemini.ask = AsyncMock(side_effect=ValueError("invalid response"))
+
+        with pytest.raises(RuntimeError, match="All LLM providers failed"):
+            await router.ask_text("claude-3-5-sonnet", "test")
+
+
+class TestFallbackChainOrder:
+    """폴백 체인이 정확한 순서로 실행되는지 상세 검증."""
+
+    @pytest.mark.asyncio
+    async def test_gpt_primary_fallback_to_gemini(self):
+        """GPT가 primary이고 Claude도 실패하면 Gemini로 폴백."""
+        router, mock_claude, mock_gpt, mock_gemini = _build_router()
+        mock_gpt.ask_json = AsyncMock(side_effect=RuntimeError("gpt down"))
+        mock_claude.ask_json = AsyncMock(side_effect=RuntimeError("claude down"))
+
+        result = await router.ask_json("gpt-4o", "test")
+        assert result == {"answer": "gemini"}
+        mock_gemini.ask_json.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_gemini_primary_fallback_order(self):
+        """Gemini가 primary일 때 Claude → GPT 순서로 폴백."""
+        router, mock_claude, mock_gpt, mock_gemini = _build_router()
+        mock_gemini.ask_json = AsyncMock(side_effect=RuntimeError("gemini fail"))
+
+        result = await router.ask_json("gemini-1.5-pro", "test")
+        # fallback order: gemini → claude → gpt
+        assert result == {"answer": "claude"}
+        mock_claude.ask_json.assert_awaited_once()
+        mock_gpt.ask_json.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_temperature_propagated_to_fallback(self):
+        """폴백 프로바이더에도 temperature가 전달."""
+        router, mock_claude, mock_gpt, _ = _build_router()
+        mock_claude.ask_json = AsyncMock(side_effect=RuntimeError("fail"))
+
+        await router.ask_json("claude-3-5-sonnet", "prompt", temperature=0.1)
+        call_kwargs = mock_gpt.ask_json.call_args
+        assert call_kwargs.kwargs.get("temperature") == 0.1
+
+
+class TestProviderForModelEdgeCasesExtended:
+    """provider_for_model: 특수한 모델 이름 패턴."""
+
+    def test_anthropic_keyword(self):
+        from src.llm.router import LLMRouter
+        assert LLMRouter.provider_for_model("anthropic-custom-model") == "claude"
+
+    def test_openai_keyword(self):
+        from src.llm.router import LLMRouter
+        assert LLMRouter.provider_for_model("openai-gpt4-custom") == "gpt"
+
+    def test_empty_model_raises(self):
+        from src.llm.router import LLMRouter
+        with pytest.raises(ValueError, match="Unknown model"):
+            LLMRouter.provider_for_model("")
+
+    def test_numeric_only_model_raises(self):
+        from src.llm.router import LLMRouter
+        with pytest.raises(ValueError, match="Unknown model"):
+            LLMRouter.provider_for_model("12345")

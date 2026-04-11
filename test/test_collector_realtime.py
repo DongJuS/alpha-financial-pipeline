@@ -411,3 +411,124 @@ class TestExtractHelpersEdgeCases:
     def test_ticker_empty_subscribed(self, collector):
         """빈 subscribed set이면 None."""
         assert collector._extract_ticker(["005930"], set()) is None
+
+
+# =============================================================================
+# 에지케이스: 다중 종목 동시 구독 해제/재구독, 메시지 파싱 실패
+# =============================================================================
+
+
+class TestRealtimeEdgeCases:
+    """_RealtimeMixin 에지 케이스 보강 (Agent 2 QA Round 2)."""
+
+    def test_parse_empty_string_returns_none(self, collector):
+        """빈 문자열 패킷은 None 반환."""
+        result = collector._parse_ws_tick_packet("", {"005930"})
+        assert result is None
+
+    def test_parse_malformed_json_returns_none(self, collector):
+        """유효하지 않은 JSON(시작이 '{') → 로깅 후 None."""
+        result = collector._parse_ws_tick_packet("{not json", {"005930"})
+        assert result is None
+
+    def test_parse_partial_pipe_delimited(self, collector):
+        """'0|'로 시작하지만 pipe가 3개 미만인 패킷은 None."""
+        result = collector._parse_ws_tick_packet("0|H0STCNT0", {"005930"})
+        assert result is None
+
+    def test_parse_no_matching_ticker(self, collector):
+        """패킷의 ticker가 subscribed에 없으면 None."""
+        raw = "0|H0STCNT0|1|999999^0^72000^73000^71000^72000^1000000"
+        result = collector._parse_ws_tick_packet(raw, {"005930"})
+        assert result is None
+
+    def test_parse_price_none_when_no_digits(self, collector):
+        """모든 필드가 비숫자이면 price가 None."""
+        raw = "0|H0STCNT0|1|NOTICKER^abc^def^ghi"
+        result = collector._parse_ws_tick_packet(raw, {"NOTICKER"})
+        assert result is not None
+        assert result["price"] is None
+
+    async def test_collect_realtime_ticks_multi_chunk(self, collector):
+        """MAX_TICKERS_PER_WS 초과 시 청크 분할하여 병렬 수집."""
+        from src.constants import MAX_TICKERS_PER_WS
+
+        # MAX_TICKERS_PER_WS + 1 종목으로 2개 청크 생성
+        ticker_count = MAX_TICKERS_PER_WS + 1
+        tickers = [f"{i:06d}" for i in range(ticker_count)]
+        selected = [(t, t, "KOSPI") for t in tickers]
+
+        ws_call_count = 0
+
+        async def _mock_ws_collect(subscribed, meta, **kwargs):
+            nonlocal ws_call_count
+            ws_call_count += 1
+            return len(subscribed)  # 각 청크 크기만큼 반환
+
+        with (
+            patch.object(collector, "_resolve_tickers", return_value=selected),
+            patch.object(collector, "_has_kis_market_credentials", return_value=True),
+            patch.object(collector, "_ws_collect_loop", new_callable=AsyncMock, side_effect=_mock_ws_collect),
+        ):
+            result = await collector.collect_realtime_ticks(tickers=tickers)
+
+        assert ws_call_count == 2  # 2개 청크로 분할
+        assert result == ticker_count
+
+    async def test_collect_realtime_ticks_all_chunks_fail(self, collector):
+        """모든 WebSocket 청크가 실패하면 received=-1 → fallback."""
+        from src.constants import MAX_TICKERS_PER_WS
+
+        ticker_count = MAX_TICKERS_PER_WS + 1
+        tickers = [f"{i:06d}" for i in range(ticker_count)]
+        selected = [(t, t, "KOSPI") for t in tickers]
+
+        with (
+            patch.object(collector, "_resolve_tickers", return_value=selected),
+            patch.object(collector, "_has_kis_market_credentials", return_value=True),
+            patch.object(collector, "_ws_collect_loop", new_callable=AsyncMock, return_value=-1),
+            patch.object(collector, "_beat", new_callable=AsyncMock),
+            patch.object(collector, "collect_daily_bars", new_callable=AsyncMock, return_value=[]) as mock_daily,
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            result = await collector.collect_realtime_ticks(
+                tickers=tickers, fallback_on_error=True,
+            )
+
+        assert result == 0
+        assert mock_daily.await_count == 3  # 3x fallback
+
+    async def test_flush_by_batch_size(self, collector):
+        """batch_size 도달 시 interval 미경과여도 flush."""
+        collector._tick_batch_size = 2
+        collector._tick_flush_interval = 9999.0  # 먼 미래
+        collector._tick_buffer = [_make_tick(), _make_tick()]
+        import asyncio
+        collector._tick_buffer_last_flush = asyncio.get_event_loop().time()
+
+        with patch(
+            "src.agents.collector._realtime.insert_tick_batch",
+            new_callable=AsyncMock,
+            return_value=2,
+        ):
+            result = await collector._flush_tick_buffer()
+
+        assert result == 2
+        assert len(collector._tick_buffer) == 0
+
+    async def test_flush_force_ignores_conditions(self, collector):
+        """force=True 시 batch_size/interval 무관하게 flush."""
+        collector._tick_batch_size = 1000
+        collector._tick_flush_interval = 9999.0
+        collector._tick_buffer = [_make_tick()]
+        import asyncio
+        collector._tick_buffer_last_flush = asyncio.get_event_loop().time()
+
+        with patch(
+            "src.agents.collector._realtime.insert_tick_batch",
+            new_callable=AsyncMock,
+            return_value=1,
+        ):
+            result = await collector._flush_tick_buffer(force=True)
+
+        assert result == 1

@@ -169,3 +169,93 @@ class TestClaudeKnownPaths:
 
         paths = _claude_known_paths()
         assert any(".claude/bin/claude" in p for p in paths)
+
+
+# ── CLI Bridge 에지케이스 (Agent 4 QA Round 2) ───────────────────────────────
+
+
+class TestRunCliPromptEdgeCases:
+    """run_cli_prompt: 타임아웃, 프로세스 종료 코드, 대용량 출력."""
+
+    @pytest.mark.asyncio
+    async def test_stderr_included_in_error(self):
+        """비정상 종료 시 stderr가 에러 메시지에 포함."""
+        from src.llm.cli_bridge import run_cli_prompt
+
+        # bash -c로 stderr에 출력 후 exit 1
+        with pytest.raises(RuntimeError) as exc_info:
+            await run_cli_prompt(
+                ["bash", "-c", "echo 'error detail' >&2; exit 1"],
+                "test",
+            )
+
+        error_msg = str(exc_info.value)
+        assert "error detail" in error_msg
+        assert "exit=1" in error_msg
+
+    @pytest.mark.asyncio
+    async def test_large_output_handled(self):
+        """대용량 stdout을 정상 처리."""
+        from src.llm.cli_bridge import run_cli_prompt
+
+        # 10KB 문자열 생성
+        large_input = "x" * 10000
+        result = await run_cli_prompt(["cat"], large_input)
+        assert len(result) == 10000
+
+    @pytest.mark.asyncio
+    async def test_utf8_output(self):
+        """UTF-8 문자열이 정상적으로 디코딩."""
+        from src.llm.cli_bridge import run_cli_prompt
+
+        result = await run_cli_prompt(["cat"], "한글 테스트 데이터")
+        assert result == "한글 테스트 데이터"
+
+    @pytest.mark.asyncio
+    async def test_empty_input_returns_empty(self):
+        """빈 입력이면 빈 문자열 반환."""
+        from src.llm.cli_bridge import run_cli_prompt
+
+        result = await run_cli_prompt(["cat"], "")
+        assert result == ""
+
+
+class TestResolveCliPathEdgeCases:
+    """_resolve_cli_path: claude 바이너리 폴백 경로 탐색."""
+
+    def test_claude_command_checks_known_paths(self):
+        """'claude' 명령어일 때 알려진 ��로를 탐색."""
+        from src.llm.cli_bridge import _resolve_cli_path
+
+        with patch("shutil.which", return_value=None):
+            with patch("os.path.isfile", return_value=False):
+                result = _resolve_cli_path("claude")
+                # 알려진 경로 모두 없으면 원본 반환
+                assert result == "claude"
+
+    def test_non_claude_command_no_fallback(self):
+        """claude가 아닌 명령어는 알려진 경로 탐색 없이 원본 반환."""
+        from src.llm.cli_bridge import _resolve_cli_path
+
+        with patch("shutil.which", return_value=None):
+            result = _resolve_cli_path("some_other_cmd")
+            assert result == "some_other_cmd"
+
+
+class TestBuildCliCommandEdgeCases:
+    """build_cli_command: None 템플릿, 특수문자."""
+
+    def test_none_template(self):
+        """template이 None이면 빈 리스트."""
+        from src.llm.cli_bridge import build_cli_command
+
+        result = build_cli_command(None, model="claude")
+        assert result == []
+
+    def test_multiple_model_placeholders(self):
+        """여러 {model} 플레이스홀더가 모두 치환."""
+        from src.llm.cli_bridge import build_cli_command
+
+        cmd = build_cli_command("echo {model} {model}", model="claude-3")
+        assert cmd[1] == "claude-3"
+        assert cmd[2] == "claude-3"
