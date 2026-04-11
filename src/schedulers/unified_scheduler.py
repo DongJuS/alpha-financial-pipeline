@@ -18,6 +18,7 @@ src/schedulers/unified_scheduler.py — 통합 스케줄러
     index_collection    30초 인터벌  IndexCollector (장중)
 
     [장 후]
+    s3_tick_flush       15:40 KST  DB→S3 틱 데이터 일괄 flush (hour 파티셔닝)
     rl_retrain          16:00 KST  RL 전략 재학습
     blend_weight_adjust 16:30 KST  블렌딩 가중치 동적 조정
 """
@@ -49,6 +50,7 @@ _LOCK_TTL: dict[str, int] = {
     "index_warmup": 60,          # 1분
     "index_collection": 25,      # 30초 인터벌보다 짧게
     # 장 후
+    "s3_tick_flush": 600,        # 10분 (DB→S3 일괄 flush)
     "rl_retrain": 3600,          # 60분 (멀티 티커 학습)
     "blend_weight_adjust": 120,  # 2분
 }
@@ -347,7 +349,24 @@ async def start_unified_scheduler() -> None:
         replace_existing=True,
     )
 
+    # -- 장 후: DB→S3 틱 일괄 flush (15:40 KST) --
+    async def _run_s3_tick_flush() -> None:
+        """장 종료 후 당일 틱 데이터를 DB에서 읽어 시간대별 S3 파일로 저장한다."""
+        from src.services.datalake import flush_ticks_to_s3
+
+        uris = await flush_ticks_to_s3()
+        logger.info("S3 틱 flush 크론 완료: %d파일", len(uris))
+
     # ── 잡 등록: 장 후 ─────────────────────────────────────────────────────
+    scheduler.add_job(
+        _locked_job("s3_tick_flush", _run_s3_tick_flush),
+        CronTrigger(hour=15, minute=40, day_of_week="0-4", timezone=str(KST)),
+        id="s3_tick_flush",
+        name="S3 tick flush (15:40 KST)",
+        misfire_grace_time=60,
+        replace_existing=True,
+    )
+
     scheduler.add_job(
         _locked_job("rl_retrain", _run_rl_retrain),
         CronTrigger(hour=16, minute=0, day_of_week="0-4", timezone=str(KST)),

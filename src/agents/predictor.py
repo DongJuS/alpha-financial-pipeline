@@ -21,6 +21,7 @@ load_dotenv(ROOT / ".env")
 from src.db.models import AgentHeartbeatRecord, PredictionSignal
 from src.db.queries import (
     fetch_recent_ohlcv,
+    get_ohlcv_bars,
     get_position,
     insert_heartbeat,
     insert_prediction,
@@ -63,7 +64,18 @@ class PredictorAgent:
         }
         return temp_map.get(agent_id, 0.5)
 
-    async def _llm_signal(self, ticker: str, candles: list[dict], position: dict | None = None) -> dict[str, Any]:
+    async def _fetch_intraday_bars(self, ticker: str) -> list[dict]:
+        """최근 1일 1시간봉을 조회합니다. 데이터 없으면 빈 리스트 반환."""
+        try:
+            now = datetime.now()
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            bars = await get_ohlcv_bars(ticker, "1hour", start, now)
+            return bars
+        except Exception as e:
+            logger.debug("분봉 조회 실패 [%s]: %s", ticker, e)
+            return []
+
+    async def _llm_signal(self, ticker: str, candles: list[dict], position: dict | None = None, intraday_bars: list[dict] | None = None) -> dict[str, Any]:
         compact = [
             {
                 "ts": str(c.get("timestamp_kst") or c.get("traded_at", "")),
@@ -75,6 +87,22 @@ class PredictorAgent:
             }
             for c in candles[:20]
         ]
+
+        # 장중 1시간봉 컨텍스트
+        intraday_context = ""
+        if intraday_bars:
+            compact_intraday = [
+                {
+                    "ts": str(b["timestamp_kst"]),
+                    "o": int(b["open"]),
+                    "h": int(b["high"]),
+                    "l": int(b["low"]),
+                    "c": int(b["close"]),
+                    "v": int(b["volume"]),
+                }
+                for b in intraday_bars
+            ]
+            intraday_context = f"\n오늘 장중 1시간봉: {json.dumps(compact_intraday, ensure_ascii=False)}\n"
 
         # 보유 포지션 캐텍스트
         position_context = ""
@@ -99,8 +127,8 @@ class PredictorAgent:
 너는 한국주식 단기 예측 분석가다.
 현재 페르소나: {self.persona}
 티커: {ticker}
-최근 데이터(최신순): {json.dumps(compact, ensure_ascii=False)}
-{position_context}
+최근 일봉(최신순): {json.dumps(compact, ensure_ascii=False)}
+{intraday_context}{position_context}
 아래 JSON 형식으로만 답해라:
 {{
   "signal": "BUY|SELL|HOLD",
@@ -132,19 +160,22 @@ class PredictorAgent:
         # ── 1단계: 데이터 일괄 조회 (병렬) ──
         candle_tasks = [fetch_recent_ohlcv(t, days=30) for t in tickers]
         position_tasks = [get_position(t, account_scope="paper") for t in tickers]
+        intraday_tasks = [self._fetch_intraday_bars(t) for t in tickers]
         all_candles = await asyncio.gather(*candle_tasks, return_exceptions=True)
         all_positions = await asyncio.gather(*position_tasks, return_exceptions=True)
+        all_intraday = await asyncio.gather(*intraday_tasks, return_exceptions=True)
 
         # ── 2단계: LLM 추론 (병렬, 동시 실행 수 제한) ──
         sem = asyncio.Semaphore(3)  # LLM 동시 호출 제한
 
         async def _predict_one(
-            ticker: str, candles: list, position: dict | None,
+            ticker: str, candles: list, position: dict | None, intraday_bars: list | None,
         ) -> PredictionSignal | None:
             async with sem:
                 try:
                     llm_output = await self._llm_signal(
                         ticker=ticker, candles=candles, position=position,
+                        intraday_bars=intraday_bars,
                     )
                 except Exception as e:
                     logger.error(
@@ -184,7 +215,8 @@ class PredictorAgent:
         for idx, ticker in enumerate(tickers):
             candles = all_candles[idx] if not isinstance(all_candles[idx], Exception) else []
             position = all_positions[idx] if not isinstance(all_positions[idx], Exception) else None
-            prediction_tasks.append(_predict_one(ticker, candles, position))
+            intraday = all_intraday[idx] if not isinstance(all_intraday[idx], Exception) else None
+            prediction_tasks.append(_predict_one(ticker, candles, position, intraday))
 
         predictions = await asyncio.gather(*prediction_tasks)
 
