@@ -121,7 +121,7 @@ class TestNotificationsStats:
     """GET /api/v1/notifications/stats"""
 
     @patch("src.api.routers.notifications.fetch", new_callable=AsyncMock, return_value=[])
-    @patch("src.api.routers.notifications.fetchrow", new_callable=AsyncMock)
+    @patch("src.utils.db_client.fetchrow", new_callable=AsyncMock)
     def test_get_stats(self, mock_fetchrow: AsyncMock, mock_fetch: AsyncMock) -> None:
         """알림 통계를 조회한다."""
         mock_fetchrow.return_value = {"total_sent": 42, "success_rate": 0.95}
@@ -135,7 +135,7 @@ class TestNotificationsStats:
         assert "daily_trend" in body
 
     @patch("src.api.routers.notifications.fetch", new_callable=AsyncMock, return_value=[])
-    @patch("src.api.routers.notifications.fetchrow", new_callable=AsyncMock)
+    @patch("src.utils.db_client.fetchrow", new_callable=AsyncMock)
     def test_stats_has_valid_types(
         self, mock_fetchrow: AsyncMock, mock_fetch: AsyncMock
     ) -> None:
@@ -157,7 +157,11 @@ class TestNotificationsStats:
 class TestModelsConfig:
     """GET /api/v1/models/config"""
 
-    def test_get_model_config(self) -> None:
+    @patch("src.services.model_config.get_strategy_b_roles", new_callable=AsyncMock, return_value=[])
+    @patch("src.services.model_config.get_strategy_a_profiles", new_callable=AsyncMock, return_value=[])
+    def test_get_model_config(
+        self, mock_a_profiles: AsyncMock, mock_b_roles: AsyncMock
+    ) -> None:
         """모델 설정을 조회한다 (admin 전용)."""
         client = _build_client()
         resp = client.get(f"{API_MODELS}/config")
@@ -169,7 +173,11 @@ class TestModelsConfig:
         assert "strategy_b" in body
         assert "rule_based_fallback_allowed" in body
 
-    def test_model_config_supported_models_is_list(self) -> None:
+    @patch("src.services.model_config.get_strategy_b_roles", new_callable=AsyncMock, return_value=[])
+    @patch("src.services.model_config.get_strategy_a_profiles", new_callable=AsyncMock, return_value=[])
+    def test_model_config_supported_models_is_list(
+        self, mock_a_profiles: AsyncMock, mock_b_roles: AsyncMock
+    ) -> None:
         """supported_models는 리스트여야 한다."""
         client = _build_client()
         resp = client.get(f"{API_MODELS}/config")
