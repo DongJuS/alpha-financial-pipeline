@@ -184,10 +184,11 @@ class TestListTickers:
     async def test_returns_dict_list(self):
         from src.db.queries import list_tickers
 
-        data = {"instrument_id": "005930.KS", "ticker": "005930", "name": "삼성전자", "market": "KOSPI"}
+        data = {"instrument_id": "005930.KS", "ticker": "005930", "name": "삼성전자", "market": "KOSPI",
+                "priority": 10, "max_weight_pct": None}
 
         with patch("src.db.queries.fetch", new_callable=AsyncMock, return_value=[FakeRecord(data)]):
-            result = await list_tickers(limit=10)
+            result = await list_tickers(mode="paper", limit=10)
 
         assert len(result) == 1
         assert result[0]["instrument_id"] == "005930.KS"
@@ -201,7 +202,9 @@ class TestListTickers:
 
         sql = mock_f.call_args.args[0]
         assert "LIMIT" in sql
-        assert mock_f.call_args.args[1] == 30
+        # args[1] = mode ("paper"), args[2] = limit (30)
+        assert mock_f.call_args.args[1] == "paper"
+        assert mock_f.call_args.args[2] == 30
 
 
 # ── latest_close_price ──────────────────────────────────────────────────────

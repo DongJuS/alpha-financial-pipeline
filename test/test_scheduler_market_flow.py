@@ -2,7 +2,7 @@
 test/test_scheduler_market_flow.py — 장 전/중/후 스케줄 통합 테스트
 
 unified_scheduler.py에 등록된 10개 잡을 검증합니다:
-- 장 전: rl_bootstrap, predictor_warmup, stock_master_daily, macro_daily, collector_daily, index_warmup
+- 장 전: rl_bootstrap, predictor_warmup, krx_stock_master_daily, macro_daily, collector_daily, index_warmup
 - 장 중: index_collection (30초 간격)
 - 장 후: s3_tick_flush, rl_retrain, blend_weight_adjust
 - 실시간 틱 수집은 별도 tick-collector 서비스로 분리됨
@@ -52,7 +52,7 @@ class TestJobRegistration:
             patch("src.agents.collector.CollectorAgent"),
             patch("src.agents.index_collector.IndexCollector"),
             patch("src.agents.macro_collector.MacroCollector"),
-            patch("src.agents.stock_master_collector.StockMasterCollector"),
+            patch("src.agents.krx_stock_master_collector.KrxStockMasterCollector"),
             patch("src.utils.market_hours.is_market_open_now", new_callable=AsyncMock, return_value=False),
         ):
             await mod.start_unified_scheduler()
@@ -60,7 +60,7 @@ class TestJobRegistration:
         expected_ids = {
             "rl_bootstrap",
             "predictor_warmup",
-            "stock_master_daily",
+            "krx_stock_master_daily",
             "macro_daily",
             "collector_daily",
             "index_warmup",
@@ -370,13 +370,13 @@ class TestScheduleTiming:
             patch("src.agents.collector.CollectorAgent"),
             patch("src.agents.index_collector.IndexCollector"),
             patch("src.agents.macro_collector.MacroCollector"),
-            patch("src.agents.stock_master_collector.StockMasterCollector"),
+            patch("src.agents.krx_stock_master_collector.KrxStockMasterCollector"),
             patch("src.utils.market_hours.is_market_open_now", new_callable=AsyncMock, return_value=False),
         ):
             await mod.start_unified_scheduler()
 
         # 장 전 잡 (09:00 이전)
-        pre_market_ids = {"rl_bootstrap", "predictor_warmup", "stock_master_daily", "macro_daily", "collector_daily", "index_warmup"}
+        pre_market_ids = {"rl_bootstrap", "predictor_warmup", "krx_stock_master_daily", "macro_daily", "collector_daily", "index_warmup"}
         for job_id in pre_market_ids:
             assert job_id in added_jobs, f"{job_id} not registered"
 
@@ -413,7 +413,7 @@ class TestScheduleTiming:
             patch("src.agents.collector.CollectorAgent"),
             patch("src.agents.index_collector.IndexCollector"),
             patch("src.agents.macro_collector.MacroCollector"),
-            patch("src.agents.stock_master_collector.StockMasterCollector"),
+            patch("src.agents.krx_stock_master_collector.KrxStockMasterCollector"),
             patch("src.utils.market_hours.is_market_open_now", new_callable=AsyncMock, return_value=False),
         ):
             await mod.start_unified_scheduler()
@@ -618,7 +618,7 @@ class TestTickJobRegistration:
             patch("src.agents.collector.CollectorAgent"),
             patch("src.agents.index_collector.IndexCollector"),
             patch("src.agents.macro_collector.MacroCollector"),
-            patch("src.agents.stock_master_collector.StockMasterCollector"),
+            patch("src.agents.krx_stock_master_collector.KrxStockMasterCollector"),
             patch("src.utils.market_hours.is_market_open_now", new_callable=AsyncMock, return_value=False),
         ):
             await mod.start_unified_scheduler()

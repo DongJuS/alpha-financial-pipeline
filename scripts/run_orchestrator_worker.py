@@ -150,7 +150,7 @@ async def _fetch_tickers_from_db() -> list[str]:
     try:
         from src.db.queries import list_tickers
 
-        rows = await list_tickers()
+        rows = await list_tickers(mode="paper")
         ids = [row["instrument_id"] for row in rows]
         if ids:
             logger.info("DB에서 종목 %d개 로드: %s", len(ids), ids[:5])

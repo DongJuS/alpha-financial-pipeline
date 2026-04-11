@@ -115,7 +115,7 @@ class NotificationRecord(BaseModel):
 # ── 마켓플레이스 확장 모델 ─────────────────────────────────────────────────────
 
 
-class StockMasterRecord(BaseModel):
+class KrxStockMasterRecord(BaseModel):
     """KRX 전종목 마스터 데이터."""
     ticker: str = Field(..., min_length=1, max_length=10)
     name: str = Field(..., min_length=1)

@@ -212,14 +212,14 @@ class TestPaperOrderRequest:
             )
 
 
-# ── StockMasterRecord ──────────────────────────────────────────────────────
+# ── KrxStockMasterRecord ──────────────────────────────────────────────────────
 
 
-class TestStockMasterRecord:
+class TestKrxStockMasterRecord:
     def test_valid_record(self):
-        from src.db.models import StockMasterRecord
+        from src.db.models import KrxStockMasterRecord
 
-        rec = StockMasterRecord(
+        rec = KrxStockMasterRecord(
             ticker="005930",
             name="삼성전자",
             market="KOSPI",
@@ -229,10 +229,10 @@ class TestStockMasterRecord:
         assert rec.is_etf is False
 
     def test_tier_values(self):
-        from src.db.models import StockMasterRecord
+        from src.db.models import KrxStockMasterRecord
 
         for tier in ["core", "extended", "universe"]:
-            rec = StockMasterRecord(
+            rec = KrxStockMasterRecord(
                 ticker="005930",
                 name="삼성전자",
                 market="KOSPI",

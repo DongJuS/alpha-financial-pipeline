@@ -27,7 +27,7 @@ class TestCronTriggerConfig:
         expected_keys = {
             "rl_bootstrap",
             "predictor_warmup",
-            "stock_master_daily",
+            "krx_stock_master_daily",
             "macro_daily",
             "collector_daily",
             "index_warmup",
