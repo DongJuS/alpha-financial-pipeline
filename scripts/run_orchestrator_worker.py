@@ -22,6 +22,10 @@ scripts/run_orchestrator_worker.py — Docker/운영용 Orchestrator 루프 실�
   ORCH_RL_RETRAIN_MINUTE=40 (기본: 40, KST 기준)
   ORCH_RL_RETRAIN_TICKERS=005930,000660 (기본: 비어있음 = RL registry/worker tickers 사용)
   ORCH_RL_RETRAIN_PROFILES=tabular_q_v2_momentum,tabular_q_v1_baseline
+  COLLECTOR_DAILY_LIMIT=100 (일봉 수집 종목 수, 기본 100)
+  MAX_SCREENED_TICKERS=10 (스크리너 통과 최대 종목 수, 기본 10)
+  SCREENER_VOLUME_SURGE_RATIO=2.0 (거래량 급등 기준, 20일 평균 대비 배수)
+  SCREENER_CHANGE_PCT_THRESHOLD=3.0 (가격 변동률 기준, ±%)
 """
 
 from __future__ import annotations
@@ -161,6 +165,7 @@ async def _run_cycle_if_weekday(
     tickers: list[str] | None,
     *,
     now_kst: datetime | None = None,
+    screener_kwargs: dict | None = None,
 ) -> dict | None:
     """주말에는 Orchestrator 사이클을 건너뜁니다. gen 모드(GEN_API_URL 설정 시)는 예외."""
     current = now_kst or datetime.now(_KST)
@@ -175,7 +180,7 @@ async def _run_cycle_if_weekday(
         logger.error("실행할 종목이 없습니다 (ORCH_TICKERS 미설정, DB 조회 결과 없음). 사이클 건너뜀.")
         return None
 
-    return await agent.run_cycle(tickers=resolved)
+    return await agent.run_cycle(tickers=resolved, screener_kwargs=screener_kwargs)
 
 
 # ── Strategy Registration ────────────────────────────────────────────────────
@@ -262,6 +267,9 @@ async def main_async() -> int:
     rl_retrain_minute = int(os.getenv("ORCH_RL_RETRAIN_MINUTE", "40"))
     rl_retrain_tickers = _parse_tickers(os.getenv("ORCH_RL_RETRAIN_TICKERS", ""))
     rl_retrain_profiles = _parse_csv(os.getenv("ORCH_RL_RETRAIN_PROFILES", ""))
+    max_screened = int(os.getenv("MAX_SCREENED_TICKERS", "10"))
+    screener_volume_ratio = float(os.getenv("SCREENER_VOLUME_SURGE_RATIO", "2.0"))
+    screener_change_pct = float(os.getenv("SCREENER_CHANGE_PCT_THRESHOLD", "3.0"))
 
     # DB 로그 핸들러 활성화
     try:
@@ -310,9 +318,21 @@ async def main_async() -> int:
         rl_retrain_tickers,
         rl_retrain_profiles,
     )
+    logger.info(
+        "Screener config: volume_surge_ratio=%.1f, change_pct_threshold=%.1f, max_screened=%d",
+        screener_volume_ratio,
+        screener_change_pct,
+        max_screened,
+    )
+
+    screener_kwargs = {
+        "volume_surge_ratio": screener_volume_ratio,
+        "change_pct_threshold": screener_change_pct,
+        "max_results": max_screened,
+    }
 
     if run_once:
-        result = await _run_cycle_if_weekday(agent, tickers)
+        result = await _run_cycle_if_weekday(agent, tickers, screener_kwargs=screener_kwargs)
         if enable_daily_report:
             notifier = agent._create_notifier()
             await notifier.send_paper_daily_report()
@@ -342,7 +362,7 @@ async def main_async() -> int:
     try:
         while True:
             try:
-                await _run_cycle_if_weekday(agent, tickers)
+                await _run_cycle_if_weekday(agent, tickers, screener_kwargs=screener_kwargs)
             except Exception as e:
                 logger.error("사이클 실행 실패 (계속 진행): %s", e, exc_info=True)
 
