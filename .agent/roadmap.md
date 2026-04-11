@@ -22,7 +22,8 @@ PostgreSQL (DB), Redis (캐시/메시징), S3 (데이터 레이크), K3s (배포
 ## 현재 상태 (2026-04-11)
 
 핵심 매매 기능 + 실시간 틱 수집 + 틱 저장소 + AI 모델 통합까지 완성.
-다음은 틱 데이터를 활용한 전략 확장과 클라우드 배포가 남아있다.
+K3s DB에 일봉 시딩 완료 (3종목 2,394건, 2023-01~2026-04).
+다음은 로컬 데이터 축적 → 클라우드 전환 → RL 피처 확장 순서로 진행.
 
 **완료된 것:**
 - 3가지 AI 전략으로 자동 매매 (모의투자 검증 완료)
@@ -34,8 +35,10 @@ PostgreSQL (DB), Redis (캐시/메시징), S3 (데이터 레이크), K3s (배포
 - 과거 데이터로 전략 성과 검증 (백테스트) + 웹 대시보드
 - 에이전트 건강 모니터링 → Telegram 자동 알림
 - K3s(경량 쿠버네티스) 서버 배포, 자동 테스트 798개 통과
+- alpha_db 정리: gen heartbeat 오염 제거 + 무의미한 predictions 정리
 
 **다음 목표:**
+- 로컬에서 틱 데이터 축적 시작 (클라우드 전환 전, 비용 절감)
 - RL 분봉 피처 확장 (분봉 데이터 40영업일 축적 후)
 - 클라우드 전환: Hetzner CX22 + Cloudflare R2 (월 ~5,000원)
 
@@ -49,7 +52,13 @@ PostgreSQL (DB), Redis (캐시/메시징), S3 (데이터 레이크), K3s (배포
 
 ## 진행 중 마일스톤
 
-### RL 분봉 피처 확장 (Step 8b 후속)
+### 로컬 데이터 축적 (진행 중)
+
+**왜 필요한가:** 클라우드 전환 전에 로컬에서 틱/분봉 데이터를 먼저 축적. 비용 발생을 늦추면서 RL 40영업일 선행 조건을 충족시킨다.
+K3s DB에 일봉 시딩 완료 (3종목 2,394건). 틱 수집은 장중 WebSocket으로 자동 진행.
+클라우드 전환 시 `pg_dump` + R2 sync로 이전.
+
+### RL 분봉 피처 확장 (선행 조건: 분봉 40영업일 축적)
 
 **왜 필요한가:** RL이 일봉 6개 피처만 사용 중. 분봉 파생 피처(vwap_deviation, volume_skew)를 추가하면 장중 패턴 포착 가능.
 
@@ -57,11 +66,22 @@ PostgreSQL (DB), Redis (캐시/메시징), S3 (데이터 레이크), K3s (배포
 선행 조건: Step 8b 완료 + 분봉 데이터 40영업일 축적.
 - 상세: `.agent/discussions/20260411-rl-intraday-feature-expansion.md`
 
+### Predictor MTF 실효과 검증
+
+**왜 필요한가:** 분봉 통합(1시간봉) 구현 완료했으나, 실제 예측 품질이 올라갔는지 미검증.
+일봉만 사용한 예측 vs 일봉+분봉 예측의 시그널 품질을 백테스트 또는 모의투자 로그로 비교해야 투자 판단의 근거가 된다.
+
 ### 클라우드 전환 (날짜 미정)
 
 Hetzner CX22 + Cloudflare R2 조합(월 ~5,000원)으로 결정.
 비용 발생 시점을 최대한 늦추는 원칙. 실행 시 배포 순서·데이터 이전·롤백 전략 설계 필요.
-- 상세: `.agent/discussions/20260411-roadmap-priority-cost-optimization.md`
+
+**LLM 인증·비용 전략 결정 (2026-04-11):** CLI 구독 인증 1순위 + API Key 자동 fallback.
+Claude `setup-token`(1년 유효) + Codex `device-auth` + Gemini ADC로 구독료만 사용.
+토큰 만료 시 동일 provider SDK로 자동 전환 + 1분 주기 Health 체크 + Telegram 알림.
+모델 다운그레이드 불필요 (Opus 유지).
+- 상세 (인프라·비용): `.agent/discussions/20260411-roadmap-priority-cost-optimization.md`
+- 상세 (LLM 인증): `.agent/discussions/20260411-cloud-llm-auth-cost-optimization.md`
 
 ---
 
