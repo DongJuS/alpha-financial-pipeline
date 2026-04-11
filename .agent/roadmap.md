@@ -54,6 +54,19 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건, 2023-01~2026-04).
 
 ## 진행 중 마일스톤
 
+### ✅ instruments + 종목 유니버스 설계 (코드 완료, K3s 배포 필요)
+
+**왜 필요했나:** instruments 테이블이 비어 있고, 가상/실/백테스트 모드별 종목 구분이 불가능했다.
+
+**완료 (2026-04-11):**
+- instruments DDL 경량화 (PK/FK만), trading_universe 테이블 신설 (모드별 종목 분리)
+- stock_master → krx_stock_master 전체 리네임 (33파일)
+- 27개 쿼리 리팩터링 (instruments 메타→krx_stock_master JOIN)
+- list_tickers(mode="paper") 시그니처 변경, 테스트 2054개 통과
+- 상세: `.agent/discussions/20260411-instruments-trading-universe-design.md`
+
+**남은 작업:** K3s DB 마이그레이션 + 배포
+
 ### 로컬 데이터 축적 (진행 중)
 
 **왜 필요한가:** 클라우드 전환 전에 로컬에서 틱/분봉 데이터를 먼저 축적. 비용 발생을 늦추면서 RL 40영업일 선행 조건을 충족시킨다.

@@ -319,6 +319,8 @@ class RLTradingAgentRunCycleTest(unittest.IsolatedAsyncioTestCase):
 
     def test_rl_policy_store_v2_registry_state(self) -> None:
         """RLPolicyStoreV2 레지스트리 상태를 확인합니다."""
+        from src.utils.ticker import clear_cache
+        clear_cache()
         with tempfile.TemporaryDirectory() as tmpdir:
             store = RLPolicyStoreV2(models_dir=Path(tmpdir), auto_save_registry=True)
             artifact = store.save_policy(_policy_artifact("rl_005930_v1"))

@@ -14,15 +14,15 @@ from pydantic import BaseModel
 from src.api.deps import get_current_user
 from src.db.marketplace_queries import (
     add_watchlist_item,
-    count_stock_master,
+    count_krx_stock_master,
     get_daily_rankings,
     get_macro_indicators,
     get_sectors,
-    get_stock_master,
+    get_krx_stock_master,
     get_theme_stocks,
     get_themes,
     get_watchlist,
-    list_stock_master,
+    list_krx_stock_master,
     remove_watchlist_item,
     search_stocks,
 )
@@ -110,7 +110,7 @@ async def get_stocks(
 ) -> dict:
     """종목 마스터 목록 조회 (필터/검색/페이징)."""
     offset = (page - 1) * per_page
-    stocks = await list_stock_master(
+    stocks = await list_krx_stock_master(
         market=market,
         sector=sector,
         is_etf=is_etf,
@@ -119,7 +119,7 @@ async def get_stocks(
         limit=per_page,
         offset=offset,
     )
-    total = await count_stock_master(market=market, sector=sector, is_etf=is_etf, search=search)
+    total = await count_krx_stock_master(market=market, sector=sector, is_etf=is_etf, search=search)
     return {
         "data": stocks,
         "meta": {"page": page, "per_page": per_page, "total": total},
@@ -132,7 +132,7 @@ async def get_stock_detail(
     _: Annotated[dict, Depends(get_current_user)],
 ) -> dict:
     """단일 종목 상세 조회."""
-    stock = await get_stock_master(ticker)
+    stock = await get_krx_stock_master(ticker)
     if not stock:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"종목 '{ticker}'을(를) 찾을 수 없습니다.")
     return stock
@@ -169,12 +169,13 @@ async def get_sector_heatmap(
     # Cache miss fallback: compute from DB
     rows = await db_fetch(
         """
-        SELECT i.sector,
+        SELECT sm.sector,
                COUNT(*) AS stock_count,
                COALESCE(AVG(o.change_pct), 0) AS avg_change_pct,
-               COALESCE(SUM(i.market_cap), 0) AS total_market_cap,
+               COALESCE(SUM(sm.market_cap), 0) AS total_market_cap,
                COALESCE(SUM(o.volume), 0) AS total_volume
         FROM instruments i
+        LEFT JOIN krx_stock_master sm ON i.ticker = sm.ticker
         LEFT JOIN LATERAL (
             SELECT change_pct, volume
             FROM ohlcv_daily od
@@ -183,9 +184,9 @@ async def get_sector_heatmap(
             LIMIT 1
         ) o ON TRUE
         WHERE i.is_active = TRUE
-          AND i.asset_type = 'stock'
-          AND i.sector IS NOT NULL AND i.sector != ''
-        GROUP BY i.sector
+          AND sm.is_etf = FALSE AND sm.is_etn = FALSE
+          AND sm.sector IS NOT NULL AND sm.sector != ''
+        GROUP BY sm.sector
         ORDER BY total_market_cap DESC
         """
     )
@@ -212,8 +213,8 @@ async def list_sector_stocks(
 ) -> dict:
     """특정 섹터에 속한 종목 목록."""
     offset = (page - 1) * per_page
-    stocks = await list_stock_master(sector=sector, limit=per_page, offset=offset)
-    total = await count_stock_master(sector=sector)
+    stocks = await list_krx_stock_master(sector=sector, limit=per_page, offset=offset)
+    total = await count_krx_stock_master(sector=sector)
     return {
         "data": stocks,
         "meta": {"page": page, "per_page": per_page, "total": total, "sector": sector},
@@ -346,8 +347,8 @@ async def list_etf(
             }
 
     offset = (page - 1) * per_page
-    etfs = await list_stock_master(is_etf=True, search=search, limit=per_page, offset=offset)
-    total = await count_stock_master(is_etf=True, search=search)
+    etfs = await list_krx_stock_master(is_etf=True, search=search, limit=per_page, offset=offset)
+    total = await count_krx_stock_master(is_etf=True, search=search)
     return {
         "data": etfs,
         "meta": {"page": page, "per_page": per_page, "total": total},

@@ -6,7 +6,7 @@ import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-# MacroCollector/StockMasterCollector는 모듈 임포트 시 get_settings()를 호출하므로
+# MacroCollector/KrxStockMasterCollector는 모듈 임포트 시 get_settings()를 호출하므로
 # 최소 필수 env var를 미리 설정
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
@@ -162,23 +162,23 @@ class TestInitDbAdminSeed(unittest.TestCase):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# C3: stock_master 섹터 시딩 로직
+# C3: krx_stock_master 섹터 시딩 로직
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestStockMasterSectorSeeding(unittest.IsolatedAsyncioTestCase):
+class TestKrxStockMasterSectorSeeding(unittest.IsolatedAsyncioTestCase):
     """seed_sector_data()가 sector_map을 빌드하고 update_stock_sectors를 호출."""
 
     async def test_seed_sector_data_calls_update(self) -> None:
         import asyncio
         import pandas as pd
-        from src.agents.stock_master_collector import StockMasterCollector
+        from src.agents.krx_stock_master_collector import KrxStockMasterCollector
 
         fake_df = pd.DataFrame([
             {"Code": "005930", "Name": "삼성전자", "업종명": "전기전자"},
             {"Code": "000660", "Name": "SK하이닉스", "업종명": "전기전자"},
         ])
 
-        collector = StockMasterCollector()
+        collector = KrxStockMasterCollector()
 
         with patch("FinanceDataReader.StockListing", return_value=fake_df):
             sector_map = await asyncio.to_thread(collector._fetch_market_sector_map)
@@ -189,9 +189,9 @@ class TestStockMasterSectorSeeding(unittest.IsolatedAsyncioTestCase):
     async def test_seed_sector_data_empty_df_skips(self) -> None:
         import asyncio
         import pandas as pd
-        from src.agents.stock_master_collector import StockMasterCollector
+        from src.agents.krx_stock_master_collector import KrxStockMasterCollector
 
-        collector = StockMasterCollector()
+        collector = KrxStockMasterCollector()
 
         with patch("FinanceDataReader.StockListing", return_value=pd.DataFrame()):
             sector_map = await asyncio.to_thread(collector._fetch_market_sector_map)

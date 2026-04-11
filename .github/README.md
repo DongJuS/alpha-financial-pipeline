@@ -92,7 +92,7 @@
 ```
 08:00  rl_bootstrap      활성 정책 없으면 학습, 있으면 워밍업
 08:05  predictor_warmup   LLM provider 가용성 확인 + 모듈 캐시
-08:10  stock_master       종목 마스터 수집
+08:10  krx_stock_master       종목 마스터 수집
 08:20  macro_daily        거시경제 지표 수집
 08:30  collector_daily    전종목 일봉 수집
 08:55  index_warmup       지수 데이터 워밍업

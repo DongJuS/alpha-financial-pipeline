@@ -735,10 +735,11 @@ class OrchestratorAgent:
         # 거래량 TOP 20
         volume_rows = await db_fetch(
             """
-            SELECT o.instrument_id AS ticker, i.name,
+            SELECT o.instrument_id AS ticker, sm.name,
                    o.volume AS value, o.change_pct
             FROM ohlcv_daily o
             JOIN instruments i ON o.instrument_id = i.instrument_id
+            LEFT JOIN krx_stock_master sm ON i.ticker = sm.ticker
             WHERE o.traded_at = CURRENT_DATE
               AND o.volume > 0
             ORDER BY o.volume DESC
@@ -761,10 +762,11 @@ class OrchestratorAgent:
         # 상승률 TOP 20
         gainer_rows = await db_fetch(
             """
-            SELECT o.instrument_id AS ticker, i.name,
+            SELECT o.instrument_id AS ticker, sm.name,
                    o.close AS value, o.change_pct
             FROM ohlcv_daily o
             JOIN instruments i ON o.instrument_id = i.instrument_id
+            LEFT JOIN krx_stock_master sm ON i.ticker = sm.ticker
             WHERE o.traded_at = CURRENT_DATE
               AND o.change_pct IS NOT NULL
             ORDER BY o.change_pct DESC
@@ -786,10 +788,11 @@ class OrchestratorAgent:
         # 하락률 TOP 20
         loser_rows = await db_fetch(
             """
-            SELECT o.instrument_id AS ticker, i.name,
+            SELECT o.instrument_id AS ticker, sm.name,
                    o.close AS value, o.change_pct
             FROM ohlcv_daily o
             JOIN instruments i ON o.instrument_id = i.instrument_id
+            LEFT JOIN krx_stock_master sm ON i.ticker = sm.ticker
             WHERE o.traded_at = CURRENT_DATE
               AND o.change_pct IS NOT NULL
             ORDER BY o.change_pct ASC
@@ -851,7 +854,7 @@ async def _main_async(args: argparse.Namespace) -> None:
         tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
     else:
         from src.db.queries import list_tickers
-        instruments = await list_tickers()
+        instruments = await list_tickers(mode="paper")
         tickers = [inst["instrument_id"] for inst in instruments]
         if not tickers:
             logger.error("instruments 테이블에 활성 종목이 없습니다. --tickers 옵션으로 직접 지정하세요.")
