@@ -399,8 +399,10 @@ class TestReconnectionEdgeCases:
             async def __aexit__(self, *args):
                 return False
 
-        # _last_tick_at을 2분 전으로 설정하여 gap 감지
-        collector._last_tick_at = datetime.now() - timedelta(seconds=120)
+        # _last_tick_at을 2분 전으로 설정하여 gap 감지 (KST aware)
+        from zoneinfo import ZoneInfo
+        KST = ZoneInfo("Asia/Seoul")
+        collector._last_tick_at = datetime.now(KST) - timedelta(seconds=120)
 
         with (
             patch("src.agents.collector._realtime.websockets.connect", _FailOnceWS),
