@@ -29,17 +29,16 @@
 
 ## 🔄 다음 작업
 
-### ✅ instruments 경량화 + trading_universe + stock_master 리네임 (코드 완료, K3s 배포 필요)
+### instruments + trading_universe 후속 작업 (코드 완료, 배포·시딩 미완)
 
-**완료 (2026-04-11):**
-1. instruments DDL 경량화 — PK/FK만 남김 (instrument_id, ticker, market_id, is_active)
-2. trading_universe 테이블 신설 — (account_scope, instrument_id) 복합 PK, 모드별 종목 분리
-3. stock_master → krx_stock_master 전체 리네임 (33파일, 183건)
-4. 27개 쿼리 리팩터링 — instruments 메타데이터 → krx_stock_master JOIN
-5. list_tickers(mode="paper") — 모드별 유니버스 반환으로 시그니처 변경
-6. 테스트 2054개 전체 통과
+코드 리팩터링은 완료(PR 대기). 하지만 아직 **실제 DB에 데이터가 없다.**
+시스템이 종목을 찾으려면 아래 3단계가 필요하다:
 
-**남은 작업:** K3s 배포 + DB 마이그레이션 (DDL 변경 반영)
+1. **K3s DB 마이그레이션** — instruments DDL 경량화(컬럼 축소) + trading_universe 테이블 생성 + stock_master → krx_stock_master 테이블 리네임을 실서버 DB에 반영
+2. **instruments 시딩** — krx_stock_master(2,700+ 종목 카탈로그)에서 실제 운용할 종목을 instruments(경량 등록 테이블)에 등록. `scripts/db/seed_all_instruments.py` 실행.
+3. **trading_universe 시딩** — "가상투자 계좌에서 이 종목들을 운용하겠다"는 매핑 데이터를 넣어야 함. 예: `(paper, 005930.KS)`, `(paper, 000660.KS)`. **시드 스크립트 미작성.**
+
+3번이 완료되어야 `list_tickers(mode="paper")`가 종목을 반환하고, Orchestrator/Predictor/RL이 정상 작동한다.
 상세: `.agent/discussions/20260411-instruments-trading-universe-design.md`
 
 ### ✅ 클라우드 배포 전 QA Round 2 (완료, PR #143, #144)
