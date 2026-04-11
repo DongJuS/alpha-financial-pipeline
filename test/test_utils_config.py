@@ -24,10 +24,10 @@ class TestSettings:
             "KIS_IS_PAPER_TRADING": "true",
         }
         env.update(overrides)
-        with patch.dict(os.environ, env, clear=False):
+        with patch.dict(os.environ, env, clear=True):
             from src.utils.config import Settings
 
-            return Settings()
+            return Settings(_env_file=None)
 
     def test_default_values(self):
         s = self._make_settings()
@@ -43,7 +43,7 @@ class TestSettings:
 
         with patch.dict(os.environ, {"JWT_SECRET": "x"}, clear=True):
             with pytest.raises(ValidationError):
-                Settings()
+                Settings(_env_file=None)
 
     def test_jwt_secret_required(self):
         from pydantic import ValidationError
@@ -51,7 +51,7 @@ class TestSettings:
 
         with patch.dict(os.environ, {"DATABASE_URL": "postgresql://x"}, clear=True):
             with pytest.raises(ValidationError):
-                Settings()
+                Settings(_env_file=None)
 
     def test_is_production_property(self):
         s = self._make_settings(NODE_ENV="production")
