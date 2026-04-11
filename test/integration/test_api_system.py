@@ -13,6 +13,8 @@ DB/Redis/S3는 mock으로 대체.
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -47,25 +49,42 @@ def _build_client(*, authenticated: bool = True) -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
+def _overview_patches():
+    """overview 엔드포인트에 필요한 모든 lazy-import 패치를 ExitStack으로 묶어 반환한다."""
+    stack = ExitStack()
+
+    # DB: fetchval, fetchrow (module-level imports)
+    stack.enter_context(patch(f"{_PATCH_PREFIX}.fetchval", new_callable=AsyncMock, return_value=1))
+    stack.enter_context(patch(f"{_PATCH_PREFIX}.fetchrow", new_callable=AsyncMock, return_value=None))
+
+    # Redis: lazy import in function body -> patch at source
+    redis_mock = AsyncMock()
+    redis_mock.ping.return_value = True
+    stack.enter_context(patch("src.utils.redis_client.get_redis", new_callable=AsyncMock, return_value=redis_mock))
+
+    # S3: lazy import in function body -> patch at source
+    stack.enter_context(patch("src.utils.config.get_settings", return_value=SimpleNamespace(s3_bucket_name="test-bucket")))
+    s3_mock = MagicMock()
+    s3_mock.head_bucket.return_value = {}
+    stack.enter_context(patch("src.utils.s3_client._get_s3_client", return_value=s3_mock))
+
+    # KIS: lazy import in function body -> patch at source
+    stack.enter_context(patch("src.services.kis_session.has_kis_credentials", return_value=False))
+
+    # check_heartbeat: lazy import in function body -> patch at source
+    stack.enter_context(patch("src.utils.redis_client.check_heartbeat", new_callable=AsyncMock, return_value=False))
+
+    return stack
+
+
 class TestRootEndpoint:
     """GET / — 루트 엔드포인트 (main.py에 정의, 여기서는 system router 기준)."""
 
     def test_root_returns_ok(self) -> None:
-        """시스템 overview 또는 루트가 정상 응답을 반환한다.
-
-        실제 루트(/)는 main.py에 정의되어 있으므로,
-        여기서는 system router의 overview 엔드포인트를 검증한다.
-        """
-        # system router에 루트 엔드포인트가 없으므로 overview를 대체 검증
-        with patch(f"{_PATCH_PREFIX}.fetchval", new_callable=AsyncMock, return_value=1):
-            with patch(f"{_PATCH_PREFIX}.get_redis", new_callable=AsyncMock) as mock_redis:
-                redis_mock = AsyncMock()
-                redis_mock.ping.return_value = True
-                mock_redis.return_value = redis_mock
-                with patch(f"{_PATCH_PREFIX}.fetchrow", new_callable=AsyncMock, return_value=None):
-                    with patch(f"{_PATCH_PREFIX}.check_heartbeat", new_callable=AsyncMock, return_value=False):
-                        client = _build_client()
-                        resp = client.get(f"{API_PREFIX}/overview")
+        """시스템 overview 또는 루트가 정상 응답을 반환한다."""
+        with _overview_patches():
+            client = _build_client()
+            resp = client.get(f"{API_PREFIX}/overview")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -98,29 +117,11 @@ class TestHealthEndpoint:
 class TestSystemOverview:
     """GET /api/v1/system/overview"""
 
-    @patch(f"{_PATCH_PREFIX}.check_heartbeat", new_callable=AsyncMock, return_value=False)
-    @patch(f"{_PATCH_PREFIX}.fetchrow", new_callable=AsyncMock, return_value=None)
-    def test_get_system_overview(
-        self, mock_fetchrow: AsyncMock, mock_heartbeat: AsyncMock
-    ) -> None:
+    def test_get_system_overview(self) -> None:
         """시스템 개요 정보를 조회한다."""
-        with patch(f"{_PATCH_PREFIX}.fetchval", new_callable=AsyncMock, return_value=1):
-            with patch(f"{_PATCH_PREFIX}.get_redis", new_callable=AsyncMock) as mock_redis:
-                redis_mock = AsyncMock()
-                redis_mock.ping.return_value = True
-                mock_redis.return_value = redis_mock
-
-                # S3 mock
-                with patch(f"{_PATCH_PREFIX}.get_settings") as mock_settings:
-                    mock_settings.return_value = SimpleNamespace(s3_bucket_name="test-bucket")
-                    with patch(f"{_PATCH_PREFIX}._get_s3_client") as mock_s3:
-                        s3_client_mock = MagicMock()
-                        mock_s3.return_value = s3_client_mock
-
-                        # KIS mock
-                        with patch(f"{_PATCH_PREFIX}.has_kis_credentials", return_value=False):
-                            client = _build_client()
-                            resp = client.get(f"{API_PREFIX}/overview")
+        with _overview_patches():
+            client = _build_client()
+            resp = client.get(f"{API_PREFIX}/overview")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -129,11 +130,7 @@ class TestSystemOverview:
         assert "services" in body
         assert "agent_summary" in body
 
-    @patch(f"{_PATCH_PREFIX}.check_heartbeat", new_callable=AsyncMock, return_value=False)
-    @patch(f"{_PATCH_PREFIX}.fetchrow", new_callable=AsyncMock, return_value=None)
-    def test_system_overview_without_auth_rejected(
-        self, mock_fetchrow: AsyncMock, mock_heartbeat: AsyncMock
-    ) -> None:
+    def test_system_overview_without_auth_rejected(self) -> None:
         """인증 없이 시스템 개요를 조회하면 401/403을 반환한다."""
         client = _build_client(authenticated=False)
         resp = client.get(f"{API_PREFIX}/overview")

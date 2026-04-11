@@ -188,20 +188,20 @@ class TestMarketIndex:
 class TestMarketCollect:
     """POST /api/v1/market/collect"""
 
+    @patch("src.services.datalake.store_daily_bars", new_callable=AsyncMock)
     @patch(f"{_PATCH_PREFIX}.upsert_market_data", new_callable=AsyncMock, return_value=5)
     @patch(f"{_PATCH_PREFIX}._collect_fdr_to_db_sync")
     def test_trigger_market_collect(
-        self, mock_collect: AsyncMock, mock_upsert: AsyncMock
+        self, mock_collect: AsyncMock, mock_upsert: AsyncMock, mock_s3_store: AsyncMock
     ) -> None:
         """시장 데이터 수집을 트리거한다."""
         mock_collect.return_value = ([], ["005930"], [])
 
-        with patch(f"{_PATCH_PREFIX}._store_daily_bars", new_callable=AsyncMock):
-            client = _build_client()
-            resp = client.post(
-                f"{API_PREFIX}/collect",
-                json={"tickers": ["005930"], "days": 30},
-            )
+        client = _build_client()
+        resp = client.post(
+            f"{API_PREFIX}/collect",
+            json={"tickers": ["005930"], "days": 30},
+        )
         assert resp.status_code in (200, 202)
         body = resp.json()
         assert isinstance(body, dict)
