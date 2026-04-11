@@ -27,13 +27,32 @@
 
 ## 📊 진행 현황
 
-```
-(완료 항목은 progress-archive.md로 이동됨)
-```
+### ✅ 클라우드 배포 전 QA Round 1 완료 (PR #140, 2026-04-11)
+
+4개 AI QA 에이전트 병렬 작업으로 테스트 커버리지 확대. 46개 파일, 12,846줄 추가.
+
+| Agent | 역할 | 결과 |
+|-------|------|------|
+| 1 | 핵심 트레이딩 (orchestrator/RL/ranking) | ~152개 테스트, 458 passed |
+| 2 | 데이터 파이프라인 (collector/gen/datalake/tick) | ~185개 테스트 |
+| 3 | API & E2E (라우터 통합/보안/에지케이스) | 통합테스트 + E2E |
+| 4 | 인프라 & 유틸 (DB/config/scheduler/LLM/conftest) | ~272개 테스트 |
 
 ---
 
 ## 🔄 다음 작업
+
+### 클라우드 배포 전 QA Round 2 (미착수)
+
+Round 1 품질 검증에서 발견된 미커버 항목 보강. 파티셔닝 문서: `.agent/partition/20260411-cloud-pre-qa-partition.md`
+
+**Agent 1 미커버:**
+- orchestrator: independent portfolio 모드(~90줄), dynamic weight 최적화, `_execute_blended_signals` 직접 테스트
+- RL: `GymTradingEnv` 래퍼, `get_policy_mode` paper/real 분기
+- ranking: `calculate_sector_heatmap`, tie-handling
+- strategy_a/b, portfolio_manager, rl_trading_v2 에지케이스 보강 (Round 1에서 누락 — diff 없음 확인됨)
+
+**Agent 2~4 미커버:** 각 에이전트별 품질 검증 미실시. Round 1과 동일한 4-에이전트 병렬 패턴으로 검증+보강 필요.
 
 ### 로컬 데이터 축적 (진행 중)
 
