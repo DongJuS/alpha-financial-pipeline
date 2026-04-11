@@ -123,6 +123,7 @@ async def validate_daily_loss_allows_when_within_limit() -> dict[str, Any]:
         patch("src.agents.portfolio_manager.set_heartbeat", new=AsyncMock()) as heartbeat_mock,
         patch("src.agents.portfolio_manager.insert_heartbeat", new=AsyncMock()) as insert_hb_mock,
         patch.object(agent, "_is_daily_loss_blocked", new=AsyncMock(return_value=(False, -1.5))),
+        patch.object(agent, "_check_rule_based_exits", new=AsyncMock(return_value=[])),
         patch.object(agent, "process_signal", new=AsyncMock(return_value=expected_order)) as process_signal_mock,
     ):
         orders = await agent.process_predictions([signal])
