@@ -253,7 +253,7 @@ function OverviewTab() {
               섹터 데이터가 아직 준비되지 않았습니다.
             </p>
             <p className="mt-1 text-xs" style={{ color: "var(--text-tertiary)" }}>
-              stock_master 테이블에 섹터/업종 데이터가 시딩되면 히트맵이 표시됩니다.
+              krx_stock_master 테이블에 섹터/업종 데이터가 시딩되면 히트맵이 표시됩니다.
             </p>
           </div>
         )}

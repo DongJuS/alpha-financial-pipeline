@@ -159,7 +159,7 @@ def normalize_list(tickers: list[str], market: Optional[str] = None) -> list[str
 async def normalize_with_db(ticker: str) -> str:
     """DB의 instruments 테이블을 조회하여 정규화합니다.
 
-    instruments에 없으면 stock_master를 폴백으로 조회합니다.
+    instruments에 없으면 krx_stock_master를 폴백으로 조회합니다.
     """
     ticker = ticker.strip()
 
@@ -172,9 +172,9 @@ async def normalize_with_db(ticker: str) -> str:
     try:
         from src.utils.db_client import fetchrow
 
-        # instruments 테이블 우선 조회 (raw_code → instrument_id)
+        # instruments 테이블 우선 조회 (ticker → instrument_id)
         row = await fetchrow(
-            "SELECT instrument_id FROM instruments WHERE raw_code = $1 AND is_active = TRUE",
+            "SELECT instrument_id FROM instruments WHERE ticker = $1 AND is_active = TRUE",
             ticker,
         )
         if row:
@@ -182,9 +182,9 @@ async def normalize_with_db(ticker: str) -> str:
             _cache[ticker] = canonical
             return canonical
 
-        # 폴백: stock_master에서 market 조회
+        # 폴백: krx_stock_master에서 market 조회
         row = await fetchrow(
-            "SELECT ticker, market FROM stock_master WHERE ticker = $1",
+            "SELECT ticker, market FROM krx_stock_master WHERE ticker = $1",
             ticker,
         )
         if row:
