@@ -149,8 +149,8 @@ class TestGetSettings:
         s1 = get_settings()
         get_settings.cache_clear()
         s2 = get_settings()
-        # 새 인스턴스이므로 is가 아닐 수 있음
-        assert s1 is not s2 or True  # 환경에 따라 동일할 수 있음
+        # cache_clear 후 새 호출은 새 인스턴스를 생성해야 함
+        assert s1 is not s2
 
 
 class TestFreeStandingHelpers:
@@ -224,3 +224,93 @@ class TestFreeStandingHelpers:
             "kis_account_number": "",
         })()
         assert has_kis_credentials(mock_settings, "paper", require_account_number=True) is False
+
+
+# ── Config 에지케이스 (Agent 4 QA Round 2) ────────────────────────────────────
+
+
+class TestSettingsEdgeCases:
+    """Settings: 환경변수 누락, 잘못된 타입, 기본값 fallback."""
+
+    def _make_settings(self, **overrides):
+        env = {
+            "DATABASE_URL": "postgresql://test:test@localhost:5432/test_db",
+            "JWT_SECRET": "test-jwt-secret-for-config-test",
+            "REDIS_URL": "redis://localhost:6379/0",
+            "KIS_IS_PAPER_TRADING": "true",
+        }
+        env.update(overrides)
+        with patch.dict(os.environ, env, clear=True):
+            from src.utils.config import Settings
+            return Settings(_env_file=None)
+
+    def test_port_custom_value(self):
+        """PORT 환경변수 커스텀 값."""
+        s = self._make_settings(PORT="9000")
+        assert s.port == 9000
+
+    def test_log_level_default(self):
+        """LOG_LEVEL 기본값은 INFO."""
+        s = self._make_settings()
+        assert s.log_level == "INFO"
+
+    def test_log_level_custom(self):
+        """LOG_LEVEL 커스텀 값."""
+        s = self._make_settings(LOG_LEVEL="DEBUG")
+        assert s.log_level == "DEBUG"
+
+    def test_market_hours_enforced_default_true(self):
+        """MARKET_HOURS_ENFORCED 기본값은 True."""
+        s = self._make_settings()
+        assert s.market_hours_enforced is True
+
+    def test_market_hours_enforced_false(self):
+        s = self._make_settings(MARKET_HOURS_ENFORCED="false")
+        assert s.market_hours_enforced is False
+
+    def test_virtual_broker_defaults(self):
+        """Virtual broker 관련 기본값 확인."""
+        s = self._make_settings()
+        assert s.virtual_slippage_bps == 5
+        assert s.virtual_fill_delay_max_sec == 2.0
+        assert s.virtual_partial_fill_enabled is False
+
+    def test_llm_cli_timeout_below_minimum_rejected(self):
+        """LLM_CLI_TIMEOUT_SECONDS < 5이면 ValidationError."""
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            self._make_settings(LLM_CLI_TIMEOUT_SECONDS="2")
+
+    def test_llm_cli_timeout_above_maximum_rejected(self):
+        """LLM_CLI_TIMEOUT_SECONDS > 600이면 ValidationError."""
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            self._make_settings(LLM_CLI_TIMEOUT_SECONDS="700")
+
+    def test_kis_scope_helpers_paper_fallback(self):
+        """paper scope 키가 없으면 기본 키로 폴백."""
+        s = self._make_settings(
+            KIS_APP_KEY="default_key",
+            KIS_APP_SECRET="default_secret",
+            KIS_ACCOUNT_NUMBER="default_account",
+        )
+        assert s.kis_app_key_for_scope("paper") == "default_key"
+        assert s.kis_app_secret_for_scope("paper") == "default_secret"
+        assert s.kis_account_number_for_scope("paper") == "default_account"
+
+    def test_kis_scope_helpers_real_fallback(self):
+        """real scope 키가 없으면 기본 키로 폴백."""
+        s = self._make_settings(
+            KIS_APP_KEY="default_key",
+            KIS_APP_SECRET="default_secret",
+            KIS_ACCOUNT_NUMBER="default_account",
+        )
+        assert s.kis_app_key_for_scope("real") == "default_key"
+        assert s.kis_app_secret_for_scope("real") == "default_secret"
+        assert s.kis_account_number_for_scope("real") == "default_account"
+
+    def test_extra_env_vars_ignored(self):
+        """알 수 없는 환경변수는 무시 (extra='ignore')."""
+        s = self._make_settings(UNKNOWN_RANDOM_VAR="something")
+        # 에러 없이 정상 생성
+        assert s.port == 8000
