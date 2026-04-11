@@ -128,6 +128,7 @@ Cluster Secret 은 SOPS + age 로 관리한다 (`k8s/secrets/*.enc.yaml`).
 
 - 개발 명령어: `docs/DEV_COMMANDS.md`
 - Swagger / OpenAPI: `docs/SWAGGER.md`
+- DB 테이블 전체 목록: `docs/DATABASE_TABLES.md` → 상세: `docs/db/`
 - 환경 변수 템플릿: `.env.example`
 - 트러블슈팅 이력: `troubleshooting/MEMORY.md`
 

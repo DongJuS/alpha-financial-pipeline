@@ -110,7 +110,7 @@
 - **구현:**
   - `db_client.py`: `executemany()` 헬퍼 (chunk_size=5,000 자동 분할)
   - `queries.py`: `upsert_market_data()` 전환
-  - `marketplace_queries.py`: 4개 함수 전환 (stock_master/theme/macro/rankings)
+  - `marketplace_queries.py`: 4개 함수 전환 (krx_stock_master/theme/macro/rankings)
   - `collector.py`: `_tick_buffer` + `_flush_tick_buffer()` (100건 또는 1초 주기)
 - **AI 합의:** GitHub Copilot + Claude Opus 모두 Option A(executemany) 추천. UNNEST(Option B)는 복잡도 대비 이점 미미, COPY(Option C)는 upsert 불가로 부적합.
 

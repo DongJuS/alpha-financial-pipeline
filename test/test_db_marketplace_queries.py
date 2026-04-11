@@ -30,31 +30,31 @@ class FakeRecord:
         return self._d[k]
 
 
-# ── upsert_stock_master ─────────────────────────────────────────────────────
+# ── upsert_krx_stock_master ─────────────────────────────────────────────────────
 
 
-class TestUpsertStockMaster:
+class TestUpsertKrxStockMaster:
     @pytest.mark.asyncio
     async def test_empty_list_returns_zero(self):
-        from src.db.marketplace_queries import upsert_stock_master
+        from src.db.marketplace_queries import upsert_krx_stock_master
 
-        result = await upsert_stock_master([])
+        result = await upsert_krx_stock_master([])
         assert result == 0
 
     @pytest.mark.asyncio
     async def test_upsert_calls_executemany(self):
-        from src.db.marketplace_queries import upsert_stock_master
-        from src.db.models import StockMasterRecord
+        from src.db.marketplace_queries import upsert_krx_stock_master
+        from src.db.models import KrxStockMasterRecord
 
         records = [
-            StockMasterRecord(
+            KrxStockMasterRecord(
                 ticker="005930",
                 name="삼성전자",
                 market="KOSPI",
                 sector="반도체",
                 market_cap=500_000_000_000,
             ),
-            StockMasterRecord(
+            KrxStockMasterRecord(
                 ticker="000660",
                 name="SK하이닉스",
                 market="KOSPI",
@@ -63,12 +63,12 @@ class TestUpsertStockMaster:
         ]
 
         with patch("src.db.marketplace_queries.executemany", new_callable=AsyncMock) as mock_exec:
-            result = await upsert_stock_master(records)
+            result = await upsert_krx_stock_master(records)
 
         assert result == 2
         mock_exec.assert_awaited_once()
         sql = mock_exec.call_args.args[0]
-        assert "stock_master" in sql
+        assert "krx_stock_master" in sql
         assert "ON CONFLICT (ticker)" in sql
 
 
@@ -101,13 +101,13 @@ class TestUpdateStockSectors:
         assert len(args_list) == 1  # only 005930 passes the filter
 
 
-# ── get_stock_master ────────────────────────────────────────────────────────
+# ── get_krx_stock_master ────────────────────────────────────────────────────────
 
 
 class TestGetStockMaster:
     @pytest.mark.asyncio
     async def test_returns_dict_when_found(self):
-        from src.db.marketplace_queries import get_stock_master
+        from src.db.marketplace_queries import get_krx_stock_master
 
         data = {
             "ticker": "005930",
@@ -125,31 +125,31 @@ class TestGetStockMaster:
         }
 
         with patch("src.db.marketplace_queries.fetchrow", new_callable=AsyncMock, return_value=FakeRecord(data)):
-            result = await get_stock_master("005930")
+            result = await get_krx_stock_master("005930")
 
         assert result is not None
         assert result["ticker"] == "005930"
 
     @pytest.mark.asyncio
     async def test_returns_none_when_not_found(self):
-        from src.db.marketplace_queries import get_stock_master
+        from src.db.marketplace_queries import get_krx_stock_master
 
         with patch("src.db.marketplace_queries.fetchrow", new_callable=AsyncMock, return_value=None):
-            result = await get_stock_master("UNKNOWN")
+            result = await get_krx_stock_master("UNKNOWN")
 
         assert result is None
 
 
-# ── list_stock_master ───────────────────────────────────────────────────────
+# ── list_krx_stock_master ───────────────────────────────────────────────────────
 
 
-class TestListStockMaster:
+class TestListKrxStockMaster:
     @pytest.mark.asyncio
     async def test_no_filters(self):
-        from src.db.marketplace_queries import list_stock_master
+        from src.db.marketplace_queries import list_krx_stock_master
 
         with patch("src.db.marketplace_queries.fetch", new_callable=AsyncMock, return_value=[]) as mock_f:
-            result = await list_stock_master()
+            result = await list_krx_stock_master()
 
         assert result == []
         sql = mock_f.call_args.args[0]
@@ -157,30 +157,30 @@ class TestListStockMaster:
 
     @pytest.mark.asyncio
     async def test_market_filter(self):
-        from src.db.marketplace_queries import list_stock_master
+        from src.db.marketplace_queries import list_krx_stock_master
 
         with patch("src.db.marketplace_queries.fetch", new_callable=AsyncMock, return_value=[]) as mock_f:
-            await list_stock_master(market="KOSPI")
+            await list_krx_stock_master(market="KOSPI")
 
         sql = mock_f.call_args.args[0]
         assert "market = $" in sql
 
     @pytest.mark.asyncio
     async def test_search_filter(self):
-        from src.db.marketplace_queries import list_stock_master
+        from src.db.marketplace_queries import list_krx_stock_master
 
         with patch("src.db.marketplace_queries.fetch", new_callable=AsyncMock, return_value=[]) as mock_f:
-            await list_stock_master(search="삼성")
+            await list_krx_stock_master(search="삼성")
 
         sql = mock_f.call_args.args[0]
         assert "ILIKE" in sql
 
     @pytest.mark.asyncio
     async def test_limit_and_offset(self):
-        from src.db.marketplace_queries import list_stock_master
+        from src.db.marketplace_queries import list_krx_stock_master
 
         with patch("src.db.marketplace_queries.fetch", new_callable=AsyncMock, return_value=[]) as mock_f:
-            await list_stock_master(limit=50, offset=10)
+            await list_krx_stock_master(limit=50, offset=10)
 
         args = mock_f.call_args.args
         # limit and offset are the last two positional args
@@ -188,25 +188,25 @@ class TestListStockMaster:
         assert 10 in args
 
 
-# ── count_stock_master ──────────────────────────────────────────────────────
+# ── count_krx_stock_master ──────────────────────────────────────────────────────
 
 
 class TestCountStockMaster:
     @pytest.mark.asyncio
     async def test_returns_int(self):
-        from src.db.marketplace_queries import count_stock_master
+        from src.db.marketplace_queries import count_krx_stock_master
 
         with patch("src.db.marketplace_queries.fetchval", new_callable=AsyncMock, return_value=1500):
-            result = await count_stock_master()
+            result = await count_krx_stock_master()
 
         assert result == 1500
 
     @pytest.mark.asyncio
     async def test_returns_zero_for_none(self):
-        from src.db.marketplace_queries import count_stock_master
+        from src.db.marketplace_queries import count_krx_stock_master
 
         with patch("src.db.marketplace_queries.fetchval", new_callable=AsyncMock, return_value=None):
-            result = await count_stock_master()
+            result = await count_krx_stock_master()
 
         assert result == 0
 
@@ -472,17 +472,17 @@ class TestWatchlistCRUD:
 # ── 마켓플레이스 쿼리 에지케이스 (Agent 4 QA Round 2) ─────────────────────────
 
 
-class TestUpsertStockMasterEdgeCases:
-    """upsert_stock_master: COALESCE 보호, NULL 필드."""
+class TestUpsertKrxStockMasterEdgeCases:
+    """upsert_krx_stock_master: COALESCE 보호, NULL 필드."""
 
     @pytest.mark.asyncio
     async def test_null_optional_fields(self):
         """sector, industry, market_cap 등이 None이어도 정상 upsert."""
-        from src.db.marketplace_queries import upsert_stock_master
-        from src.db.models import StockMasterRecord
+        from src.db.marketplace_queries import upsert_krx_stock_master
+        from src.db.models import KrxStockMasterRecord
 
         records = [
-            StockMasterRecord(
+            KrxStockMasterRecord(
                 ticker="999999",
                 name="테스트종목",
                 market="KOSDAQ",
@@ -493,7 +493,7 @@ class TestUpsertStockMasterEdgeCases:
         ]
 
         with patch("src.db.marketplace_queries.executemany", new_callable=AsyncMock) as mock_exec:
-            result = await upsert_stock_master(records)
+            result = await upsert_krx_stock_master(records)
 
         assert result == 1
         args_list = mock_exec.call_args.args[1]
@@ -506,17 +506,17 @@ class TestUpsertStockMasterEdgeCases:
     @pytest.mark.asyncio
     async def test_sql_uses_coalesce_on_update(self):
         """ON CONFLICT UPDATE에 COALESCE가 사용되어 기존 값 보호."""
-        from src.db.marketplace_queries import upsert_stock_master
-        from src.db.models import StockMasterRecord
+        from src.db.marketplace_queries import upsert_krx_stock_master
+        from src.db.models import KrxStockMasterRecord
 
-        records = [StockMasterRecord(ticker="005930", name="삼성전자", market="KOSPI")]
+        records = [KrxStockMasterRecord(ticker="005930", name="삼성전자", market="KOSPI")]
 
         with patch("src.db.marketplace_queries.executemany", new_callable=AsyncMock) as mock_exec:
-            await upsert_stock_master(records)
+            await upsert_krx_stock_master(records)
 
         sql = mock_exec.call_args.args[0]
-        assert "COALESCE(EXCLUDED.sector, stock_master.sector)" in sql
-        assert "COALESCE(EXCLUDED.industry, stock_master.industry)" in sql
+        assert "COALESCE(EXCLUDED.sector, krx_stock_master.sector)" in sql
+        assert "COALESCE(EXCLUDED.industry, krx_stock_master.industry)" in sql
 
 
 class TestUpdateStockSectorsEdgeCases:
@@ -563,20 +563,20 @@ class TestUpdateStockSectorsEdgeCases:
             await update_stock_sectors({"005930": ("반도체", "메모리")})
 
         sql = mock_exec.call_args.args[0]
-        assert "COALESCE(stock_master.sector" in sql
-        assert "COALESCE(stock_master.industry" in sql
+        assert "COALESCE(krx_stock_master.sector" in sql
+        assert "COALESCE(krx_stock_master.industry" in sql
 
 
-class TestListStockMasterEdgeCases:
-    """list_stock_master: 다중 필터 조합."""
+class TestListKrxStockMasterEdgeCases:
+    """list_krx_stock_master: 다중 필터 조합."""
 
     @pytest.mark.asyncio
     async def test_multiple_filters_combined(self):
         """market + sector + is_etf + search 동시 적용."""
-        from src.db.marketplace_queries import list_stock_master
+        from src.db.marketplace_queries import list_krx_stock_master
 
         with patch("src.db.marketplace_queries.fetch", new_callable=AsyncMock, return_value=[]) as mock_f:
-            await list_stock_master(market="KOSPI", sector="반도체", is_etf=False, search="삼성")
+            await list_krx_stock_master(market="KOSPI", sector="반도체", is_etf=False, search="삼성")
 
         sql = mock_f.call_args.args[0]
         assert "market = $" in sql
@@ -587,10 +587,10 @@ class TestListStockMasterEdgeCases:
     @pytest.mark.asyncio
     async def test_tier_filter(self):
         """tier 필터가 적용되는지 확인."""
-        from src.db.marketplace_queries import list_stock_master
+        from src.db.marketplace_queries import list_krx_stock_master
 
         with patch("src.db.marketplace_queries.fetch", new_callable=AsyncMock, return_value=[]) as mock_f:
-            await list_stock_master(tier="core")
+            await list_krx_stock_master(tier="core")
 
         sql = mock_f.call_args.args[0]
         assert "tier = $" in sql
