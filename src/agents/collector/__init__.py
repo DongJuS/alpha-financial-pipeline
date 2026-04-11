@@ -27,7 +27,9 @@ except ImportError:
 
 
 class CollectorAgent(_CollectorBase, _DailyMixin, _RealtimeMixin, _HistoricalMixin):  # type: ignore[misc]
-    pass
+    async def run(self, **kwargs) -> None:
+        """스케줄러 호출용 진입점. 일봉 수집을 실행한다."""
+        await self.collect_daily_bars(**kwargs)
 
 
 __all__ = ["CollectorAgent"]
