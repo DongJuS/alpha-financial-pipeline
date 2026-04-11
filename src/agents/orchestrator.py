@@ -182,14 +182,15 @@ class OrchestratorAgent:
             return {}
         return await self.registry.run_all(tickers)
 
-    async def run_cycle(self, tickers: list[str]) -> dict:
-        """한 사이클 실행: 수집 -> 전략 실행 -> 블렌딩/독립 처리 -> 주문 실행.
+    async def run_cycle(self, tickers: list[str], screener_kwargs: dict | None = None) -> dict:
+        """한 사이클 실행: 수집 -> 스크리너 -> 전략 실행 -> 블렌딩/독립 처리 -> 주문 실행.
 
         장외 시간에는 cycle을 스킵합니다 (LLM 호출 낭비 방지).
         GEN_API_URL이 설정된 경우(gen 모드)에는 장외에도 실행합니다.
 
         Args:
             tickers: 분석할 티커 목록
+            screener_kwargs: 스크리너 파라미터 (None이면 스크리너 스킵)
 
         Returns:
             사이클 실행 결과 dict
@@ -197,6 +198,28 @@ class OrchestratorAgent:
         from src.utils.market_hours import is_market_open_now
         if not await is_market_open_now():
             return {"collected": 0, "predicted": 0, "orders": 0, "skipped": "market_closed"}
+
+        original_ticker_count = len(tickers)
+
+        # ── 스크리너: 일봉 기반 종목 필터링 ──
+        if screener_kwargs:
+            from src.agents.screener import screen_tickers
+            screened = await screen_tickers(tickers, **screener_kwargs)
+            if screened:
+                logger.info(
+                    "스크리너: %d → %d 종목 통과: %s",
+                    len(tickers), len(screened), screened,
+                )
+                tickers = screened
+            else:
+                logger.info("스크리너: 조건 충족 종목 없음 — 전략 실행 스킵")
+                return {
+                    "collected": 0,
+                    "predicted": 0,
+                    "orders": 0,
+                    "skipped": "screener_no_match",
+                    "screener_input": original_ticker_count,
+                }
 
         started = datetime.now(timezone.utc)
         try:
@@ -421,6 +444,8 @@ class OrchestratorAgent:
                 "blend_meta": blend_meta if not self.independent_portfolio else None,
                 "risk_violations": risk_violations or None,
                 "promotion_alerts": promotion_alerts or None,
+                "screener_input": original_ticker_count if screener_kwargs else None,
+                "screened_count": len(tickers) if screener_kwargs else None,
             }
 
             await insert_heartbeat(
