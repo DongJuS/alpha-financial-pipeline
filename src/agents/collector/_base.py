@@ -48,6 +48,7 @@ class _CollectorBase:
         self._tick_batch_size: int = self.settings.ws_tick_batch_size
         self._tick_flush_interval: float = self.settings.ws_tick_flush_interval
         self._last_tick_at: datetime | None = None  # 마지막 수신 틱 시각
+        self._realtime_task: asyncio.Task | None = None  # 스케줄러 헬스체크용
 
     def _account_scope(self) -> str:
         return "paper" if self.settings.kis_is_paper_trading else "real"
