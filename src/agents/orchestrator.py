@@ -822,11 +822,15 @@ async def _main_async(args: argparse.Namespace) -> None:
     orchestrator = OrchestratorAgent(
         independent_portfolio=args.independent_portfolio,
     )
-    tickers = (
-        [t.strip() for t in args.tickers.split(",") if t.strip()]
-        if args.tickers
-        else ["005930", "000660"]  # 기본값: 삼성전자, SK하이닉스
-    )
+    if args.tickers:
+        tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+    else:
+        from src.db.queries import list_tickers
+        instruments = await list_tickers()
+        tickers = [inst["instrument_id"] for inst in instruments]
+        if not tickers:
+            logger.error("instruments 테이블에 활성 종목이 없습니다. --tickers 옵션으로 직접 지정하세요.")
+            return
 
     # ── Strategy Runner 등록 ──────────────────────────────────────────────
     # 활성화할 전략을 결정합니다. --strategies 미지정 시 A/B/RL 3전략 등록.
@@ -884,7 +888,7 @@ def main() -> None:
     parser.add_argument(
         "--tickers",
         default="",
-        help="쉼표 구분 티커 목록 (기본: 005930,000660)",
+        help="쉼표 구분 티커 목록 (미지정 시 instruments DB에서 조회)",
     )
     parser.add_argument(
         "--independent-portfolio",
