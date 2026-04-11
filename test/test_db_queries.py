@@ -478,3 +478,219 @@ class TestFetchTradeRows:
 
         args = mock_f.call_args.args
         assert args[1] == "paper"
+
+
+# ── DB 쿼리 에지케이스 (Agent 4 QA Round 2) ──────────────────────────────────
+
+
+class TestUpsertMarketDataEdgeCases:
+    """upsert_market_data 에지케이스: 빈 결과, 대량 데이터 등."""
+
+    @pytest.mark.asyncio
+    async def test_single_point_tuple_contains_all_fields(self):
+        """executemany에 전달되는 튜플이 9개 필드를 갖는지 확인."""
+        from src.db.models import MarketDataPoint
+        from src.db.queries import upsert_market_data
+
+        point = MarketDataPoint(
+            instrument_id="005930.KS",
+            name="삼성전자",
+            market="KOSPI",
+            traded_at=date(2026, 4, 10),
+            open=70000,
+            high=71000,
+            low=69000,
+            close=70500,
+            volume=100000,
+            change_pct=1.5,
+            adj_close=70500,
+        )
+
+        with patch("src.db.queries.executemany", new_callable=AsyncMock) as mock_exec:
+            await upsert_market_data([point])
+
+        args_list = mock_exec.call_args.args[1]
+        row = args_list[0]
+        assert len(row) == 9  # instrument_id, traded_at, open, high, low, close, volume, change_pct, adj_close
+        assert row[0] == "005930.KS"
+        assert row[1] == date(2026, 4, 10)
+        assert row[6] == 100000  # volume
+
+    @pytest.mark.asyncio
+    async def test_large_batch_returns_correct_count(self):
+        """대량 데이터 배치에서도 정확한 건수 반환."""
+        from src.db.models import MarketDataPoint
+        from src.db.queries import upsert_market_data
+
+        points = [
+            MarketDataPoint(
+                instrument_id=f"{i:06d}.KS",
+                name=f"종목{i}",
+                market="KOSPI",
+                traded_at=date(2026, 4, 10),
+                open=10000,
+                high=11000,
+                low=9000,
+                close=10500,
+                volume=1000,
+            )
+            for i in range(100)
+        ]
+
+        with patch("src.db.queries.executemany", new_callable=AsyncMock):
+            result = await upsert_market_data(points)
+
+        assert result == 100
+
+
+class TestGetOhlcvBarsEdgeCases:
+    """get_ohlcv_bars 에지케이스: 유효/무효 interval, 결과 매핑."""
+
+    @pytest.mark.asyncio
+    async def test_unsupported_intervals(self):
+        """지원하지 않는 다양한 interval 문자열이 모두 ValueError를 발생."""
+        from src.db.queries import get_ohlcv_bars
+
+        for bad_interval in ["2min", "30min", "daily", "1sec", ""]:
+            with pytest.raises(ValueError, match="지원하지 않는 interval"):
+                await get_ohlcv_bars(
+                    "005930.KS", bad_interval,
+                    datetime(2026, 4, 10, 9, 0), datetime(2026, 4, 10, 15, 0),
+                )
+
+    @pytest.mark.asyncio
+    async def test_multiple_rows_returned_in_order(self):
+        """여러 행이 올바른 순서로 매핑되는지 확인."""
+        from src.db.queries import get_ohlcv_bars
+
+        rows = [
+            FakeRecord({"bucket": datetime(2026, 4, 10, 10, i), "open": 100+i, "high": 110, "low": 90, "close": 105, "volume": 500})
+            for i in range(3)
+        ]
+
+        with patch("src.db.queries.fetch", new_callable=AsyncMock, return_value=rows):
+            result = await get_ohlcv_bars("005930.KS", "1min", datetime(2026, 4, 10, 9, 0), datetime(2026, 4, 10, 15, 0))
+
+        assert len(result) == 3
+        assert result[0]["open"] == 100
+        assert result[2]["open"] == 102
+        assert all("timestamp_kst" in r and "volume" in r for r in result)
+
+
+class TestFetchRecentMarketDataEdgeCases:
+    """fetch_recent_market_data 에지케이스: 빈 결과, 기본 days."""
+
+    @pytest.mark.asyncio
+    async def test_default_days_is_30(self):
+        """days=None일 때 기본값 30일이 적용."""
+        from src.db.queries import fetch_recent_market_data
+
+        with patch("src.db.queries.fetch", new_callable=AsyncMock, return_value=[]) as mock_f:
+            await fetch_recent_market_data("005930.KS")
+
+        args = mock_f.call_args.args
+        assert args[2] == 30  # days 파라미터
+
+    @pytest.mark.asyncio
+    async def test_with_limit_parameter(self):
+        """limit 파라미터가 SQL에 반영되는지 확인."""
+        from src.db.queries import fetch_recent_market_data
+
+        with patch("src.db.queries.fetch", new_callable=AsyncMock, return_value=[]) as mock_f:
+            await fetch_recent_market_data("005930.KS", days=7, limit=5)
+
+        sql = mock_f.call_args.args[0]
+        assert "LIMIT" in sql
+        args = mock_f.call_args.args
+        assert 5 in args  # limit value in params
+
+    @pytest.mark.asyncio
+    async def test_empty_result_returns_empty_list(self):
+        """DB에 데이터가 없을 때 빈 리스트 반환."""
+        from src.db.queries import fetch_recent_market_data
+
+        with patch("src.db.queries.fetch", new_callable=AsyncMock, return_value=[]):
+            result = await fetch_recent_market_data("NONEXISTENT")
+
+        assert result == []
+
+
+class TestSavePositionEdgeCases:
+    """save_position 에지케이스: quantity 경계, scope 정규화."""
+
+    @pytest.mark.asyncio
+    async def test_negative_quantity_deletes(self):
+        """음수 quantity도 삭제 동작을 트리거."""
+        from src.db.queries import save_position
+
+        with patch("src.db.queries.execute", new_callable=AsyncMock) as mock_exec:
+            await save_position(
+                ticker="005930.KS", name="삼성전자",
+                quantity=-1, avg_price=70000, current_price=70500,
+                is_paper=True,
+            )
+
+        sql = mock_exec.call_args.args[0]
+        assert "DELETE" in sql
+
+    @pytest.mark.asyncio
+    async def test_strategy_id_passed_to_upsert(self):
+        """strategy_id가 있을 때 INSERT 파라미터에 포함."""
+        from src.db.queries import save_position
+
+        with patch("src.db.queries.execute", new_callable=AsyncMock) as mock_exec:
+            await save_position(
+                ticker="005930.KS", name="삼성전자",
+                quantity=10, avg_price=70000, current_price=70500,
+                is_paper=True, strategy_id="A",
+            )
+
+        args = mock_exec.call_args.args
+        assert "A" in args  # strategy_id가 파라미터에 포함
+
+
+class TestPortfolioConfigEdgeCases:
+    """get_portfolio_config 에지케이스: NULL 필드 기본값 처리."""
+
+    @pytest.mark.asyncio
+    async def test_missing_enable_fields_inferred(self):
+        """enable_paper_trading/enable_real_trading이 None이면 is_paper_trading에서 유추."""
+        from src.db.queries import get_portfolio_config
+
+        data = {
+            "strategy_blend_ratio": 0.5,
+            "max_position_pct": 20,
+            "daily_loss_limit_pct": 3,
+            "is_paper_trading": True,
+            "enable_paper_trading": None,
+            "enable_real_trading": None,
+            "primary_account_scope": "",
+        }
+
+        with patch("src.db.queries.fetchrow", new_callable=AsyncMock, return_value=FakeRecord(data)):
+            result = await get_portfolio_config()
+
+        assert result["enable_paper_trading"] is True
+        assert result["enable_real_trading"] is False
+        assert result["primary_account_scope"] == "paper"
+
+    @pytest.mark.asyncio
+    async def test_real_mode_config(self):
+        """primary_account_scope=real 설정 확인."""
+        from src.db.queries import get_portfolio_config
+
+        data = {
+            "strategy_blend_ratio": 0.6,
+            "max_position_pct": 25,
+            "daily_loss_limit_pct": 5,
+            "is_paper_trading": False,
+            "enable_paper_trading": True,
+            "enable_real_trading": True,
+            "primary_account_scope": "real",
+        }
+
+        with patch("src.db.queries.fetchrow", new_callable=AsyncMock, return_value=FakeRecord(data)):
+            result = await get_portfolio_config()
+
+        assert result["primary_account_scope"] == "real"
+        assert result["is_paper_trading"] is False

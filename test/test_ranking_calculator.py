@@ -386,3 +386,168 @@ class TestRankingEdgeCases:
         rankings = await calc.calculate_volume_ranking(date(2026, 4, 11))
         assert len(rankings) == 1
         assert rankings[0].rank == 1
+
+
+# ── Sector Heatmap Tests ──────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.strategy
+class TestSectorHeatmap:
+    """calculate_sector_heatmap 테스트."""
+
+    @patch("src.agents.ranking_calculator.get_redis", new_callable=AsyncMock)
+    @patch("src.agents.ranking_calculator.fetch", new_callable=AsyncMock)
+    async def test_sector_heatmap_returns_data(self, mock_fetch, mock_redis):
+        """섹터 히트맵이 올바른 구조로 반환되는지 검증."""
+        mock_fetch.return_value = [
+            {
+                "sector": "반도체",
+                "stock_count": 10,
+                "avg_change_pct": 2.5,
+                "total_market_cap": 500_000_000_000,
+                "total_volume": 50_000_000,
+            },
+            {
+                "sector": "바이오",
+                "stock_count": 15,
+                "avg_change_pct": -1.2,
+                "total_market_cap": 200_000_000_000,
+                "total_volume": 30_000_000,
+            },
+        ]
+        mock_redis_instance = AsyncMock()
+        mock_redis.return_value = mock_redis_instance
+
+        calc = RankingCalculator()
+        result = await calc.calculate_sector_heatmap(date(2026, 4, 11))
+
+        assert "data" in result
+        assert len(result["data"]) == 2
+        assert result["data"][0]["sector"] == "반도체"
+        assert result["data"][0]["stock_count"] == 10
+        assert result["data"][0]["avg_change_pct"] == 2.5
+        assert result["data"][0]["total_market_cap"] == 500_000_000_000
+        assert result["data"][0]["total_volume"] == 50_000_000
+
+    @patch("src.agents.ranking_calculator.get_redis", new_callable=AsyncMock)
+    @patch("src.agents.ranking_calculator.fetch", new_callable=AsyncMock)
+    async def test_sector_heatmap_empty_result(self, mock_fetch, mock_redis):
+        """섹터 데이터가 없으면 빈 리스트."""
+        mock_fetch.return_value = []
+        mock_redis_instance = AsyncMock()
+        mock_redis.return_value = mock_redis_instance
+
+        calc = RankingCalculator()
+        result = await calc.calculate_sector_heatmap(date(2026, 4, 11))
+        assert result["data"] == []
+
+    @patch("src.agents.ranking_calculator.get_redis", new_callable=AsyncMock)
+    @patch("src.agents.ranking_calculator.fetch", new_callable=AsyncMock)
+    async def test_sector_heatmap_cached_in_redis(self, mock_fetch, mock_redis):
+        """히트맵 결과가 Redis에 캐시되는지 검증."""
+        mock_fetch.return_value = [
+            {
+                "sector": "IT",
+                "stock_count": 5,
+                "avg_change_pct": 1.0,
+                "total_market_cap": 100_000_000_000,
+                "total_volume": 10_000_000,
+            },
+        ]
+        mock_redis_instance = AsyncMock()
+        mock_redis.return_value = mock_redis_instance
+
+        calc = RankingCalculator()
+        await calc.calculate_sector_heatmap(date(2026, 4, 11))
+
+        mock_redis_instance.set.assert_awaited_once()
+        call_args = mock_redis_instance.set.call_args
+        assert "sector_heatmap" in call_args.args[0]
+
+    @patch("src.agents.ranking_calculator.get_redis", new_callable=AsyncMock)
+    @patch("src.agents.ranking_calculator.fetch", new_callable=AsyncMock)
+    async def test_sector_heatmap_default_date(self, mock_fetch, mock_redis):
+        """ranking_date 미지정 시 오늘 날짜 사용."""
+        mock_fetch.return_value = []
+        mock_redis_instance = AsyncMock()
+        mock_redis.return_value = mock_redis_instance
+
+        calc = RankingCalculator()
+        result = await calc.calculate_sector_heatmap()
+        assert result["data"] == []
+        mock_fetch.assert_awaited_once()
+
+
+# ── Tie-Handling Tests ────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.strategy
+class TestRankingTieHandling:
+    """동점 시 순위 결정 로직 테스트.
+
+    DB에서 ORDER BY 로 정렬된 결과가 오면 rank는 enumerate로 순차 부여.
+    동일 값이면 DB 정렬 순서에 따라 rank가 결정됨.
+    """
+
+    @patch("src.agents.ranking_calculator.fetch", new_callable=AsyncMock)
+    async def test_volume_ranking_tied_values(self, mock_fetch):
+        """거래량이 동일한 종목들도 각각 고유 rank를 가짐."""
+        mock_fetch.return_value = [
+            {"ticker": "000001", "name": "종목A", "total_volume": 1_000_000, "change_pct": 1.0},
+            {"ticker": "000002", "name": "종목B", "total_volume": 1_000_000, "change_pct": 2.0},
+            {"ticker": "000003", "name": "종목C", "total_volume": 1_000_000, "change_pct": 3.0},
+        ]
+        calc = RankingCalculator()
+        rankings = await calc.calculate_volume_ranking(date(2026, 4, 11))
+
+        assert len(rankings) == 3
+        ranks = [r.rank for r in rankings]
+        assert ranks == [1, 2, 3]  # 순차적 rank 부여
+
+    @patch("src.agents.ranking_calculator.fetch", new_callable=AsyncMock)
+    async def test_gainer_ranking_tied_change_pct(self, mock_fetch):
+        """change_pct가 동일한 종목들도 순차 rank."""
+        mock_fetch.return_value = [
+            {"ticker": "000001", "name": "종목A", "change_pct": 5.0},
+            {"ticker": "000002", "name": "종목B", "change_pct": 5.0},
+        ]
+        calc = RankingCalculator()
+        rankings = await calc.calculate_gainer_ranking(date(2026, 4, 11))
+
+        assert len(rankings) == 2
+        assert rankings[0].rank == 1
+        assert rankings[1].rank == 2
+        # 동일 change_pct 확인
+        assert rankings[0].change_pct == rankings[1].change_pct
+
+    @patch("src.agents.ranking_calculator.fetch", new_callable=AsyncMock)
+    async def test_market_cap_ranking_tied_values(self, mock_fetch):
+        """시가총액이 동일해도 순차 rank."""
+        mock_fetch.return_value = [
+            {"ticker": "000001", "name": "종목A", "market_cap": 1_000_000_000, "change_pct": 1.0},
+            {"ticker": "000002", "name": "종목B", "market_cap": 1_000_000_000, "change_pct": -1.0},
+        ]
+        calc = RankingCalculator()
+        rankings = await calc.calculate_market_cap_ranking(date(2026, 4, 11))
+
+        assert len(rankings) == 2
+        assert rankings[0].rank == 1
+        assert rankings[1].rank == 2
+
+    @patch("src.agents.ranking_calculator.fetch", new_callable=AsyncMock)
+    async def test_loser_ranking_tied_negative_change(self, mock_fetch):
+        """하락률이 동일해도 순차 rank."""
+        mock_fetch.return_value = [
+            {"ticker": "000001", "name": "종목A", "change_pct": -10.0},
+            {"ticker": "000002", "name": "종목B", "change_pct": -10.0},
+            {"ticker": "000003", "name": "종목C", "change_pct": -5.0},
+        ]
+        calc = RankingCalculator()
+        rankings = await calc.calculate_loser_ranking(date(2026, 4, 11))
+
+        assert len(rankings) == 3
+        assert rankings[0].rank == 1
+        assert rankings[1].rank == 2
+        assert rankings[2].rank == 3

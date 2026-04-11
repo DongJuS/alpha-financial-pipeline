@@ -271,3 +271,146 @@ class TestCheckDataExists:
         assert count == 100
         # SQL 쿼리에 instrument_id가 전달됨
         assert mock_fv.call_args[0][1] == "005930.KS"
+
+
+# =============================================================================
+# 에지케이스: 날짜 범위 경계, 데이터 갭, 분봉 빈 응답
+# =============================================================================
+
+
+class TestHistoricalEdgeCases:
+    """_HistoricalMixin 에지 케이스 보강 (Agent 2 QA Round 2)."""
+
+    async def test_same_start_end_date(self, collector):
+        """시작일 == 종료일인 경우 하루치 데이터만 조회."""
+        mock_fdr = MagicMock()
+        dates = pd.date_range("2026-04-11", periods=1, freq="B")
+        mock_fdr.DataReader.return_value = pd.DataFrame(
+            {
+                "Open": [70000],
+                "High": [71000],
+                "Low": [69000],
+                "Close": [70500],
+                "Volume": [1000000],
+            },
+            index=dates,
+        )
+
+        mock_pipe = MagicMock()
+        mock_pipe.set = MagicMock()
+        mock_pipe.lpush = MagicMock()
+        mock_pipe.ltrim = MagicMock()
+        mock_pipe.expire = MagicMock()
+        mock_pipe.execute = AsyncMock(return_value=[True] * 4)
+        redis_mock = AsyncMock()
+        redis_mock.pipeline = MagicMock(return_value=mock_pipe)
+
+        with (
+            patch.object(collector, "_load_fdr", return_value=mock_fdr),
+            patch("src.db.queries.upsert_market_data", new_callable=AsyncMock, return_value=1),
+            patch("src.agents.collector._base.get_redis", new_callable=AsyncMock, return_value=redis_mock),
+        ):
+            points = await collector._fetch_historical_daily(
+                "005930", "2026-04-11", "2026-04-11", "삼성전자", "KOSPI",
+            )
+
+        assert len(points) == 1
+
+    async def test_intraday_empty_output2(self, collector):
+        """분봉 API 응답의 output2가 빈 리스트이면 해당 날짜 건너뜀."""
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"output2": []}
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch.object(collector, "_get_access_token", new_callable=AsyncMock, return_value="token"),
+            patch("src.agents.collector._historical.httpx.AsyncClient", return_value=mock_client),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            points = await collector._fetch_historical_intraday(
+                "005930", "2026-01-02", "2026-01-02", "삼성전자", "KOSPI",
+            )
+
+        assert points == []
+
+    async def test_intraday_multi_day_range(self, collector):
+        """2일 범위 분봉 조회 시 각 날짜별 API 호출."""
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {
+            "output2": [
+                {"stck_oprc": "70000", "stck_hgpr": "71000", "stck_lwpr": "69000",
+                 "stck_prpr": "70500", "cntg_vol": "1000"},
+            ],
+        }
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch.object(collector, "_get_access_token", new_callable=AsyncMock, return_value="token"),
+            patch("src.agents.collector._historical.httpx.AsyncClient", return_value=mock_client),
+            patch("src.db.queries.upsert_market_data", new_callable=AsyncMock, return_value=2),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            points = await collector._fetch_historical_intraday(
+                "005930", "2026-01-02", "2026-01-03", "삼성전자", "KOSPI",
+            )
+
+        assert len(points) == 2  # 2일치
+
+    async def test_intraday_no_app_key_returns_empty(self, collector):
+        """app_key 미설정(None) 시 빈 리스트 반환."""
+        with (
+            patch.object(collector, "_get_access_token", new_callable=AsyncMock, return_value="token"),
+            patch("src.agents.collector._historical.kis_app_key_for_scope", return_value=None),
+            patch("src.agents.collector._historical.kis_app_secret_for_scope", return_value=None),
+        ):
+            points = await collector._fetch_historical_intraday(
+                "005930", "2026-01-02", "2026-01-02", "삼성전자", "KOSPI",
+            )
+        assert points == []
+
+    async def test_historical_daily_change_pct_chain(self, collector):
+        """연속 데이터에서 change_pct가 이전 close 대비 정확히 계산."""
+        mock_fdr = MagicMock()
+        dates = pd.date_range("2026-01-02", periods=3, freq="B")
+        mock_fdr.DataReader.return_value = pd.DataFrame(
+            {
+                "Open": [10000, 10000, 10000],
+                "High": [10500, 10500, 10500],
+                "Low": [9500, 9500, 9500],
+                "Close": [10000, 10500, 10000],
+                "Volume": [100, 100, 100],
+            },
+            index=dates,
+        )
+
+        mock_pipe = MagicMock()
+        mock_pipe.set = MagicMock()
+        mock_pipe.lpush = MagicMock()
+        mock_pipe.ltrim = MagicMock()
+        mock_pipe.expire = MagicMock()
+        mock_pipe.execute = AsyncMock(return_value=[True] * 4)
+        redis_mock = AsyncMock()
+        redis_mock.pipeline = MagicMock(return_value=mock_pipe)
+
+        with (
+            patch.object(collector, "_load_fdr", return_value=mock_fdr),
+            patch("src.db.queries.upsert_market_data", new_callable=AsyncMock, return_value=3),
+            patch("src.agents.collector._base.get_redis", new_callable=AsyncMock, return_value=redis_mock),
+        ):
+            points = await collector._fetch_historical_daily(
+                "005930", "2026-01-01", "2026-01-10", "삼성전자", "KOSPI",
+            )
+
+        assert points[0].change_pct is None  # 첫 번째 행
+        assert points[1].change_pct is not None  # 10000 -> 10500 = +5%
+        assert abs(points[1].change_pct - 5.0) < 0.1

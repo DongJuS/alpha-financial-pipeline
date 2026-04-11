@@ -273,3 +273,131 @@ class TestCloseRedis:
             await close_redis()  # should not raise
         finally:
             mod._redis_client = original
+
+
+# ── Redis Client 에지케이스 (Agent 4 QA Round 2) ─────────────────────────────
+
+
+class TestGetRedisEdgeCases:
+    """get_redis: 연결 파라미터, 싱글턴 동작."""
+
+    @pytest.mark.asyncio
+    async def test_singleton_returns_same_instance(self):
+        """get_redis가 동일 인스턴스를 반환 (싱글턴)."""
+        import src.utils.redis_client as mod
+
+        original = mod._redis_client
+
+        mock_redis = AsyncMock()
+        mod._redis_client = mock_redis
+
+        try:
+            from src.utils.redis_client import get_redis
+            result = await get_redis()
+            assert result is mock_redis
+        finally:
+            mod._redis_client = original
+
+
+class TestKeyFormatting:
+    """Redis 키 패턴의 포맷팅이 올바른지 검증."""
+
+    def test_heartbeat_key_format(self):
+        from src.utils.redis_client import KEY_HEARTBEAT
+        key = KEY_HEARTBEAT.format(agent_id="collector")
+        assert key == "heartbeat:collector"
+
+    def test_kis_oauth_token_key_format(self):
+        from src.utils.redis_client import KEY_KIS_OAUTH_TOKEN
+        key = KEY_KIS_OAUTH_TOKEN.format(scope="paper")
+        assert key == "kis:oauth_token:paper"
+
+    def test_latest_ticks_key_format(self):
+        from src.utils.redis_client import KEY_LATEST_TICKS
+        key = KEY_LATEST_TICKS.format(ticker="005930")
+        assert key == "redis:cache:latest_ticks:005930"
+
+    def test_llm_usage_key_format(self):
+        from src.utils.redis_client import KEY_LLM_PROVIDER_DAILY_USAGE
+        key = KEY_LLM_PROVIDER_DAILY_USAGE.format(provider="claude", date="2026-04-11")
+        assert key == "redis:usage:llm:claude:2026-04-11"
+
+    def test_marketplace_key_patterns(self):
+        from src.utils.redis_client import KEY_RANKINGS, KEY_MACRO
+        assert KEY_RANKINGS.format(ranking_type="market_cap") == "redis:cache:rankings:market_cap"
+        assert KEY_MACRO.format(category="index") == "redis:cache:macro:index"
+
+
+class TestSetHeartbeatEdgeCases:
+    """set_heartbeat: 다양한 메타데이터, 에러 복구."""
+
+    @pytest.mark.asyncio
+    async def test_multiple_metadata_fields(self):
+        """여러 메타데이터 필드가 모두 전달."""
+        from src.utils.redis_client import set_heartbeat
+
+        mock_redis = AsyncMock()
+        mock_redis.hset = AsyncMock()
+        mock_redis.expire = AsyncMock()
+
+        with patch("src.utils.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+            await set_heartbeat(
+                "test_agent",
+                status="degraded",
+                mode="paper",
+                error_count=3,
+                last_data_at=1712345678,
+            )
+
+        call_kwargs = mock_redis.hset.call_args
+        mapping = call_kwargs.kwargs.get("mapping")
+        assert mapping["status"] == "degraded"
+        assert mapping["mode"] == "paper"
+        assert mapping["error_count"] == 3
+        assert mapping["last_data_at"] == 1712345678
+
+    @pytest.mark.asyncio
+    async def test_default_status_is_ok(self):
+        """status 미지정 시 기본값 'ok'."""
+        from src.utils.redis_client import set_heartbeat
+
+        mock_redis = AsyncMock()
+        mock_redis.hset = AsyncMock()
+        mock_redis.expire = AsyncMock()
+
+        with patch("src.utils.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+            await set_heartbeat("test_agent")
+
+        mapping = mock_redis.hset.call_args.kwargs.get("mapping")
+        assert mapping["status"] == "ok"
+
+
+class TestPublishMessageEdgeCases:
+    """publish_message: 다양한 페이로드."""
+
+    @pytest.mark.asyncio
+    async def test_empty_payload(self):
+        """빈 문자열 페이로드도 정상 발행."""
+        from src.utils.redis_client import publish_message
+
+        mock_redis = AsyncMock()
+        mock_redis.publish = AsyncMock()
+
+        with patch("src.utils.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+            await publish_message("test:topic", "")
+
+        mock_redis.publish.assert_awaited_once_with("test:topic", "")
+
+    @pytest.mark.asyncio
+    async def test_large_payload(self):
+        """큰 페이로드도 정상 발행."""
+        from src.utils.redis_client import publish_message
+
+        mock_redis = AsyncMock()
+        mock_redis.publish = AsyncMock()
+
+        large_payload = '{"data": "' + "x" * 10000 + '"}'
+        with patch("src.utils.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+            await publish_message("test:topic", large_payload)
+
+        mock_redis.publish.assert_awaited_once()
