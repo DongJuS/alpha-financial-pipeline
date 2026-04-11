@@ -38,7 +38,7 @@ KEY_MARKET_INDEX = "redis:cache:market_index"
 KEY_LLM_PROVIDER_DAILY_USAGE = "redis:usage:llm:{provider}:{date}"
 
 # ── 마켓플레이스 확장 키 패턴 ──────────────────────────────────────────────────
-KEY_STOCK_MASTER = "redis:cache:stock_master"                    # 전체 종목 마스터
+KEY_STOCK_MASTER = "redis:cache:krx_stock_master"                    # 전체 종목 마스터
 KEY_SECTOR_MAP = "redis:cache:sector_map"                        # 섹터 → 종목 매핑
 KEY_THEME_MAP = "redis:cache:theme_map"                          # 테마 → 종목 매핑
 KEY_RANKINGS = "redis:cache:rankings:{ranking_type}"             # 랭킹 (타입별)
