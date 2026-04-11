@@ -111,7 +111,7 @@ class TestStrategyBDebates:
 class TestStrategyCombined:
     """GET /api/v1/strategy/combined"""
 
-    @patch(f"{_PATCH_PREFIX}.get_redis", new_callable=AsyncMock)
+    @patch("src.utils.redis_client.get_redis", new_callable=AsyncMock)
     @patch(f"{_PATCH_PREFIX}.fetch", new_callable=AsyncMock, return_value=[])
     def test_get_combined_strategy(
         self, mock_fetch: AsyncMock, mock_redis_fn: AsyncMock
@@ -137,7 +137,7 @@ class TestStrategyCombined:
 class TestStrategyPromotionStatus:
     """GET /api/v1/strategy/promotion-status"""
 
-    @patch(f"{_PATCH_PREFIX}.StrategyPromoter")
+    @patch("src.utils.strategy_promotion.StrategyPromoter")
     def test_get_promotion_status(self, mock_promoter_cls: MagicMock) -> None:
         """전략 프로모션 상태를 조회한다."""
         mock_instance = MagicMock()
@@ -160,7 +160,7 @@ class TestStrategyPromotionStatus:
 class TestStrategyPromotionReadiness:
     """GET /api/v1/strategy/{strategy_id}/promotion-readiness"""
 
-    @patch(f"{_PATCH_PREFIX}.StrategyPromoter")
+    @patch("src.utils.strategy_promotion.StrategyPromoter")
     def test_get_promotion_readiness_for_strategy_a(
         self, mock_promoter_cls: MagicMock
     ) -> None:

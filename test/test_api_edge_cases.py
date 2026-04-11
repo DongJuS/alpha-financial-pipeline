@@ -336,3 +336,167 @@ class TestBoundaryEdgeCases:
         )
         assert resp.status_code == 200
         assert resp.json()["initial_capital"] == 999_999_999_999
+
+
+# ── 추가 에지 케이스 (Agent 3 보강) ───────────────────────────────────────
+
+
+class TestPaginationEdgeCases:
+    """페이지네이션 관련 에지 케이스"""
+
+    @patch("src.api.routers.audit.fetchrow", new_callable=AsyncMock)
+    @patch("src.api.routers.audit.fetch", new_callable=AsyncMock)
+    def test_audit_trail_page_zero_returns_422(
+        self, mock_fetch: AsyncMock, mock_fetchrow: AsyncMock
+    ) -> None:
+        """page=0 은 422를 반환한다."""
+        app = _build_authed_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/v1/audit/trail?page=0")
+        assert resp.status_code == 422
+
+    @patch("src.api.routers.audit.fetchrow", new_callable=AsyncMock)
+    @patch("src.api.routers.audit.fetch", new_callable=AsyncMock)
+    def test_audit_trail_negative_page_returns_422(
+        self, mock_fetch: AsyncMock, mock_fetchrow: AsyncMock
+    ) -> None:
+        """page=-1 은 422를 반환한다."""
+        app = _build_authed_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/v1/audit/trail?page=-1")
+        assert resp.status_code == 422
+
+    @patch("src.api.routers.audit.fetchrow", new_callable=AsyncMock)
+    @patch("src.api.routers.audit.fetch", new_callable=AsyncMock)
+    def test_audit_trail_negative_limit_returns_422(
+        self, mock_fetch: AsyncMock, mock_fetchrow: AsyncMock
+    ) -> None:
+        """limit=-5 는 422를 반환한다."""
+        app = _build_authed_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/v1/audit/trail?limit=-5")
+        assert resp.status_code == 422
+
+
+class TestBacktestEdgeCases:
+    """백테스트 관련 추가 에지 케이스"""
+
+    def test_backtest_invalid_date_format(self) -> None:
+        """잘못된 날짜 형식으로 백테스트 요청 시 422 또는 에러를 반환한다."""
+        app = _build_authed_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            "/api/v1/feedback/backtest",
+            json={
+                "strategy": "strategy_a",
+                "start_date": "not-a-date",
+                "end_date": "also-not-a-date",
+            },
+        )
+        assert resp.status_code in (200, 422)
+
+    def test_backtest_end_before_start(self) -> None:
+        """end_date가 start_date보다 앞서는 경우도 안전하게 처리한다."""
+        app = _build_authed_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            "/api/v1/feedback/backtest",
+            json={
+                "strategy": "strategy_a",
+                "start_date": "2026-06-30",
+                "end_date": "2026-01-01",
+            },
+        )
+        # 에러 또는 빈 결과 반환 (둘 다 안전한 동작)
+        assert resp.status_code in (200, 422)
+
+    def test_backtest_compare_empty_strategies_returns_empty(self) -> None:
+        """빈 전략 목록으로 비교 요청 시 빈 결과를 반환한다."""
+        app = _build_authed_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            "/api/v1/feedback/backtest/compare",
+            json={"strategies": []},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["strategies"] == []
+
+    def test_backtest_compare_single_strategy_returns_one(self) -> None:
+        """단일 전략으로 비교 요청 시 해당 전략만 반환된다."""
+        app = _build_authed_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            "/api/v1/feedback/backtest/compare",
+            json={"strategies": ["strategy_a"]},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["strategies"]) == 1
+        assert body["strategies"][0]["strategy"] == "strategy_a"
+
+
+class TestFeedbackCycleEdgeCases:
+    """피드백 사이클 관련 에지 케이스"""
+
+    def test_feedback_cycle_unknown_scope_still_runs(self) -> None:
+        """알 수 없는 scope 값으로 사이클을 실행해도 정상 동작한다 (빈 결과)."""
+        app = _build_authed_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            "/api/v1/feedback/cycle",
+            json={"scope": "unknown_scope_xyz"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["scope"] == "unknown_scope_xyz"
+
+    def test_feedback_cycle_empty_body(self) -> None:
+        """빈 바디로 사이클 실행 시 기본 scope가 적용되어 정상 동작한다."""
+        app = _build_authed_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/v1/feedback/cycle", json={})
+        assert resp.status_code == 200
+
+
+class TestSchedulerEdgeCases:
+    """스케줄러 관련 에지 케이스"""
+
+    @patch("src.api.routers.scheduler.get_scheduler_status")
+    def test_scheduler_not_running_returns_false(self, mock_status) -> None:
+        """스케줄러가 실행 중이 아닐 때 running=False를 반환한다."""
+        mock_status.return_value = {"running": False, "jobs": []}
+
+        app = _build_authed_app()
+        app.include_router(scheduler.router, prefix="/api/v1/scheduler")
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/v1/scheduler/status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert isinstance(body, dict)
+        assert body["running"] is False
+        assert body["job_count"] == 0
+
+    @patch("src.api.routers.scheduler._get_job_history", new_callable=AsyncMock)
+    @patch("src.api.routers.scheduler.get_scheduler_status")
+    def test_scheduler_status_with_multiple_jobs(
+        self, mock_status, mock_history
+    ) -> None:
+        """여러 작업이 있는 스케줄러 상태가 올바르게 반환된다."""
+        mock_status.return_value = {
+            "running": True,
+            "job_count": 2,
+            "jobs": [
+                {"id": "data_collect", "name": "Data Collector", "next_run": "2026-04-12T09:00:00Z", "trigger": "cron"},
+                {"id": "strategy_run", "name": "Strategy Runner", "next_run": "2026-04-12T10:00:00Z", "trigger": "cron"},
+            ],
+        }
+        mock_history.return_value = []
+
+        app = _build_authed_app()
+        app.include_router(scheduler.router, prefix="/api/v1/scheduler")
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/v1/scheduler/status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["jobs"]) == 2
