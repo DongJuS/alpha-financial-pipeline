@@ -162,11 +162,18 @@ def _make_s3_key(
     data_type: DataType,
     partition_date: date | None = None,
     suffix: str = "",
+    hour: int | None = None,
 ) -> str:
-    """Hive-style 파티션 키를 생성합니다."""
+    """Hive-style 파티션 키를 생성합니다.
+
+    hour를 지정하면 date/hour 2단계 파티셔닝을 사용합니다.
+    미지정 시 기존 date-only 파티셔닝을 유지합니다.
+    """
     dt = partition_date or date.today()
     ts = datetime.utcnow().strftime("%H%M%S")
     name = f"{data_type.value}_{ts}{suffix}.parquet"
+    if hour is not None:
+        return f"{data_type.value}/date={dt.isoformat()}/hour={hour:02d}/{name}"
     return f"{data_type.value}/date={dt.isoformat()}/{name}"
 
 
@@ -274,6 +281,63 @@ async def store_tick_data(records: list[dict[str, Any]], partition_date: date | 
     except Exception as e:
         logger.error("S3 틱 데이터 저장 최종 실패 (%d회 재시도 후): %s", _MAX_RETRIES, e, exc_info=True)
         return None
+
+
+async def flush_ticks_to_s3(target_date: date | None = None) -> list[str]:
+    """DB의 당일 틱 데이터를 시간대별로 묶어 S3에 일괄 저장합니다.
+
+    장 종료 후 크론(15:40 KST)에서 호출합니다.
+    시간대별로 그룹핑하여 hour 파티셔닝된 대형 Parquet 파일을 생성합니다.
+    """
+    from collections import defaultdict
+    from src.db.queries import fetch
+
+    dt = target_date or date.today()
+    start = datetime(dt.year, dt.month, dt.day, 0, 0, 0)
+    end = datetime(dt.year, dt.month, dt.day, 23, 59, 59)
+
+    rows = await fetch(
+        """
+        SELECT instrument_id AS ticker, price, volume,
+               timestamp_kst, change_pct, source
+        FROM tick_data
+        WHERE timestamp_kst >= $1 AND timestamp_kst < $2
+        ORDER BY timestamp_kst ASC
+        """,
+        start, end,
+    )
+
+    if not rows:
+        logger.info("flush_ticks_to_s3: %s 틱 데이터 없음 — 스킵", dt.isoformat())
+        return []
+
+    # 시간대별 그룹핑
+    by_hour: dict[int, list[dict]] = defaultdict(list)
+    for row in rows:
+        ts = row["timestamp_kst"]
+        h = ts.hour if hasattr(ts, "hour") else 0
+        by_hour[h].append({
+            "ticker": row["ticker"],
+            "price": int(row["price"]),
+            "volume": int(row["volume"]),
+            "timestamp_kst": row["timestamp_kst"],
+            "change_pct": row.get("change_pct"),
+            "source": row.get("source", "unknown"),
+        })
+
+    uris: list[str] = []
+    for h, records in sorted(by_hour.items()):
+        try:
+            data = _to_parquet_bytes(records, TICK_DATA_SCHEMA)
+            key = _make_s3_key(DataType.TICK_DATA, dt, suffix=f"_{len(records)}t", hour=h)
+            s3_uri = await _upload_with_retry(data, key)
+            uris.append(s3_uri)
+            logger.info("S3 틱 flush: hour=%02d, %d건, %d bytes → %s", h, len(records), len(data), s3_uri)
+        except Exception as e:
+            logger.error("S3 틱 flush 실패 (hour=%02d): %s", h, e, exc_info=True)
+
+    logger.info("flush_ticks_to_s3 완료: %s, %d파일, 총 %d건", dt.isoformat(), len(uris), len(rows))
+    return uris
 
 
 async def store_debate_transcripts(records: list[dict[str, Any]], partition_date: date | None = None) -> str | None:
