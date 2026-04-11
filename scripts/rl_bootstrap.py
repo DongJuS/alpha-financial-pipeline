@@ -5,7 +5,7 @@ FDR 720일 과거 데이터 시딩 → 멀티 프로파일 학습 → walk-forwa
 end-to-end CLI 스크립트.
 
 사용 예:
-  # 기본 티커(005930,000660,259960)에 대해 720일 데이터로 부트스트랩
+  # instruments DB의 활성 종목에 대해 720일 데이터로 부트스트랩
   python scripts/rl_bootstrap.py
 
   # 특정 티커 지정
@@ -53,7 +53,6 @@ setup_logging()
 logger = get_logger(__name__)
 
 KST = ZoneInfo("Asia/Seoul")
-DEFAULT_TICKERS = ["005930", "000660", "259960"]
 DEFAULT_SEED_DAYS = 720
 DEFAULT_TRAIN_DAYS = 720
 DEFAULT_PROFILES = ["tabular_q_v2_momentum", "tabular_q_v1_baseline"]
@@ -231,7 +230,15 @@ def _log_retrain_outcome(ticker: str, outcome: RetrainOutcome) -> None:
 
 async def run_bootstrap(args: argparse.Namespace) -> dict:
     """부트스트랩 전체 파이프라인 실행."""
-    tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+    if args.tickers:
+        tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+    else:
+        from src.db.queries import list_tickers
+        instruments = await list_tickers()
+        tickers = [inst["instrument_id"] for inst in instruments]
+        if not tickers:
+            logger.error("instruments 테이블에 활성 종목이 없습니다. --tickers 옵션으로 직접 지정하세요.")
+            return {"error": "no tickers"}
     profiles = [p.strip() for p in args.profiles.split(",") if p.strip()] if args.profiles else None
 
     logger.info(
@@ -362,8 +369,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--tickers",
-        default=",".join(DEFAULT_TICKERS),
-        help=f"쉼표 구분 티커 목록 (기본: {','.join(DEFAULT_TICKERS)})",
+        default="",
+        help="쉼표 구분 티커 목록 (미지정 시 instruments DB에서 조회)",
     )
     parser.add_argument(
         "--seed-days",

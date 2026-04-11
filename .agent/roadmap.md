@@ -58,6 +58,9 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건, 2023-01~2026-04).
 K3s DB에 일봉 시딩 완료 (3종목 2,394건). 틱 수집은 장중 WebSocket으로 자동 진행.
 클라우드 전환 시 `pg_dump` + R2 sync로 이전.
 
+**실시간 틱 수집 자동화 결정 변경 (2026-04-11):** 초기에 크론잡 추가를 결정했으나, 100종목 스케일링 분석 결과 별도 `tick-collector` 서비스로 변경. 장애 격리(틱↔매매 독립) + 독립 재시작이 핵심 근거. 병행하여 `collector.run()` 누락(모듈 분리 시 유실)도 복원 필요.
+- 상세: `.agent/discussions/20260411-tick-collector-service-design.md`
+
 ### RL 분봉 피처 확장 (선행 조건: 분봉 40영업일 축적)
 
 **왜 필요한가:** RL이 일봉 6개 피처만 사용 중. 분봉 파생 피처(vwap_deviation, volume_skew)를 추가하면 장중 패턴 포착 가능.
@@ -65,6 +68,18 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건). 틱 수집은 장중 WebSocke
 **설계 토론 완료 (2026-04-11):** Tabular Q-learning 유지 + 분봉 파생 일봉 피처 2개 추가. 상태 공간 27→243, 에피소드·시드 증가로 보완.
 선행 조건: Step 8b 완료 + 분봉 데이터 40영업일 축적.
 - 상세: `.agent/discussions/20260411-rl-intraday-feature-expansion.md`
+
+### RL 레지스트리 자동 동기화
+
+**왜 필요한가:** RL 학습 대상 종목이 registry.json에 수동 등록해야만 학습이 시작되는 구조. Orchestrator·RL 스케줄러 모두 하드코딩된 종목 목록을 사용하여, 종목 추가 시 3곳을 수동으로 맞춰야 했다.
+
+**결정 (2026-04-11):** instruments 테이블을 종목 SoT로 채택. 모든 컴포넌트가 DB에서 종목을 읽고, 코드 내 하드코딩 전면 제거. registry.json은 학습 이력 저장소로 역할 축소. RL bootstrap 시 DB에 있으나 registry에 없는 종목은 자동 등록.
+- 상세: `.agent/discussions/20260411-rl-registry-auto-sync.md`
+
+### 일봉 수집 종목 확대 + 스크리너 도입
+
+**왜 필요한가:** 3종목으로는 포트폴리오 분산 불가 + RL/백테스트 데이터 부족. 수집은 100종목으로 확대(FDR 무료, 비용 0원)하되, 일봉 기반 스크리너(거래량 급등·변동률)로 필터링한 종목만 LLM 전략 실행(하드캡 10종목). 월 비용 증가 없이 데이터 자산 축적 + 동적 종목 선정 달성.
+- 상세: `.agent/discussions/20260411-ohlcv-daily-ticker-expansion.md`
 
 ### Predictor MTF 실효과 검증
 
@@ -74,7 +89,8 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건). 틱 수집은 장중 WebSocke
 ### 클라우드 전환 (날짜 미정)
 
 Hetzner CX22 + Cloudflare R2 조합(월 ~5,000원)으로 결정.
-비용 발생 시점을 최대한 늦추는 원칙. 실행 시 배포 순서·데이터 이전·롤백 전략 설계 필요.
+비용 발생 시점을 최대한 늦추는 원칙. Docker Compose 배포 + Cold migration + 로컬 2주 유지 롤백 전략 확정.
+- 상세 (실행 계획): `.agent/discussions/20260411-cloud-migration-execution-plan.md`
 
 **LLM 인증·비용 전략 결정 (2026-04-11):** CLI 구독 인증 1순위 + API Key 자동 fallback.
 Claude `setup-token`(1년 유효) + Codex `device-auth` + Gemini ADC로 구독료만 사용.
