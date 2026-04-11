@@ -111,8 +111,9 @@ class _DailyMixin:
         self,
         tickers: list[str] | None = None,
         lookback_days: int = 120,
+        limit: int = 20,
     ) -> list[MarketDataPoint]:
-        selected = await asyncio.to_thread(self._resolve_tickers, tickers)
+        selected = await asyncio.to_thread(self._resolve_tickers, tickers, limit)
         points: list[MarketDataPoint] = []
         latest_points: list[MarketDataPoint] = []
 
