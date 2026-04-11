@@ -429,3 +429,115 @@ class TestFlushTicksToS3:
         # 2개 시간대 (9시, 10시) → 2개 파일
         assert len(result) == 2
         assert mock_upload.await_count == 2
+
+
+# =============================================================================
+# 에지케이스: Parquet 스키마 불일치, S3 업로드 재시도, 빈 DataFrame
+# =============================================================================
+
+
+class TestDatalakeEdgeCases:
+    """datalake.py 에지 케이스 보강 (Agent 2 QA Round 2)."""
+
+    def test_parquet_extra_fields_ignored(self):
+        """스키마에 없는 추가 필드가 있어도 직렬화 성공 (무시됨)."""
+        from src.services.datalake import DAILY_BARS_SCHEMA, _to_parquet_bytes
+        records = [{
+            "ticker": "005930", "name": "삼성전자", "market": "KOSPI",
+            "timestamp_kst": datetime(2026, 4, 11, 15, 30),
+            "open": 71000, "high": 73000, "low": 70000, "close": 72000,
+            "volume": 100000, "change_pct": 1.5,
+            "market_cap": None, "foreigner_ratio": None,
+            "extra_field": "이건 스키마에 없는 필드",
+            "another_extra": 999,
+        }]
+        data = _to_parquet_bytes(records, DAILY_BARS_SCHEMA)
+        assert isinstance(data, bytes)
+        assert data[:4] == b"PAR1"
+
+    def test_parquet_all_none_record(self):
+        """모든 필드가 None인 레코드도 직렬화 가능."""
+        from src.services.datalake import TICK_DATA_SCHEMA, _to_parquet_bytes
+        records = [{
+            "ticker": None, "price": None, "volume": None,
+            "timestamp_kst": None, "change_pct": None, "source": None,
+        }]
+        data = _to_parquet_bytes(records, TICK_DATA_SCHEMA)
+        assert isinstance(data, bytes)
+        assert len(data) > 0
+
+    async def test_upload_retry_exponential_backoff(self):
+        """재시도 시 exponential backoff 지연 확인."""
+        from src.services.datalake import _upload_with_retry
+
+        call_count = 0
+        sleep_delays = []
+
+        async def _failing_upload(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ConnectionError("S3 down")
+            return "s3://bucket/key"
+
+        async def _capture_sleep(delay):
+            sleep_delays.append(delay)
+
+        with (
+            patch("src.services.datalake.upload_bytes", new_callable=AsyncMock, side_effect=_failing_upload),
+            patch("asyncio.sleep", side_effect=_capture_sleep),
+        ):
+            result = await _upload_with_retry(b"data", "key")
+
+        assert result == "s3://bucket/key"
+        assert len(sleep_delays) == 2
+        # 1차: 1.0초, 2차: 2.0초 (exponential backoff)
+        assert sleep_delays[0] == 1.0
+        assert sleep_delays[1] == 2.0
+
+    async def test_store_daily_bars_with_partition_date(self):
+        """partition_date 지정 시 해당 날짜 키 생성."""
+        from src.services.datalake import store_daily_bars
+        records = [{
+            "ticker": "005930", "name": "삼성전자", "market": "KOSPI",
+            "timestamp_kst": datetime(2026, 3, 15, 15, 30),
+            "open": 71000, "high": 73000, "low": 70000, "close": 72000,
+            "volume": 100000, "change_pct": 1.5,
+            "market_cap": None, "foreigner_ratio": None,
+        }]
+        with patch("src.services.datalake._upload_with_retry", new_callable=AsyncMock, return_value="s3://test") as mock_upload:
+            await store_daily_bars(records, partition_date=date(2026, 3, 15))
+
+        key = mock_upload.call_args[0][1]
+        assert "date=2026-03-15" in key
+
+    def test_make_s3_key_hour_23(self):
+        """hour=23 → hour=23 (23시간 파티션)."""
+        from src.services.datalake import DataType, _make_s3_key
+        key = _make_s3_key(DataType.TICK_DATA, date(2026, 4, 11), hour=23)
+        assert "/hour=23/" in key
+
+    async def test_flush_ticks_single_hour(self):
+        """모든 틱이 같은 시간대면 1개 파일만 생성."""
+        from src.services.datalake import flush_ticks_to_s3
+
+        rows = [
+            {"ticker": "005930", "price": 72000, "volume": 100,
+             "timestamp_kst": datetime(2026, 4, 11, 9, 0),
+             "change_pct": 1.0, "source": "kis_ws"},
+            {"ticker": "005930", "price": 72100, "volume": 200,
+             "timestamp_kst": datetime(2026, 4, 11, 9, 30),
+             "change_pct": 1.1, "source": "kis_ws"},
+            {"ticker": "000660", "price": 150000, "volume": 50,
+             "timestamp_kst": datetime(2026, 4, 11, 9, 45),
+             "change_pct": -0.5, "source": "kis_ws"},
+        ]
+
+        with (
+            patch("src.db.queries.fetch", new_callable=AsyncMock, return_value=rows),
+            patch("src.services.datalake._upload_with_retry", new_callable=AsyncMock, return_value="s3://test") as mock_upload,
+        ):
+            result = await flush_ticks_to_s3(date(2026, 4, 11))
+
+        assert len(result) == 1  # 전부 9시대
+        assert mock_upload.await_count == 1

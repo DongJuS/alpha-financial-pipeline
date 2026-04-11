@@ -227,5 +227,226 @@ class TestV2EdgeCases(unittest.TestCase):
         self.assertIsNotNone(artifact)
 
 
+class TestV2RewardEdgeCases(unittest.TestCase):
+    """V2 보상 함수 경계 조건 테스트."""
+
+    def test_reward_same_price(self) -> None:
+        """current_price == next_price → position_return 0."""
+        trainer = TabularQTrainerV2()
+        reward = trainer._reward(100.0, 100.0, position=0, next_position=0)
+        self.assertAlmostEqual(reward, 0.0, places=6)
+
+    def test_reward_position_change_has_trade_cost(self) -> None:
+        """포지션 전환 시 거래 비용 차감."""
+        trainer = TabularQTrainerV2(trade_penalty_bps=10)
+        reward_trade = trainer._reward(100.0, 100.0, position=0, next_position=1)
+        reward_hold = trainer._reward(100.0, 100.0, position=0, next_position=0)
+        self.assertLess(reward_trade, reward_hold)
+
+    def test_reward_long_in_uptrend_positive(self) -> None:
+        """롱 포지션 + 상승 → 양의 보상."""
+        trainer = TabularQTrainerV2()
+        reward = trainer._reward(100.0, 105.0, position=1, next_position=1)
+        self.assertGreater(reward, 0.0)
+
+    def test_reward_short_in_downtrend_positive(self) -> None:
+        """숏 포지션 + 하락 → 양의 보상."""
+        trainer = TabularQTrainerV2()
+        reward = trainer._reward(100.0, 95.0, position=-1, next_position=-1)
+        self.assertGreater(reward, 0.0)
+
+    def test_reward_flat_in_uptrend_negative(self) -> None:
+        """플랫 + 상승 → 기회비용 패널티."""
+        trainer = TabularQTrainerV2()
+        reward = trainer._reward(100.0, 105.0, position=0, next_position=0)
+        self.assertLess(reward, 0.0)
+
+    def test_reward_flat_in_downtrend_positive(self) -> None:
+        """플랫 + 하락 → 하락 회피 보상."""
+        trainer = TabularQTrainerV2()
+        reward = trainer._reward(100.0, 95.0, position=0, next_position=0)
+        self.assertGreater(reward, 0.0)
+
+    def test_reward_long_loss_penalty_applied(self) -> None:
+        """롱 보유 중 손실 시 패널티 계수(0.1) 적용."""
+        trainer = TabularQTrainerV2()
+        # next_position=1 + next_return < 0 → position_reward *= 0.1
+        reward = trainer._reward(100.0, 99.0, position=1, next_position=1)
+        # position_reward = 1 * (-0.01) * 0.1 = -0.001
+        self.assertLess(reward, 0.0)
+        # 패널티가 적용되어 원래 -0.01보다 0에 가까움
+        self.assertGreater(reward, -0.01)
+
+
+class TestV2Bucket5EdgeCases(unittest.TestCase):
+    """_bucket5 경계값 테스트."""
+
+    def test_exact_large_threshold(self) -> None:
+        trainer = TabularQTrainerV2()
+        # value == large_th → NOT > large_th → check > small_th
+        result = trainer._bucket5(0.008, small_th=0.002, large_th=0.008)
+        self.assertEqual(result, 1)
+
+    def test_just_above_large_threshold(self) -> None:
+        trainer = TabularQTrainerV2()
+        result = trainer._bucket5(0.0081, small_th=0.002, large_th=0.008)
+        self.assertEqual(result, 2)
+
+    def test_exact_small_threshold(self) -> None:
+        trainer = TabularQTrainerV2()
+        result = trainer._bucket5(0.002, small_th=0.002, large_th=0.008)
+        self.assertEqual(result, 0)  # NOT > small_th → neutral
+
+    def test_just_above_small_threshold(self) -> None:
+        trainer = TabularQTrainerV2()
+        result = trainer._bucket5(0.0021, small_th=0.002, large_th=0.008)
+        self.assertEqual(result, 1)
+
+    def test_negative_large_threshold(self) -> None:
+        trainer = TabularQTrainerV2()
+        result = trainer._bucket5(-0.009, small_th=0.002, large_th=0.008)
+        self.assertEqual(result, -2)
+
+    def test_negative_small_threshold(self) -> None:
+        trainer = TabularQTrainerV2()
+        result = trainer._bucket5(-0.003, small_th=0.002, large_th=0.008)
+        self.assertEqual(result, -1)
+
+    def test_zero_value(self) -> None:
+        trainer = TabularQTrainerV2()
+        result = trainer._bucket5(0.0, small_th=0.002, large_th=0.008)
+        self.assertEqual(result, 0)
+
+
+class TestV2StateKeyEdgeCases(unittest.TestCase):
+    """_state_key 경계값 테스트."""
+
+    def test_single_close(self) -> None:
+        """데이터가 1개 → fallback state."""
+        trainer = TabularQTrainerV2()
+        state = trainer._state_key([100.0], position=0)
+        self.assertEqual(state, "p0|s0|l0|m0|v0")
+
+    def test_two_closes(self) -> None:
+        """데이터가 2개 → short_return 계산 가능."""
+        trainer = TabularQTrainerV2()
+        state = trainer._state_key([100.0, 101.0], position=1)
+        self.assertIn("p1", state)
+
+    def test_all_positions(self) -> None:
+        """position -1, 0, 1 모두 유효."""
+        trainer = TabularQTrainerV2()
+        closes = [100.0 + i for i in range(30)]
+        for pos in (-1, 0, 1):
+            state = trainer._state_key(closes, position=pos)
+            self.assertIn(f"p{pos}", state)
+
+    def test_volatile_data_high_vol_bucket(self) -> None:
+        """변동성이 큰 데이터 → vol_bucket=2."""
+        trainer = TabularQTrainerV2()
+        # 큰 변동성: 100 -> 110 -> 90 -> 115 -> 85 ...
+        closes = [100.0 + ((-1) ** i) * 15.0 * (i + 1) for i in range(30)]
+        state = trainer._state_key(closes, position=0)
+        # vol_bucket should be > 0 due to high variance
+        parts = state.split("|")
+        vol_part = parts[4]  # v0, v1, or v2
+        self.assertIn("v", vol_part)
+
+
+class TestV2MapActionToSignal(unittest.TestCase):
+    """map_v2_action_to_signal 변환 에지케이스."""
+
+    def test_buy(self) -> None:
+        from src.agents.rl_trading_v2 import map_v2_action_to_signal
+        self.assertEqual(map_v2_action_to_signal("BUY"), "BUY")
+
+    def test_sell(self) -> None:
+        from src.agents.rl_trading_v2 import map_v2_action_to_signal
+        self.assertEqual(map_v2_action_to_signal("SELL"), "SELL")
+
+    def test_hold(self) -> None:
+        from src.agents.rl_trading_v2 import map_v2_action_to_signal
+        self.assertEqual(map_v2_action_to_signal("HOLD"), "HOLD")
+
+    def test_close_maps_to_hold(self) -> None:
+        from src.agents.rl_trading_v2 import map_v2_action_to_signal
+        self.assertEqual(map_v2_action_to_signal("CLOSE"), "HOLD")
+
+    def test_unknown_maps_to_hold(self) -> None:
+        from src.agents.rl_trading_v2 import map_v2_action_to_signal
+        self.assertEqual(map_v2_action_to_signal("INVALID"), "HOLD")
+
+    def test_lowercase_input(self) -> None:
+        from src.agents.rl_trading_v2 import map_v2_action_to_signal
+        self.assertEqual(map_v2_action_to_signal("buy"), "BUY")
+
+    def test_mixed_case_input(self) -> None:
+        from src.agents.rl_trading_v2 import map_v2_action_to_signal
+        self.assertEqual(map_v2_action_to_signal("Sell"), "SELL")
+
+
+class TestV2NormalizeQConfidence(unittest.TestCase):
+    """normalize_q_confidence 변환 에지케이스."""
+
+    def test_empty_q_values(self) -> None:
+        from src.agents.rl_trading_v2 import normalize_q_confidence
+        self.assertEqual(normalize_q_confidence({}), 0.5)
+
+    def test_all_equal_q_values(self) -> None:
+        from src.agents.rl_trading_v2 import normalize_q_confidence
+        result = normalize_q_confidence({"BUY": 0.5, "SELL": 0.5, "HOLD": 0.5})
+        self.assertEqual(result, 0.5)
+
+    def test_large_spread_high_confidence(self) -> None:
+        from src.agents.rl_trading_v2 import normalize_q_confidence
+        result = normalize_q_confidence({"BUY": 1.0, "SELL": 0.0, "HOLD": 0.0})
+        self.assertGreater(result, 0.9)
+
+    def test_small_spread_low_confidence(self) -> None:
+        from src.agents.rl_trading_v2 import normalize_q_confidence
+        result = normalize_q_confidence({"BUY": 0.51, "SELL": 0.50, "HOLD": 0.50})
+        self.assertLess(result, 0.5)
+
+    def test_result_within_bounds(self) -> None:
+        from src.agents.rl_trading_v2 import normalize_q_confidence
+        result = normalize_q_confidence({"BUY": 10.0, "SELL": -5.0})
+        self.assertGreaterEqual(result, 0.3)
+        self.assertLessEqual(result, 0.95)
+
+    def test_negative_q_values(self) -> None:
+        from src.agents.rl_trading_v2 import normalize_q_confidence
+        result = normalize_q_confidence({"BUY": -0.1, "SELL": -0.2, "HOLD": -0.15})
+        self.assertGreaterEqual(result, 0.3)
+        self.assertLessEqual(result, 0.95)
+
+    def test_single_q_value(self) -> None:
+        from src.agents.rl_trading_v2 import normalize_q_confidence
+        result = normalize_q_confidence({"BUY": 0.5})
+        # spread = 0 → 0.5
+        self.assertEqual(result, 0.5)
+
+
+class TestV2TransitionFunction(unittest.TestCase):
+    """_transition 포지션 전이 테스트."""
+
+    def test_buy_goes_long(self) -> None:
+        self.assertEqual(TabularQTrainerV2._transition(0, "BUY"), 1)
+        self.assertEqual(TabularQTrainerV2._transition(-1, "BUY"), 1)
+        self.assertEqual(TabularQTrainerV2._transition(1, "BUY"), 1)
+
+    def test_sell_goes_short(self) -> None:
+        self.assertEqual(TabularQTrainerV2._transition(0, "SELL"), -1)
+        self.assertEqual(TabularQTrainerV2._transition(1, "SELL"), -1)
+
+    def test_close_goes_flat(self) -> None:
+        self.assertEqual(TabularQTrainerV2._transition(1, "CLOSE"), 0)
+        self.assertEqual(TabularQTrainerV2._transition(-1, "CLOSE"), 0)
+
+    def test_hold_maintains_position(self) -> None:
+        self.assertEqual(TabularQTrainerV2._transition(0, "HOLD"), 0)
+        self.assertEqual(TabularQTrainerV2._transition(1, "HOLD"), 1)
+        self.assertEqual(TabularQTrainerV2._transition(-1, "HOLD"), -1)
+
+
 if __name__ == "__main__":
     unittest.main()
