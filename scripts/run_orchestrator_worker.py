@@ -249,6 +249,14 @@ async def main_async() -> int:
     except Exception as e:
         logger.warning("DB 로그 핸들러 초기화 실패 (비필수): %s", e)
 
+    # 통합 스케줄러 시작 (일봉 수집, RL 부트스트랩 등 크론 잡 — LLM 무관)
+    try:
+        from src.schedulers.unified_scheduler import start_unified_scheduler
+        await start_unified_scheduler()
+        logger.info("통합 스케줄러 시작 완료")
+    except Exception as e:
+        logger.error("통합 스케줄러 시작 실패 (Orchestrator는 계속 진행): %s", e)
+
     # Orchestrator 생성
     from src.agents.orchestrator import OrchestratorAgent
 
