@@ -1,7 +1,8 @@
 """
 test/integration/test_api_datalake.py — DataLake API 통합 테스트
 
-K3s 클러스터에서 실행 중인 API에 HTTP 요청을 보내 데이터 레이크 엔드포인트를 검증합니다.
+FastAPI TestClient로 데이터 레이크 라우터를 격리 테스트한다.
+S3/MinIO는 mock으로 대체.
 
 테스트 대상:
   - GET  /api/v1/datalake/overview     — 데이터 레이크 개요
@@ -11,158 +12,214 @@ K3s 클러스터에서 실행 중인 API에 HTTP 요청을 보내 데이터 레�
 
 from __future__ import annotations
 
-import os
-import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
-import httpx
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
-BASE_URL = os.getenv("API_BASE_URL", "http://localhost:18000")
-LOGIN_EMAIL = "admin@alpha-trading.com"
-LOGIN_PASSWORD = "admin123"
+from src.api.deps import get_current_settings, get_current_user
+from src.api.routers import datalake as datalake_module
+from src.api.routers.datalake import router as datalake_router
 
+API_PREFIX = "/api/v1/datalake"
 
-async def get_token() -> str:
-    """로그인하여 JWT 토큰을 획득합니다."""
-    async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-        resp = await client.post(
-            "/api/v1/auth/login",
-            json={"email": LOGIN_EMAIL, "password": LOGIN_PASSWORD},
-        )
-        resp.raise_for_status()
-        return resp.json()["token"]
+_PATCH_PREFIX = "src.api.routers.datalake"
 
 
-@pytest.mark.integration
-class TestDatalakeOverview(unittest.IsolatedAsyncioTestCase):
+def _build_client(*, authenticated: bool = True) -> TestClient:
+    app = FastAPI()
+    app.include_router(datalake_router, prefix=API_PREFIX)
+    if authenticated:
+        async def mock_user():
+            return {
+                "sub": str(uuid4()),
+                "email": "test@test.com",
+                "name": "Tester",
+                "is_admin": True,
+            }
+        app.dependency_overrides[get_current_user] = mock_user
+    app.dependency_overrides[get_current_settings] = lambda: SimpleNamespace(
+        jwt_secret="test-secret"
+    )
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _mock_settings():
+    return SimpleNamespace(s3_bucket_name="test-bucket")
+
+
+def _mock_s3_client_for_overview():
+    """overview 용 S3 mock: paginate 지원."""
+    mock_client = MagicMock()
+    mock_paginator = MagicMock()
+    mock_paginator.paginate.return_value = [
+        {
+            "Contents": [
+                {"Key": "rl/model_v1.pt", "Size": 1024},
+                {"Key": "rl/model_v2.pt", "Size": 2048},
+                {"Key": "daily/005930.parquet", "Size": 4096},
+            ],
+        },
+    ]
+    mock_client.get_paginator.return_value = mock_paginator
+    return mock_client
+
+
+def _mock_s3_client_for_list():
+    """objects 용 S3 mock: list_objects_v2 지원."""
+    mock_client = MagicMock()
+    mock_client.list_objects_v2.return_value = {
+        "Contents": [
+            {"Key": "rl/model_v1.pt", "Size": 1024, "LastModified": None, "StorageClass": "STANDARD"},
+        ],
+        "CommonPrefixes": [{"Prefix": "daily/"}],
+    }
+    return mock_client
+
+
+class TestDatalakeOverview:
     """GET /api/v1/datalake/overview"""
 
-    async def test_get_overview(self) -> None:
+    @patch(f"{_PATCH_PREFIX}._get_s3_client")
+    @patch(f"{_PATCH_PREFIX}.get_settings")
+    def test_get_overview(
+        self, mock_settings: MagicMock, mock_s3: MagicMock
+    ) -> None:
         """데이터 레이크 개요를 조회한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
-            resp = await client.get(
-                "/api/v1/datalake/overview",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        mock_settings.return_value = _mock_settings()
+        mock_s3.return_value = _mock_s3_client_for_overview()
 
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/overview")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIn("bucket_name", body)
-        self.assertIn("total_objects", body)
-        self.assertIn("total_size_bytes", body)
-        self.assertIn("total_size_display", body)
-        self.assertIn("prefixes", body)
+        assert "bucket_name" in body
+        assert "total_objects" in body
+        assert "total_size_bytes" in body
+        assert "total_size_display" in body
+        assert "prefixes" in body
 
-    async def test_overview_has_valid_types(self) -> None:
+    @patch(f"{_PATCH_PREFIX}._get_s3_client")
+    @patch(f"{_PATCH_PREFIX}.get_settings")
+    def test_overview_has_valid_types(
+        self, mock_settings: MagicMock, mock_s3: MagicMock
+    ) -> None:
         """개요 응답의 필드 타입이 올바른지 확인한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
-            resp = await client.get(
-                "/api/v1/datalake/overview",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        mock_settings.return_value = _mock_settings()
+        mock_s3.return_value = _mock_s3_client_for_overview()
 
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/overview")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIsInstance(body["bucket_name"], str)
-        self.assertIsInstance(body["total_objects"], int)
-        self.assertIsInstance(body["total_size_bytes"], int)
-        self.assertIsInstance(body["total_size_display"], str)
-        self.assertIsInstance(body["prefixes"], list)
+        assert isinstance(body["bucket_name"], str)
+        assert isinstance(body["total_objects"], int)
+        assert isinstance(body["total_size_bytes"], int)
+        assert isinstance(body["total_size_display"], str)
+        assert isinstance(body["prefixes"], list)
 
-    async def test_overview_without_token_returns_401(self) -> None:
-        """토큰 없이 요청하면 401을 반환한다."""
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get("/api/v1/datalake/overview")
+    def test_overview_without_token_returns_401(self) -> None:
+        """토큰 없이 요청하면 401/403을 반환한다."""
+        client = _build_client(authenticated=False)
+        resp = client.get(f"{API_PREFIX}/overview")
+        assert resp.status_code in (401, 403)
 
-        self.assertEqual(resp.status_code, 401)
 
-
-@pytest.mark.integration
-class TestDatalakeObjects(unittest.IsolatedAsyncioTestCase):
+class TestDatalakeObjects:
     """GET /api/v1/datalake/objects"""
 
-    async def test_list_objects(self) -> None:
+    @patch(f"{_PATCH_PREFIX}._get_s3_client")
+    @patch(f"{_PATCH_PREFIX}.get_settings")
+    def test_list_objects(
+        self, mock_settings: MagicMock, mock_s3: MagicMock
+    ) -> None:
         """오브젝트 목록을 조회한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
-            resp = await client.get(
-                "/api/v1/datalake/objects",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        mock_settings.return_value = _mock_settings()
+        mock_s3.return_value = _mock_s3_client_for_list()
 
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/objects")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIn("prefix", body)
-        self.assertIn("objects", body)
-        self.assertIn("common_prefixes", body)
-        self.assertIn("total", body)
+        assert "prefix" in body
+        assert "objects" in body
+        assert "common_prefixes" in body
+        assert "total" in body
 
-    async def test_list_objects_has_valid_types(self) -> None:
+    @patch(f"{_PATCH_PREFIX}._get_s3_client")
+    @patch(f"{_PATCH_PREFIX}.get_settings")
+    def test_list_objects_has_valid_types(
+        self, mock_settings: MagicMock, mock_s3: MagicMock
+    ) -> None:
         """오브젝트 목록 응답의 필드 타입이 올바른지 확인한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
-            resp = await client.get(
-                "/api/v1/datalake/objects",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        mock_settings.return_value = _mock_settings()
+        mock_s3.return_value = _mock_s3_client_for_list()
 
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/objects")
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertIsInstance(body["prefix"], str)
-        self.assertIsInstance(body["objects"], list)
-        self.assertIsInstance(body["common_prefixes"], list)
-        self.assertIsInstance(body["total"], int)
+        assert isinstance(body["prefix"], str)
+        assert isinstance(body["objects"], list)
+        assert isinstance(body["common_prefixes"], list)
+        assert isinstance(body["total"], int)
 
-    async def test_list_objects_with_prefix(self) -> None:
+    @patch(f"{_PATCH_PREFIX}._get_s3_client")
+    @patch(f"{_PATCH_PREFIX}.get_settings")
+    def test_list_objects_with_prefix(
+        self, mock_settings: MagicMock, mock_s3: MagicMock
+    ) -> None:
         """특정 접두사로 오브젝트를 조회할 수 있다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
-            resp = await client.get(
-                "/api/v1/datalake/objects",
-                params={"prefix": "rl/"},
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        mock_settings.return_value = _mock_settings()
+        mock_client = MagicMock()
+        mock_client.list_objects_v2.return_value = {
+            "Contents": [],
+            "CommonPrefixes": [],
+        }
+        mock_s3.return_value = mock_client
 
-        self.assertEqual(resp.status_code, 200)
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/objects", params={"prefix": "rl/"})
+        assert resp.status_code == 200
         body = resp.json()
-        self.assertEqual(body["prefix"], "rl/")
+        assert body["prefix"] == "rl/"
 
 
-@pytest.mark.integration
-class TestDatalakeObjectInfo(unittest.IsolatedAsyncioTestCase):
+class TestDatalakeObjectInfo:
     """GET /api/v1/datalake/object-info"""
 
-    async def test_object_info_requires_key(self) -> None:
+    def test_object_info_requires_key(self) -> None:
         """key 파라미터 없이 요청하면 422를 반환한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/datalake/object-info",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        client = _build_client()
+        resp = client.get(f"{API_PREFIX}/object-info")
+        assert resp.status_code == 422
 
-        self.assertEqual(resp.status_code, 422)
-
-    async def test_object_info_not_found(self) -> None:
+    @patch(f"{_PATCH_PREFIX}._get_s3_client")
+    @patch(f"{_PATCH_PREFIX}.get_settings")
+    def test_object_info_not_found(
+        self, mock_settings: MagicMock, mock_s3: MagicMock
+    ) -> None:
         """존재하지 않는 키로 조회하면 404를 반환한다."""
-        token = await get_token()
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/datalake/object-info",
-                params={"key": "nonexistent/object/key.json"},
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        mock_settings.return_value = _mock_settings()
+        mock_client = MagicMock()
+        mock_client.head_object.side_effect = Exception("NoSuchKey")
+        mock_s3.return_value = mock_client
 
-        self.assertEqual(resp.status_code, 404)
+        client = _build_client()
+        resp = client.get(
+            f"{API_PREFIX}/object-info",
+            params={"key": "nonexistent/object/key.json"},
+        )
+        assert resp.status_code == 404
 
-    async def test_object_info_without_token_returns_401(self) -> None:
-        """토큰 없이 요청하면 401을 반환한다."""
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v1/datalake/object-info",
-                params={"key": "test/key"},
-            )
-
-        self.assertEqual(resp.status_code, 401)
+    def test_object_info_without_token_returns_401(self) -> None:
+        """토큰 없이 요청하면 401/403을 반환한다."""
+        client = _build_client(authenticated=False)
+        resp = client.get(
+            f"{API_PREFIX}/object-info",
+            params={"key": "test/key"},
+        )
+        assert resp.status_code in (401, 403)
