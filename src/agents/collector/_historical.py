@@ -252,7 +252,7 @@ class _HistoricalMixin:
             SELECT COUNT(*)
             FROM ohlcv_daily o
             JOIN instruments i ON o.instrument_id = i.instrument_id
-            WHERE o.instrument_id = $1 OR i.raw_code = $1
+            WHERE o.instrument_id = $1 OR i.ticker = $1
             """,
             ticker,
         )
