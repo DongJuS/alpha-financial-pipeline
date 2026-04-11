@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tick-collector
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tick-collector
+  template:
+    metadata:
+      labels:
+        app: tick-collector
+    spec:
+      containers:
+        - name: tick-collector
+          image: alpha-trading:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secret
+          env:
+            - name: TICK_TICKERS
+              value: ""
+            - name: TICK_MARKET_HOURS_ONLY
+              value: "true"
+            - name: TICK_RECONNECT_MAX
+              value: "10"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          livenessProbe:
+            exec:
+              command: ["python", "scripts/docker_healthcheck.py", "--service", "tick-collector"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["python", "scripts/docker_healthcheck.py", "--service", "tick-collector"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          command: ["python", "scripts/run_tick_collector.py"]

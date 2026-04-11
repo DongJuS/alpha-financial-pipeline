@@ -1,10 +1,11 @@
 """
 test/test_scheduler_market_flow.py — 장 전/중/후 스케줄 통합 테스트
 
-unified_scheduler.py에 추가된 잡들을 검증합니다:
-- 장 전: rl_bootstrap (08:00), predictor_warmup (08:05)
-- 장 중: tick_realtime_start (09:00), tick_realtime_health (5분 간격)
-- 장 후: rl_retrain (16:00), blend_weight_adjust (16:30)
+unified_scheduler.py에 등록된 10개 잡을 검증합니다:
+- 장 전: rl_bootstrap, predictor_warmup, stock_master_daily, macro_daily, collector_daily, index_warmup
+- 장 중: index_collection (30초 간격)
+- 장 후: s3_tick_flush, rl_retrain, blend_weight_adjust
+- 실시간 틱 수집은 별도 tick-collector 서비스로 분리됨
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ class TestJobRegistration:
 
     @pytest.mark.asyncio
     async def test_all_jobs_registered(self):
-        """12개 잡이 모두 등록되는지 확인."""
+        """10개 잡이 모두 등록되는지 확인 (tick 잡은 별도 서비스로 분리됨)."""
         import src.schedulers.unified_scheduler as mod
 
         mock_scheduler = MagicMock()
@@ -64,8 +65,6 @@ class TestJobRegistration:
             "collector_daily",
             "index_warmup",
             "index_collection",
-            "tick_realtime_start",
-            "tick_realtime_health",
             "s3_tick_flush",
             "rl_retrain",
             "blend_weight_adjust",
@@ -351,7 +350,7 @@ class TestScheduleTiming:
 
     @pytest.mark.asyncio
     async def test_all_jobs_registered_with_timing(self):
-        """장 전/중/후 12개 잡이 모두 올바르게 등록되는지 확인."""
+        """장 전/중/후 10개 잡이 모두 올바르게 등록되는지 확인 (tick 잡은 별도 서비스)."""
         import src.schedulers.unified_scheduler as mod
 
         mock_scheduler = MagicMock()
@@ -381,18 +380,22 @@ class TestScheduleTiming:
         for job_id in pre_market_ids:
             assert job_id in added_jobs, f"{job_id} not registered"
 
-        # 장 중 잡
-        market_ids = {"index_collection", "tick_realtime_start", "tick_realtime_health"}
+        # 장 중 잡 (tick 잡은 별도 서비스로 분리됨)
+        market_ids = {"index_collection"}
         for job_id in market_ids:
             assert job_id in added_jobs, f"{job_id} not registered"
+
+        # tick 잡이 scheduler에 없음을 확인
+        assert "tick_realtime_start" not in added_jobs
+        assert "tick_realtime_health" not in added_jobs
 
         # 장 후 잡 (15:30 이후)
         post_market_ids = {"s3_tick_flush", "rl_retrain", "blend_weight_adjust"}
         for job_id in post_market_ids:
             assert job_id in added_jobs, f"{job_id} not registered"
 
-        # 총 12개
-        assert len(added_jobs) == 12
+        # 총 10개
+        assert len(added_jobs) == 10
 
     @pytest.mark.asyncio
     async def test_scheduler_start_called(self):
@@ -591,11 +594,11 @@ class TestTickRealtimeHealthJob:
 
 
 class TestTickJobRegistration:
-    """tick_realtime_start / tick_realtime_health 잡 등록 검증."""
+    """tick-collector 분리 후 tick 잡이 scheduler에서 제거되었는지 검증."""
 
     @pytest.mark.asyncio
-    async def test_tick_jobs_registered(self):
-        """tick_realtime_start, tick_realtime_health 포함 총 12개 잡 등록 확인."""
+    async def test_tick_jobs_not_registered(self):
+        """tick_realtime_start, tick_realtime_health가 scheduler에 없어야 한다 (별도 서비스로 분리)."""
         import src.schedulers.unified_scheduler as mod
 
         mock_scheduler = MagicMock()
@@ -620,26 +623,14 @@ class TestTickJobRegistration:
         ):
             await mod.start_unified_scheduler()
 
-        # 새로 추가된 틱 잡 확인
-        assert "tick_realtime_start" in registered, "tick_realtime_start not registered"
-        assert "tick_realtime_health" in registered, "tick_realtime_health not registered"
-
-        # tick_realtime_start: CronTrigger (09:00 KST weekdays)
-        start_trigger = registered["tick_realtime_start"]["trigger"]
-        assert isinstance(start_trigger, CronTrigger), \
-            f"tick_realtime_start should use CronTrigger, got {type(start_trigger)}"
-
-        # tick_realtime_health: interval trigger (5분)
-        # (IntervalTrigger 또는 CronTrigger 가능, 타입보다 등록 여부가 핵심)
-
-        # 총 12개 잡 (기존 10 + 신규 2)
-        assert len(registered) == 12, f"Expected 12 jobs, got {len(registered)}: {list(registered.keys())}"
+        assert "tick_realtime_start" not in registered, "tick_realtime_start should be removed"
+        assert "tick_realtime_health" not in registered, "tick_realtime_health should be removed"
+        assert len(registered) == 10, f"Expected 10 jobs, got {len(registered)}: {list(registered.keys())}"
 
     @pytest.mark.asyncio
-    async def test_tick_lock_ttl_configured(self):
-        """tick_realtime_start / tick_realtime_health의 분산 락 TTL 설정 확인."""
+    async def test_tick_lock_ttl_removed(self):
+        """tick 잡의 분산 락 TTL이 제거되었는지 확인."""
         from src.schedulers.unified_scheduler import _LOCK_TTL
 
         for job_id in ["tick_realtime_start", "tick_realtime_health"]:
-            assert job_id in _LOCK_TTL, f"{job_id} missing from _LOCK_TTL"
-            assert _LOCK_TTL[job_id] > 0, f"{job_id} TTL should be positive"
+            assert job_id not in _LOCK_TTL, f"{job_id} should be removed from _LOCK_TTL"
