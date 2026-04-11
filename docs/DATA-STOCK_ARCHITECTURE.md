@@ -31,9 +31,9 @@ QA 문서가 아니라 직접 코드를 읽어서 파악하겠습니다.
 
 `FinanceDataReader.DataReader()`로 해외지수 6종(S&P500, NASDAQ, DJI, N225, HSI, SSEC), 환율 4종(USD/KRW, EUR/KRW, JPY/KRW, CNY/KRW), 원자재 3종(금, WTI, 구리)을 수집합니다. 저장은 PostgreSQL `macro_indicators` 테이블 upsert + Redis `redis:cache:macro:{category}` (TTL 1시간) 캐싱입니다.
 
-### 4. StockMasterCollector (`src/agents/stock_master_collector.py`)
+### 4. KrxStockMasterCollector (`src/agents/krx_stock_master_collector.py`)
 
-`FinanceDataReader.StockListing("KRX")`로 KRX 전종목(~2,650개) + `StockListing("ETF/KR")`로 ETF 목록을 수집합니다. 저장은 PostgreSQL `stock_master` 테이블 upsert + Redis 3개 캐시(`redis:cache:stock_master`, `redis:cache:sector_map`, `redis:cache:etf_list`, 각 TTL 24시간)입니다.
+`FinanceDataReader.StockListing("KRX")`로 KRX 전종목(~2,650개) + `StockListing("ETF/KR")`로 ETF 목록을 수집합니다. 저장은 PostgreSQL `krx_stock_master` 테이블 upsert + Redis 3개 캐시(`redis:cache:krx_stock_master`, `redis:cache:sector_map`, `redis:cache:etf_list`, 각 TTL 24시간)입니다.
 
 ### 5. GenCollectorAgent (`src/agents/gen_collector.py`)
 
@@ -81,7 +81,7 @@ KIS REST API에서 잔고 조회(`inquire_balance`), 일별 체결 조회(`inqui
 | `real_trading_audit` | 실거래 전환 감사 로그 | audit API |
 | `operational_audits` | 운영 감사 로그 | audit |
 | `paper_trading_runs` | 모의투자 시뮬레이션 결과 | paper_trading |
-| `stock_master` | KRX 전종목 마스터 | stock_master_collector |
+| `krx_stock_master` | KRX 전종목 마스터 | krx_stock_master_collector |
 | `theme_stocks` | 테마 → 종목 매핑 | marketplace |
 | `macro_indicators` | 매크로 지표 | macro_collector |
 | `daily_rankings` | 일별 랭킹 (시총, 거래량 등) | ranking_calculator |
@@ -95,7 +95,7 @@ KIS REST API에서 잔고 조회(`inquire_balance`), 일별 체결 조회(`inqui
 - `redis:cache:latest_ticks:{ticker}` (TTL 60초) — 최신 시세
 - `redis:cache:realtime_series:{ticker}` (TTL 1시간, 최대 300건 리스트) — 실시간 시계열
 - `redis:cache:market_index` (TTL 120초) — KOSPI/KOSDAQ 지수
-- `redis:cache:stock_master` (TTL 24시간) — 전종목 마스터
+- `redis:cache:krx_stock_master` (TTL 24시간) — 전종목 마스터
 - `redis:cache:sector_map` (TTL 24시간) — 섹터 매핑
 - `redis:cache:etf_list` (TTL 24시간) — ETF 목록
 - `redis:cache:macro:{category}` (TTL 1시간) — 매크로 지표

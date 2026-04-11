@@ -119,8 +119,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         from src.utils.db_client import fetch
         from src.utils.ticker import build_cache
-        rows = await fetch("SELECT raw_code, instrument_id FROM instruments WHERE is_active = TRUE")
-        build_cache([(r["raw_code"], r["instrument_id"]) for r in rows])
+        rows = await fetch("SELECT ticker, instrument_id FROM instruments WHERE is_active = TRUE")
+        build_cache([(r["ticker"], r["instrument_id"]) for r in rows])
         logger.info("✅ 티커 마스터 캐시 로드 완료 (%d건)", len(rows))
     except Exception as e:
         logger.warning("⚠️ 티커 마스터 캐시 로드 실패 (비필수): %s", e)
@@ -133,7 +133,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning("DB 로그 핸들러 초기화 실패 (비필수): %s", e)
 
-    # 통합 스케줄러 시작 (stock_master / macro / collector / index 포함)
+    # 통합 스케줄러 시작 (krx_stock_master / macro / collector / index 포함)
     await start_unified_scheduler()
 
     yield

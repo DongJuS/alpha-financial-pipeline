@@ -59,12 +59,12 @@
   - 원자재 3종: 금, WTI, 구리
 - **저장:** PostgreSQL `macro_indicators` + Redis `redis:cache:macro:{category}` (TTL 1시간)
 
-### 1-4. StockMasterCollector (`src/agents/stock_master_collector.py`)
+### 1-4. KrxStockMasterCollector (`src/agents/krx_stock_master_collector.py`)
 
 - **소스:** `FinanceDataReader.StockListing("KRX")` + `StockListing("ETF/KR")`
 - **수집 규모:** KRX 전종목 ~2,650개 + ETF
 - **수집 필드:** ticker, name, market, sector, industry, market_cap, listing_date, is_etf, is_etn
-- **저장:** PostgreSQL `stock_master` + Redis 3개 캐시 (stock_master, sector_map, etf_list — 각 TTL 24시간)
+- **저장:** PostgreSQL `krx_stock_master` + Redis 3개 캐시 (krx_stock_master, sector_map, etf_list — 각 TTL 24시간)
 
 ### 1-5. GenCollectorAgent (`src/agents/gen_collector.py`)
 
@@ -129,7 +129,7 @@ asyncpg 커넥션 풀 기반. `DATABASE_URL` 환경변수로 연결. max_size=30
 | `real_trading_audit` | auto-increment id | audit API | `queries.py` |
 | `operational_audits` | auto-increment id | audit | `queries.py` |
 | `paper_trading_runs` | auto-increment id | paper_trading | `queries.py` |
-| `stock_master` | `ticker` | stock_master_collector | `marketplace_queries.py` |
+| `krx_stock_master` | `ticker` | krx_stock_master_collector | `marketplace_queries.py` |
 | `theme_stocks` | `(theme_slug, ticker)` | marketplace | `marketplace_queries.py` |
 | `macro_indicators` | `(symbol, snapshot_date)` | macro_collector | `marketplace_queries.py` |
 | `daily_rankings` | `(ranking_date, ranking_type, rank)` | ranking_calculator | `marketplace_queries.py` |
@@ -149,12 +149,12 @@ asyncpg 커넥션 풀 기반. `DATABASE_URL` 환경변수로 연결. max_size=30
 | `redis:cache:latest_ticks:{ticker}` | 60초 | 최신 시세 (단건 JSON) | collector |
 | `redis:cache:realtime_series:{ticker}` | 1시간 | 실시간 시계열 (최대 300건 리스트) | collector |
 | `redis:cache:market_index` | 120초 | KOSPI/KOSDAQ 지수 | index_collector |
-| `redis:cache:stock_master` | 24시간 | 전종목 마스터 | stock_master_collector |
-| `redis:cache:sector_map` | 24시간 | 섹터 → 종목 매핑 | stock_master_collector |
+| `redis:cache:krx_stock_master` | 24시간 | 전종목 마스터 | krx_stock_master_collector |
+| `redis:cache:sector_map` | 24시간 | 섹터 → 종목 매핑 | krx_stock_master_collector |
 | `redis:cache:theme_map` | 24시간 | 테마 → 종목 매핑 | marketplace |
 | `redis:cache:rankings:{ranking_type}` | 5분 | 랭킹 (장중 빈번 갱신) | ranking_calculator |
 | `redis:cache:macro:{category}` | 1시간 | 매크로 지표 | macro_collector |
-| `redis:cache:etf_list` | 24시간 | ETF/ETN 목록 | stock_master_collector |
+| `redis:cache:etf_list` | 24시간 | ETF/ETN 목록 | krx_stock_master_collector |
 | `memory:macro_context` | 4시간 | 거시경제 컨텍스트 (LLM용) | macro_collector |
 
 #### Pub/Sub 채널
@@ -240,7 +240,7 @@ config/experiments/
 | `fetch_historical_ohlcv` (FDR/KIS) | ✅ `market_data` | ❌ | ❌ | ❌ |
 | IndexCollector (KIS REST) | ❌ | ✅ market_index | ❌ | ❌ |
 | MacroCollector (FDR) | ✅ `macro_indicators` | ✅ macro:{cat} | ❌ | ❌ |
-| StockMasterCollector (FDR) | ✅ `stock_master` | ✅ stock_master 외 3개 | ❌ | ❌ |
+| KrxStockMasterCollector (FDR) | ✅ `krx_stock_master` | ✅ krx_stock_master 외 3개 | ❌ | ❌ |
 | GenCollector (Gen API) | ✅ `market_data` | ✅ latest_ticks | ✅ market_data | ✅ daily_bars |
 | KIS Broker (KIS REST) | ✅ broker_orders 외 | ❌ | ❌ | ❌ |
 | Predictor 출력 | ✅ `predictions` | ✅ signals | ✅ signals | ✅ predictions |
@@ -276,7 +276,7 @@ config/experiments/
 ┌─── PostgreSQL ──────────────────┐  │ │ ││
 │ market_data (OHLCV)             │←─┼─┘ ││
 │ macro_indicators                │←─┘   ││
-│ stock_master, theme_stocks      │←─────┘│
+│ krx_stock_master, theme_stocks      │←─────┘│
 │ predictions, debate_transcripts │       │
 │ portfolio_positions             │       │
 │ trade_history, broker_orders    │       │
@@ -290,7 +290,7 @@ config/experiments/
               ▼
 ┌─── Redis ───────────────────────┐
 │ 캐시: latest_ticks, market_index│
-│       stock_master, macro, etc  │
+│       krx_stock_master, macro, etc  │
 │ Pub/Sub: market_data, signals   │
 │          orders, alerts         │
 │ 인증: kis:oauth_token           │
@@ -346,11 +346,11 @@ config/experiments/
 | 3 | 🔴 | `datalake.py` | `debate_transcripts`, `rl_episodes` DataType enum만 존재, store 함수 미구현 |
 | 4 | 🟡 | `collect_yahoo_daily_bars` | PG만 저장. Redis 캐시·S3 Parquet·Pub/Sub 전부 누락 (FDR 일봉과 불일치) |
 | 5 | 🟡 | `collect_realtime_ticks` | S3 Parquet 미저장. `tick_data` DataType은 enum에 있으나 store 함수 없음 |
-| 6 | 🟡 | `api/main.py` lifespan | IndexCollector만 스케줄링됨. CollectorAgent 일봉/MacroCollector/StockMasterCollector 스케줄 없음 |
+| 6 | 🟡 | `api/main.py` lifespan | IndexCollector만 스케줄링됨. CollectorAgent 일봉/MacroCollector/KrxStockMasterCollector 스케줄 없음 |
 | 7 | 🟡 | `IndexCollector` | Redis 캐시만 저장(TTL 120초). PG 미저장 → 재시작 시 지수 이력 소실 |
 | 8 | 🟡 | `macro_collector.py` | Redis Pub/Sub 미발행. 다른 에이전트가 매크로 변동을 실시간 감지 불가 |
 | 9 | 🟢 | `rl_runner.py` | `active_policies.json` 없으면 시그널 0건 반환 → 블렌딩 가중치만 소모 |
-| 10 | 🟢 | `stock_master_collector` | Redis `theme_map` 캐시 키 정의되어 있으나 실제 쓰기 코드 미확인 |
+| 10 | 🟢 | `krx_stock_master_collector` | Redis `theme_map` 캐시 키 정의되어 있으나 실제 쓰기 코드 미확인 |
 | 11 | 🟢 | `fetch_historical_ohlcv` | PG만 저장. 과거 데이터 S3 백업 없음 (cold storage 미활용) |
 
 > 심각도 기준: 🔴 Critical (기능 완전 불능) · 🟡 Warning (부분 동작, 데이터 유실 위험) · 🟢 Notice (개선 권장)

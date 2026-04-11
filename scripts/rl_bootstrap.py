@@ -234,7 +234,7 @@ async def run_bootstrap(args: argparse.Namespace) -> dict:
         tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
     else:
         from src.db.queries import list_tickers
-        instruments = await list_tickers()
+        instruments = await list_tickers(mode="paper")
         tickers = [inst["instrument_id"] for inst in instruments]
         if not tickers:
             logger.error("instruments 테이블에 활성 종목이 없습니다. --tickers 옵션으로 직접 지정하세요.")
