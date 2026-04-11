@@ -33,17 +33,6 @@
 
 ---
 
-## ✅ 최근 완료
-
-### Predictor 분봉 통합 + S3 틱 최적화 (Step 8b 후속, 2026-04-11)
-
-- Predictor에 당일 1시간봉 통합: `get_ohlcv_bars('1hour')` → LLM 프롬프트에 장중 데이터 포함
-- S3 hour 파티셔닝: `_make_s3_key(hour=N)` → `date=.../hour=09/` Hive-style
-- flush 분리: `_flush_tick_buffer()`에서 S3 제거 → 15:40 KST 크론 `flush_ticks_to_s3()` 일괄 처리
-- 상세: `.agent/discussions/20260411-step8b-followup-implementation.md`
-
----
-
 ## 🔄 다음 작업
 
 ### S3 Lifecycle 설정 (코드 변경 없음)
