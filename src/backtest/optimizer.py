@@ -12,7 +12,7 @@ from typing import Optional
 
 from src.backtest.cost_model import CostModel
 from src.backtest.engine import BacktestEngine
-from src.backtest.models import BacktestConfig, BacktestResult
+from src.backtest.models import BacktestConfig
 
 
 @dataclass(frozen=True)
@@ -108,7 +108,6 @@ class BlendOptimizer:
         step: float = 0.05,
     ) -> OptimizationResult:
         """그리드 서치를 실행하여 최적 가중치를 찾습니다."""
-        from src.backtest.signal_source import ReplaySignalSource, RLSignalSource
 
         # 각 전략별 일별 수익률 시리즈를 먼저 계산
         strategy_daily_returns = await self._compute_strategy_returns(
