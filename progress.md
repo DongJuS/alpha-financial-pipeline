@@ -29,51 +29,21 @@
 
 ## ✅ 최근 완료
 
-### QA Round 2 후속 작업 완료 (2026-04-12)
+### instruments + trading_universe K3s 배포·시딩 완료 (2026-04-12)
 
-커버리지 보강(21개) + 후속 코드 수정 및 에지케이스 테스트(27개)를 2차에 걸쳐 완료했다.
+4-에이전트 병렬로 K3s 실서버 DB 마이그레이션 + 시딩 + 이미지 빌드를 동시 실행.
 
-**1차 — 커버리지 보강 (21개 테스트):** QA Report v2 FAIL/WARN 7건 대응
-| 파일 | 내용 | 건수 |
-|---|---|---|
-| `test/test_provider_status.py` | GPT 프로바이더 누락 없이 반환 검증 | 4 |
-| `test/integration/test_api_strategy_debate_detail.py` | 토론 상세 조회 API + 404 + 필터 | 5 |
-| `test/test_qa_notifications_heatmap.py` | 알림 실데이터 + 히트맵 DB fallback | 6 |
-| `test/test_qa_datalake_predictor.py` | S3 연결 실패 + AI 예측 에러 처리 | 6 |
+1. **DB 스키마 마이그레이션** — stock_master → krx_stock_master 리네임, instruments 16→6 컬럼 경량화, trading_universe 테이블 생성
+2. **instruments 시딩** — FDR에서 KRX 2,773종목 등록 (KOSPI 950 + KOSDAQ 1,823)
+3. **trading_universe 시딩** — paper 스코프 3종목: 005930(삼성전자), 000660(SK하이닉스), 035420(NAVER)
+4. **이미지 빌드 + 롤아웃** — alpha-trading:latest 재빌드, api/worker/tick-collector rollout restart
+5. **검증** — `list_tickers(mode="paper")` → 3종목 정상 반환, API health OK, 테스트 2,165 passed
 
-**2차 — 후속 코드 수정 + 에지케이스 (코드 2건 + 테스트 50개):**
-
-코드 수정:
-- `src/api/routers/datalake.py` — S3 연결 실패 시 502 JSON 에러 응답 (4개 엔드포인트 try/except, 내부 정보 노출 차단)
-- `src/agents/ranking_calculator.py` — 6개 ORDER BY에 secondary sort 추가 (tie 시 결정적 순서 보장)
-
-| 테스트 파일 | 내용 | 건수 |
-|---|---|---|
-| `test/test_datalake_s3_error_handling.py` | S3 에러 → 502 JSON + 정보 미노출 | 7 |
-| `test/test_ranking_deterministic_order.py` | 타이 시 ticker/sector 순서 보장 | 6 |
-| `test/test_orchestrator_edge_cases.py` | independent portfolio + dynamic weight | 6 |
-| `test/test_rl_edge_cases.py` | GymTradingEnv + get_policy_mode 분기 | 10 |
-| `test/test_strategy_edge_cases.py` | Strategy A/B 빈 입력 + 예외 처리 | 4 |
-| `test/test_portfolio_manager_edge_cases.py` | HOLD/가격없음/circuit breaker/매도 미보유 | 5 |
-| `test/test_rl_trading_v2_edge_cases.py` | 데이터 검증 + 다중시드 + 승인 임계값 | 12 |
-
-전체 테스트: **2165 passed** (충돌 없음)
+`krx_stock_master` 데이터는 0행 (name=None). 다음 collector 스케줄 실행 시 자동 채워짐.
 
 ---
 
 ## 🔄 다음 작업
-
-### instruments + trading_universe 후속 작업 (코드 완료, 배포·시딩 미완)
-
-코드 리팩터링은 완료(PR 대기). 하지만 아직 **실제 DB에 데이터가 없다.**
-시스템이 종목을 찾으려면 아래 3단계가 필요하다:
-
-1. **K3s DB 마이그레이션** — instruments DDL 경량화(컬럼 축소) + trading_universe 테이블 생성 + stock_master → krx_stock_master 테이블 리네임을 실서버 DB에 반영
-2. **instruments 시딩** — krx_stock_master(2,700+ 종목 카탈로그)에서 실제 운용할 종목을 instruments(경량 등록 테이블)에 등록. `scripts/db/seed_all_instruments.py` 실행.
-3. **trading_universe 시딩** — "가상투자 계좌에서 이 종목들을 운용하겠다"는 매핑 데이터를 넣어야 함. 예: `(paper, 005930.KS)`, `(paper, 000660.KS)`. 시드 스크립트: `scripts/db/seed_trading_universe.py` (작성 완료).
-
-3번이 완료되어야 `list_tickers(mode="paper")`가 종목을 반환하고, Orchestrator/Predictor/RL이 정상 작동한다.
-상세: `.agent/discussions/20260411-instruments-trading-universe-design.md`
 
 ### 로컬 데이터 축적 (진행 중)
 
@@ -120,4 +90,4 @@ Hetzner CX22 + Cloudflare R2 결정 완료. Docker Compose 배포 + Cold migrati
 
 ---
 
-*Last updated: 2026-04-12*
+*Last updated: 2026-04-12 (cleaned)*
