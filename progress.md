@@ -63,6 +63,32 @@ RL chicken-and-egg 문제 해결 + 이미지 이름 alpha-api/alpha-ui로 통일
 1. `collector.run()` 복원 → `collect_daily_bars()` 위임. 08:30 KST 일봉 수집 정상화.
 2. 별도 `tick-collector` 서비스 신규 추가 — 장애 격리(틱↔매매 독립), 독립 재시작. K3s 배포 필요.
 
+### RL 모델 DQN 업그레이드 + Ensemble + Optuna (설계 완료, 구현 대기)
+
+Tabular Q → SB3 통합 trainer(DQN/A2C/PPO) + Optuna 자동 탐색. MacBook 로컬 학습 → 서버 배포.
+
+**Phase 1 — SB3 통합 Trainer + Ensemble:**
+1. `rl_environment_v2.py` — 연속 상태 Gymnasium 환경
+2. `rl_trading_sb3.py` — SB3 통합 trainer (DQN/A2C/PPO)
+3. 프로파일 3개 (dqn/a2c/ppo)
+4. `rl_continuous_improver.py` + `rl_runner.py` + `rl_policy_store_v2.py` — SB3 분기
+5. 테스트
+
+**Phase 2 — Optuna:**
+1. `rl_hyperopt.py` — study 관리, 알고리즘별 search space
+2. `requirements.txt` + `.agent/tech_stack.md` — `optuna>=3.0,<4.0`
+
+상세: `.agent/discussions/20260412-rl-dqn-upgrade-optuna.md`
+상세: `.agent/discussions/20260412-rl-algorithm-research-ensemble.md`
+상세: `.agent/discussions/20260412-rl-dqn-to-ppo-migration.md`
+
+### RL 실시간 추론 파이프라인 (선행 조건: 위 Phase 1~2 + 분봉 40영업일)
+
+장중 매 5분 분봉 기반 RL 추론. PPO primary. 기존 인프라(WebSocket→Redis→분봉 집계) 활용.
+변경: `unified_scheduler.py` 장중 스케줄 + `rl_runner.py` 분봉 obs + 유상태 position.
+상세: `.agent/discussions/20260412-rl-realtime-inference-model-selection.md`
+상세: `.agent/discussions/20260412-rl-multiframe-data-algorithm-fit.md`
+
 ### S3 Lifecycle 설정 (코드 변경 없음)
 
 클라우드 전환 시 tick_data/ prefix에 30일→IA, 90일→Glacier IR 적용. 콘솔 설정만.
@@ -101,7 +127,7 @@ Hetzner CX22 + Cloudflare R2 결정 완료. Docker Compose 배포 + Cold migrati
 ## 📋 보류 항목
 
 - 뉴스/리서치 자동 검색 (SearchAgent) — 보류
-- RL 하이퍼파라미터 자동 탐색 (Optuna) — 보류
+- Decision Transformer — 분봉 6개월+ 축적 후 재검토
 - 코드 린트 자동화 — 틈날 때
 - 오래된 데이터 자동 아카이브 — 데이터가 더 쌓이면
 - DB 정리 크론 (7일 초과 틱 파티션 DROP) — 용량 > 5GB 시
