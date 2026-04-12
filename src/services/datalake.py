@@ -32,6 +32,7 @@ class DataType(str, Enum):
     BLEND_RESULTS = "blend_results"
     DEBATE_TRANSCRIPTS = "debate_transcripts"
     RL_EPISODES = "rl_episodes"
+    OHLCV_MINUTE = "ohlcv_minute"
 
 
 # ── PyArrow 스키마 정의 ──────────────────────────────────────────────────────
@@ -124,6 +125,18 @@ RL_EPISODES_SCHEMA = pa.schema([
     ("created_at", pa.timestamp("ms")),
 ])
 
+OHLCV_MINUTE_SCHEMA = pa.schema([
+    ("instrument_id", pa.string()),
+    ("bucket_at", pa.timestamp("ms")),
+    ("open", pa.int32()),
+    ("high", pa.int32()),
+    ("low", pa.int32()),
+    ("close", pa.int32()),
+    ("volume", pa.int64()),
+    ("trade_count", pa.int32()),
+    ("vwap", pa.float64()),
+])
+
 SCHEMAS: dict[DataType, pa.Schema] = {
     DataType.DAILY_BARS: DAILY_BARS_SCHEMA,
     DataType.PREDICTIONS: PREDICTIONS_SCHEMA,
@@ -132,6 +145,7 @@ SCHEMAS: dict[DataType, pa.Schema] = {
     DataType.TICK_DATA: TICK_DATA_SCHEMA,
     DataType.DEBATE_TRANSCRIPTS: DEBATE_TRANSCRIPTS_SCHEMA,
     DataType.RL_EPISODES: RL_EPISODES_SCHEMA,
+    DataType.OHLCV_MINUTE: OHLCV_MINUTE_SCHEMA,
 }
 
 
@@ -381,3 +395,112 @@ async def store_rl_episodes(records: list[dict[str, Any]], partition_date: date 
     except Exception as e:
         logger.error("S3 RL 에피소드 저장 최종 실패 (%d회 재시도 후): %s", _MAX_RETRIES, e, exc_info=True)
         return None
+
+
+async def archive_minute_bars(year: int, month: int) -> list[str]:
+    """지정 월의 ohlcv_minute 데이터를 종목별 S3 Parquet으로 아카이브합니다.
+
+    S3 키 구조: ohlcv_minute/year=YYYY/month=MM/{instrument_id}.parquet
+    아카이브 완료 시 _ARCHIVED 마커 파일을 생성합니다.
+
+    Returns:
+        업로드된 S3 URI 목록
+    """
+    from collections import defaultdict
+
+    from src.db.queries import fetch
+
+    # 해당 월의 분봉 데이터 조회
+    start = f"{year:04d}-{month:02d}-01"
+    if month == 12:
+        end = f"{year + 1:04d}-01-01"
+    else:
+        end = f"{year:04d}-{month + 1:02d}-01"
+
+    rows = await fetch(
+        """
+        SELECT instrument_id, bucket_at, open, high, low, close,
+               volume, trade_count, vwap
+        FROM ohlcv_minute
+        WHERE bucket_at >= $1::timestamptz
+          AND bucket_at < $2::timestamptz
+        ORDER BY instrument_id, bucket_at
+        """,
+        start,
+        end,
+    )
+
+    if not rows:
+        logger.info("archive_minute_bars: %04d-%02d 데이터 없음 — 스킵", year, month)
+        return []
+
+    # 종목별 그룹핑
+    by_instrument: dict[str, list[dict]] = defaultdict(list)
+    for row in rows:
+        by_instrument[row["instrument_id"]].append(
+            {
+                "instrument_id": row["instrument_id"],
+                "bucket_at": row["bucket_at"],
+                "open": int(row["open"]),
+                "high": int(row["high"]),
+                "low": int(row["low"]),
+                "close": int(row["close"]),
+                "volume": int(row["volume"]),
+                "trade_count": int(row["trade_count"]),
+                "vwap": float(row["vwap"]),
+            }
+        )
+
+    uris: list[str] = []
+    prefix = f"ohlcv_minute/year={year:04d}/month={month:02d}"
+
+    for instrument_id, records in by_instrument.items():
+        try:
+            data = _to_parquet_bytes(records, OHLCV_MINUTE_SCHEMA)
+            key = f"{prefix}/{instrument_id}.parquet"
+            s3_uri = await _upload_with_retry(data, key)
+            uris.append(s3_uri)
+            logger.info(
+                "S3 분봉 아카이브: %s, %d건 → %s",
+                instrument_id,
+                len(records),
+                s3_uri,
+            )
+        except Exception as e:
+            logger.error(
+                "S3 분봉 아카이브 실패 (%s): %s", instrument_id, e, exc_info=True
+            )
+
+    # 마커 파일 생성
+    if uris:
+        try:
+            marker_key = f"{prefix}/_ARCHIVED"
+            await _upload_with_retry(
+                b"archived",
+                marker_key,
+                content_type="text/plain",
+            )
+            logger.info("S3 분봉 아카이브 마커 생성: %s", marker_key)
+        except Exception as e:
+            logger.error("S3 아카이브 마커 생성 실패: %s", e, exc_info=True)
+
+    logger.info(
+        "archive_minute_bars 완료: %04d-%02d, %d종목, %d파일",
+        year,
+        month,
+        len(by_instrument),
+        len(uris),
+    )
+    return uris
+
+
+async def check_archive_marker(year: int, month: int) -> bool:
+    """S3에 해당 월의 아카이브 마커(_ARCHIVED)가 존재하는지 확인합니다."""
+    from src.utils.s3_client import object_exists
+
+    marker_key = f"ohlcv_minute/year={year:04d}/month={month:02d}/_ARCHIVED"
+    try:
+        return await object_exists(marker_key)
+    except Exception as exc:
+        logger.warning("S3 아카이브 마커 확인 실패 (%s): %s", marker_key, exc)
+        return False
