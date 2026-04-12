@@ -1,11 +1,10 @@
-# K3s 기본 Traefik IngressRoute
+# nginx ingress controller
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: alpha-trading
-  annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
+  ingressClassName: nginx
   rules:
     - http:
         paths:
