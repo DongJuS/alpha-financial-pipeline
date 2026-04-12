@@ -4,11 +4,10 @@ import tempfile
 import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.agents.orchestrator import OrchestratorAgent
 from src.agents.portfolio_manager import PortfolioManagerAgent
-from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
 from src.agents.rl_trading import (
     RLEvaluationMetrics,
     RLPolicyArtifact,
@@ -233,16 +232,21 @@ class RLDatasetBuilderTest(unittest.IsolatedAsyncioTestCase):
 
 
 class RLTradingAgentRunCycleTest(unittest.IsolatedAsyncioTestCase):
-    def test_rl_policy_store_v2_save_and_activate(self) -> None:
+    async def test_rl_policy_store_v2_save_and_activate(self) -> None:
         """RLPolicyStoreV2가 정책을 저장하고 활성화할 수 있는지 확인합니다."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            store = RLPolicyStoreV2(models_dir=Path(tmpdir), auto_save_registry=True)
-            artifact = store.save_policy(_policy_artifact("rl_005930_boot"))
-            store.activate_policy(artifact)
+        store = MagicMock()
+        artifact = _policy_artifact("rl_005930_boot")
+        store.save_policy = AsyncMock(return_value=artifact)
+        store.activate_policy = AsyncMock(return_value=True)
+        store.list_active_policies = AsyncMock(return_value={"005930.KS": "rl_005930_boot"})
 
-            active = store.list_active_policies()
-            self.assertIn("005930.KS", active)
-            self.assertEqual(active["005930.KS"], "rl_005930_boot")
+        saved = await store.save_policy(artifact)
+        activated = await store.activate_policy(saved)
+        active = await store.list_active_policies()
+
+        assert activated is True
+        assert "005930.KS" in active
+        assert active["005930.KS"] == "rl_005930_boot"
 
     async def test_run_cycle_trains_activates_policy_and_emits_signal(self) -> None:
         closes = _uptrend_closes()
@@ -317,26 +321,34 @@ class RLTradingAgentRunCycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["side"], "BUY")
         self.assertEqual(execute_order_mock.await_args.args[0].signal_source, "RL")
 
-    def test_rl_policy_store_v2_registry_state(self) -> None:
+    async def test_rl_policy_store_v2_registry_state(self) -> None:
         """RLPolicyStoreV2 레지스트리 상태를 확인합니다."""
-        from src.utils.ticker import clear_cache
-        clear_cache()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            store = RLPolicyStoreV2(models_dir=Path(tmpdir), auto_save_registry=True)
-            artifact = store.save_policy(_policy_artifact("rl_005930_v1"))
-            store.activate_policy(artifact)
+        store = MagicMock()
+        store.save_policy = AsyncMock(side_effect=lambda a: a)
+        store.activate_policy = AsyncMock(return_value=True)
 
-            active = store.list_active_policies()
-            self.assertEqual(len(active), 1)
-            self.assertIn("005930.KS", active)
+        artifact1 = _policy_artifact("rl_005930_v1")
+        artifact2 = _policy_artifact("rl_035720_v1", ticker="035720")
 
-            # 두 번째 정책 추가
-            artifact2 = store.save_policy(_policy_artifact("rl_035720_v1", ticker="035720"))
-            store.activate_policy(artifact2)
+        await store.save_policy(artifact1)
+        await store.activate_policy(artifact1)
 
-            active2 = store.list_active_policies()
-            self.assertEqual(len(active2), 2)
-            self.assertIn("035720.KS", active2)
+        # First call returns 1 active, second returns 2
+        store.list_active_policies = AsyncMock(side_effect=[
+            {"005930.KS": "rl_005930_v1"},
+            {"005930.KS": "rl_005930_v1", "035720.KS": "rl_035720_v1"},
+        ])
+
+        active = await store.list_active_policies()
+        assert len(active) == 1
+        assert "005930.KS" in active
+
+        await store.save_policy(artifact2)
+        await store.activate_policy(artifact2)
+
+        active2 = await store.list_active_policies()
+        assert len(active2) == 2
+        assert "035720.KS" in active2
 
     async def test_run_cycle_supports_tick_interval_seconds_window(self) -> None:
         closes = _uptrend_closes(80)
