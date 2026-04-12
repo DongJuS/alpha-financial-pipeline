@@ -23,6 +23,9 @@ src/schedulers/unified_scheduler.py — 통합 스케줄러
     minute_aggregation  15:50 KST  tick_data→ohlcv_minute 1분봉 배치 집계
     rl_retrain          16:00 KST  RL 전략 재학습
     blend_weight_adjust 16:30 KST  블렌딩 가중치 동적 조정
+
+    [월간]
+    minute_partition_mgmt  매월 1일 00:05 KST  파티션 관리 + S3 아카이브
 """
 
 from __future__ import annotations
@@ -57,6 +60,8 @@ _LOCK_TTL: dict[str, int] = {
     "minute_aggregation": 300,   # 5분 (tick→ohlcv_minute 집계)
     "rl_retrain": 3600,          # 60분 (멀티 티커 학습)
     "blend_weight_adjust": 120,  # 2분
+    # 월간
+    "minute_partition_mgmt": 600,  # 10분 (S3 아카이브 포함)
 }
 
 
@@ -499,6 +504,94 @@ async def start_unified_scheduler() -> None:
         id="blend_weight_adjust",
         name="Blend weight dynamic adjust (16:30 KST)",
         misfire_grace_time=30,
+        replace_existing=True,
+    )
+
+    # -- 월간: 분봉 파티션 관리 (매월 1일 00:05 KST) --
+    async def _run_minute_partition_mgmt() -> None:
+        """매월 1일: 다음 달 파티션 생성 + 3개월 전 아카이브→DROP."""
+        from datetime import datetime as _dt
+
+        from src.utils.db_client import execute
+
+        now = _dt.now(tz=KST)
+
+        # 1) 다음 달 파티션 CREATE IF NOT EXISTS
+        if now.month == 12:
+            next_year, next_month = now.year + 1, 1
+        else:
+            next_year, next_month = now.year, now.month + 1
+
+        if next_month == 12:
+            after_year, after_month = next_year + 1, 1
+        else:
+            after_year, after_month = next_year, next_month + 1
+
+        partition_name = f"ohlcv_minute_{next_year}_{next_month:02d}"
+        start_val = f"{next_year}-{next_month:02d}-01"
+        end_val = f"{after_year}-{after_month:02d}-01"
+
+        await execute(
+            f"CREATE TABLE IF NOT EXISTS {partition_name} "
+            f"PARTITION OF ohlcv_minute "
+            f"FOR VALUES FROM ('{start_val}') TO ('{end_val}')"
+        )
+        logger.info(
+            "파티션 생성: %s (%s ~ %s)", partition_name, start_val, end_val
+        )
+
+        # 2) 3개월 전 데이터 아카이브
+        archive_month = now.month - 3
+        archive_year = now.year
+        if archive_month <= 0:
+            archive_month += 12
+            archive_year -= 1
+
+        from src.services.datalake import archive_minute_bars, check_archive_marker
+
+        uris = await archive_minute_bars(archive_year, archive_month)
+
+        if not uris:
+            logger.info(
+                "파티션 관리: %04d-%02d 아카이브할 데이터 없음",
+                archive_year,
+                archive_month,
+            )
+            return
+
+        # 3) 마커 확인 후 파티션 DROP
+        if await check_archive_marker(archive_year, archive_month):
+            old_partition = f"ohlcv_minute_{archive_year}_{archive_month:02d}"
+            await execute(f"DROP TABLE IF EXISTS {old_partition}")
+            logger.info(
+                "파티션 DROP: %s (S3 아카이브 확인 완료)", old_partition
+            )
+        else:
+            logger.warning(
+                "파티션 DROP 스킵: %04d-%02d — S3 마커 미확인. 수동 확인 필요",
+                archive_year,
+                archive_month,
+            )
+            # Telegram 알림
+            try:
+                from src.agents.notifier import NotifierAgent
+
+                notifier = NotifierAgent()
+                await notifier.send(
+                    "partition_mgmt",
+                    "분봉 파티션 DROP 스킵\n"
+                    f"{archive_year}-{archive_month:02d} S3 마커 미확인",
+                )
+            except Exception as exc:
+                logger.warning("파티션 관리 알림 실패: %s", exc)
+
+    # ── 잡 등록: 월간 ─────────────────────────────────────────────────────
+    scheduler.add_job(
+        _locked_job("minute_partition_mgmt", _run_minute_partition_mgmt),
+        CronTrigger(day=1, hour=0, minute=5, timezone=str(KST)),
+        id="minute_partition_mgmt",
+        name="Minute partition management (1st 00:05 KST)",
+        misfire_grace_time=3600,
         replace_existing=True,
     )
 

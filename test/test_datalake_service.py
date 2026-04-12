@@ -34,7 +34,8 @@ class TestDataType:
     def test_all_data_types(self):
         from src.services.datalake import DataType
         expected = {"daily_bars", "tick_data", "predictions", "orders",
-                    "blend_results", "debate_transcripts", "rl_episodes"}
+                    "blend_results", "debate_transcripts", "rl_episodes",
+                    "ohlcv_minute"}
         actual = {dt.value for dt in DataType}
         assert actual == expected
 
