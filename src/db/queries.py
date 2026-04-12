@@ -1683,6 +1683,14 @@ async def update_training_job_status(
         )
 
 
+async def update_training_job_progress(job_id: str, progress_pct: int) -> None:
+    """학습 작업 진행률(0-100)을 업데이트합니다."""
+    await execute(
+        "UPDATE rl_training_jobs SET progress_pct = $1 WHERE job_id = $2",
+        min(100, max(0, progress_pct)), job_id,
+    )
+
+
 async def fetch_training_job(job_id: str) -> dict | None:
     """학습 작업 상세를 반환합니다."""
     row = await fetchrow(
