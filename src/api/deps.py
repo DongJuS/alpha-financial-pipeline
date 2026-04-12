@@ -13,6 +13,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.utils.config import get_settings, Settings
 from src.utils.db_client import fetchrow
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 bearer_scheme = HTTPBearer(
     scheme_name="BearerAuth",
@@ -33,12 +36,14 @@ async def get_current_user(
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
     except jwt.ExpiredSignatureError:
+        logger.warning("auth 401: 토큰 만료 — token prefix: %s…", token[:8] if len(token) > 8 else "short")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="토큰이 만료되었습니다.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError as e:
+        logger.warning("auth 401: 유효하지 않은 토큰 — %s", e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="유효하지 않은 토큰입니다.",
@@ -59,6 +64,7 @@ async def get_current_user(
         user_id,
     )
     if not user:
+        logger.warning("auth 401: user_id=%s — users 테이블에 존재하지 않음 (삭제된 사용자?)", user_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="존재하지 않는 사용자입니다.",
@@ -79,6 +85,7 @@ async def get_admin_user(
 ) -> dict:
     """관리자 권한 확인."""
     if not current_user.get("is_admin"):
+        logger.warning("auth 403: email=%s — 관리자 권한 없음", current_user.get("email"))
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="관리자 권한이 필요합니다.",
