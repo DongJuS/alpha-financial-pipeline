@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
-from src.backtest.models import BacktestResult, DailySnapshot
+from src.backtest.models import BacktestResult
 from src.utils.db_client import fetch, fetchrow, get_pool
 
 
