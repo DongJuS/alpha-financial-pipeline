@@ -1128,6 +1128,20 @@ CREATE_TABLES: list[str] = [
         ON rl_targets(is_active) WHERE is_active = true;
     """,
 
+    # ── 예측 스케줄 (전략별 실행 주기) ─────────────────────────────────────
+    """
+    CREATE TABLE IF NOT EXISTS prediction_schedule (
+        strategy_code   VARCHAR(5)    PRIMARY KEY,
+        interval_minutes INT          NOT NULL DEFAULT 30,
+        is_enabled      BOOLEAN       NOT NULL DEFAULT true,
+        last_run_at     TIMESTAMPTZ,
+        updated_at      TIMESTAMPTZ   NOT NULL DEFAULT now()
+    );
+    INSERT INTO prediction_schedule (strategy_code, interval_minutes, is_enabled)
+    VALUES ('A', 30, true), ('B', 30, true), ('RL', 30, true)
+    ON CONFLICT (strategy_code) DO NOTHING;
+    """,
+
     # ── RL 정책 메타데이터 ─────────────────────────────────────────────────
     """
     CREATE TABLE IF NOT EXISTS rl_policies (
@@ -1249,6 +1263,7 @@ DROP TABLE IF EXISTS
     rl_experiments,
     rl_training_jobs,
     rl_targets,
+    prediction_schedule,
     rl_policies,
     ohlcv_daily,
     instruments,
