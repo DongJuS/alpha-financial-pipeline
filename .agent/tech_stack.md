@@ -74,6 +74,7 @@
 | `torch` | RL 모델 학습 백엔드 |
 | `gymnasium` | 트레이딩 environment 인터페이스 |
 | `stable-baselines3` | 기본 RL 알고리즘 구현 |
+| `optuna` | RL 하이퍼파라미터 자동 탐색 (TPE sampler, 학습 시에만 사용) |
 | `scikit-learn` | 보조 전처리/평가 |
 
 원칙:
