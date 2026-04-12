@@ -150,3 +150,12 @@ PR #137.
 instruments 테이블을 종목 SoT로 채택하여 Orchestrator·RL 스케줄러의 하드코딩 전면 제거.
 **왜:** 종목 추가 시 registry.json + worker + orchestrator 3곳을 수동 수정해야 했음. DB를 single source of truth로 통일하여 종목 관리 포인트를 1곳으로 축소. RL bootstrap 시 DB에 있으나 registry에 없는 종목 자동 등록.
 PR #136.
+
+---
+
+## QA Round 2 커버리지 보강 (2026-04-12)
+
+QA Report v2 FAIL/WARN 6건 대응 + 7개 영역 에지케이스 보강. 코드 수정 2건 + 테스트 71개 추가, 전체 2165 passed. PR #149.
+**왜 코드 수정:**
+- Datalake S3 연결 실패 시 500 plain-text가 그대로 노출됨 → 502 JSON 에러로 변경 (내부 정보 노출 차단)
+- Ranking 동점 시 ORDER BY가 비결정적 → secondary sort(ticker ASC) 추가하여 결과 일관성 보장
