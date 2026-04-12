@@ -5,6 +5,39 @@
 
 ---
 
+## 2026-04-12 — RL 학습 파이프라인 안정화 + prediction_schedule (PR #163~#172)
+
+### rl_targets 테이블 도입 (PR #163)
+- **문제**: `retrain_all()` → `list_target_tickers()` → `rl_policies` 조회 → 비어있으면 학습 대상 0개 → 영원히 빈 상태 (chicken-and-egg)
+- **해결**: `rl_targets` 테이블 분리. "무엇을 학습할지"(입력)와 "학습 결과"(rl_policies, 출력) 분리
+- PUT /rl/tickers가 실제 DB에 저장하도록 수정 (기존: 반환만 하고 저장 안 함)
+- DELETE /rl/tickers는 rl_targets에서만 삭제, 학습 결과(rl_policies) 보존
+- ticker 캐시 오염 방지 conftest fixture 추가
+
+### Docker 이미지 이름 정리 (PR #164)
+- `alpha-trading:latest` → `alpha-api:latest`, `alpha-trading-ui:latest` → `alpha-ui:latest`
+- backend(api/worker/tick-collector)는 동일 Dockerfile이므로 alpha-api 1개로 통일
+
+### prediction_schedule 테이블 구현 (PR #166)
+- `prediction_schedule` 테이블: strategy_code PK, interval_minutes(기본 30), is_enabled, last_run_at
+- Orchestrator 루프: 기존 고정 10분 sleep → 1분 체크 + 전략별 interval 기반 skip
+- GET/PUT /api/v1/scheduler/prediction-schedule API
+- DB 조회 실패 시 기존 ORCH_INTERVAL_SECONDS 환경변수로 폴백
+
+### RL 학습 진행률 추적 (PR #167)
+- `rl_training_jobs.progress_pct SMALLINT` 컬럼 추가
+- trainer의 멀티시드 학습 루프에서 seed 완료마다 on_progress 콜백 → DB 업데이트
+- UI는 기존 5초 폴링 + 이미 정의된 progress_pct 필드로 자동 반영
+
+### RL 프로파일 동적 조회 (PR #168, #169, #171, #172)
+- **문제**: policy_family 기본값 `tabular_q_v2`가 3곳에서 하드코딩, 실제 파일은 `tabular_q_v2_momentum.json` → 학습 잡 FAILED
+- **해결**: `artifacts/rl/profiles/*.json` 디렉토리 스캔으로 프로파일 목록 동적 결정
+- `RLExperimentManager.list_profiles()` + `get_available_profiles()` 편의 함수
+- PVC 마운트가 Docker 이미지의 profiles 디렉토리를 덮어쓰는 문제 → deploy-local.sh에 PVC 동기화 단계 추가
+- V1 TabularQTrainer에 `**kwargs` 추가 (on_progress 하위호환)
+
+---
+
 ## Step 4 — Bitnami 인프라 전환 + Kustomize 분리 (2026-03-29)
 
 PR #63 (Helm), PR #64 (Kustomize).

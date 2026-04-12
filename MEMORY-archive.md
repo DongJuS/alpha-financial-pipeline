@@ -231,6 +231,24 @@ SENTIMENT_TO_SIGNAL = {
 
 ---
 
+## 2026-04-12 — KIS OAuth 토큰 장중 health 체크 (PR #170)
+
+장중(09~15시) 매시 정각 KIS OAuth 토큰 유효성 자동 검증 크론잡 추가. unified_scheduler 11번째 잡. 토큰 없음 → 재발급, TTL 1h 미만 → 갱신, 실패 시 NotifierAgent→Telegram 알림. 분산 락 TTL 30초. KIS_IS_PAPER_TRADING 설정에 따라 paper/real 스코프 자동 결정. 배포 전 K3s pod에서 `issue_kis_token(scope='paper')` 토큰 발급 테스트로 연결 정상 확인.
+
+---
+
+## 2026-04-12 — RL Training Jobs/Experiments DB 관리 (PR #165)
+
+RL 학습 잡 라이프사이클을 in-memory dict에서 DB 테이블로 전환. `rl_training_jobs`(queued→running→completed/failed)와 `rl_experiments`(실험 결과) 2개 테이블 신설. 종목 등록(PUT /rl/tickers) 시 활성 정책 없는 종목에 대해 자동으로 queued job 생성. UI "학습 시작" 버튼이 POST /training-jobs/{job_id}/start를 호출하면 asyncio.create_task로 백그라운드 학습 실행, 완료 시 실험 결과를 rl_experiments에 저장. 기존 파일시스템(artifacts/rl/experiments/) 의존 제거.
+
+---
+
+## 2026-04-12 — prediction_schedule 테이블 설계 (discussion only)
+
+Strategy A/B 예측 주기를 DB 테이블로 관리하는 설계안 확정. A안 채택: prediction_schedule 테이블(strategy_name PK, interval_minutes, is_active) + orchestrator 루프 sleep(600)→sleep(60) + 전략별 last_run_at 기반 skip 로직. 기본 30분 간격, 장중 ~13회 실행. 환경변수 ORCH_INTERVAL_SECONDS는 fallback으로만 유지. 구현 미착수. 상세: `.agent/discussions/20260412-prediction-schedule-table-design.md`
+
+---
+
 ## 2026-04-11 — RL 종목 레지스트리 자동 동기화 (PR #136)
 
 instruments 테이블을 종목 SoT로 채택하여 Orchestrator·RL 스케줄러의 하드코딩(_DEFAULT_TICKERS 등) 전면 제거. RL bootstrap 크론잡이 DB에서 종목을 읽어 registry.json에 자동 등록. registry.json은 학습 이력 저장소로 역할 축소. ticker 정규화 중복(259960 vs 259960.KS) 병합.
