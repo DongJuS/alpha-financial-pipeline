@@ -40,9 +40,10 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건, 2023-01~2026-04).
 - **클라우드 배포 전 QA Round 1+2 (PR #140, #149)**: 테스트 커버리지 대폭 확대, S3 에러 처리·Ranking 결정적 정렬 코드 수정
 
 **다음 목표:**
-- instruments + trading_universe DB 배포·시딩 (코드 완료, 배포 대기)
+- RL 모델 DQN 업그레이드 + Ensemble(DQN+A2C+PPO) + Optuna 자동 탐색
 - 로컬에서 틱 데이터 축적 시작 (클라우드 전환 전, 비용 절감)
 - RL 분봉 피처 확장 (분봉 데이터 40영업일 축적 후)
+- RL 실시간 추론 파이프라인 (분봉 환경 + 장중 5분 간격)
 - 클라우드 전환: Hetzner CX22 + Cloudflare R2 (월 ~5,000원)
 
 ---
@@ -70,13 +71,18 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건). 틱 수집은 장중 WebSocke
 
 **✅ tick-collector 서비스 분리 완료 (PR #138):** collector.run() 복원 + 별도 tick-collector 서비스. 장애 격리(틱↔매매 독립) + 독립 재시작. unified_scheduler에서 tick 크론잡 2개 제거(12→10 잡). K3s 배포 후 데이터 축적 시작.
 
-### RL 분봉 피처 확장 (선행 조건: 분봉 40영업일 축적)
+### 틱+일봉 통합 분석 레이어 (진행 중)
 
-**왜 필요한가:** RL이 일봉 6개 피처만 사용 중. 분봉 파생 피처(vwap_deviation, volume_skew)를 추가하면 장중 패턴 포착 가능.
+**왜 필요한가:** 틱 데이터를 수집·저장하지만 전략 분석에 활용하지 않아 ROI가 낮음. 분봉 집계 + 통합 빌더로 RL/LLM 양쪽에서 장중 패턴을 활용할 수 있다.
 
-**설계 토론 완료 (2026-04-11):** Tabular Q-learning 유지 + 분봉 파생 일봉 피처 2개 추가. 상태 공간 27→243, 에피소드·시드 증가로 보완.
-선행 조건: Step 8b 완료 + 분봉 데이터 40영업일 축적.
-- 상세: `.agent/discussions/20260411-rl-intraday-feature-expansion.md`
+**아키텍처 결정 (2026-04-12):** 안 C(하이브리드) 채택 — DB 최근 90일(`ohlcv_minute`) + S3 Parquet 아카이브. 수집 파이프라인 변경 없음.
+
+Phase 0 (즉시): ohlcv_minute 테이블 + 집계 크론(15:50) + S3 아카이브 + UnifiedMarketData 빌더
+Phase 1 (40영업일 후): RL 분봉 피처 2개 추가 (vwap_deviation, volume_skew)
+Phase 2 (Phase 1 검증 후): LLM 장중 패턴 컨텍스트 추가
+- 상세 (아키텍처): `.agent/discussions/20260412-unified-market-data-architecture.md`
+- 상세 (구현): `.agent/discussions/20260412-unified-market-data-implementation.md`
+- 상세 (RL 피처): `.agent/discussions/20260411-rl-intraday-feature-expansion.md`
 
 
 ### Predictor MTF 실효과 검증
