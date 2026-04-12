@@ -43,10 +43,10 @@ from src.utils.ticker import normalize_with_db, to_raw
 
 logger = get_logger(__name__)
 
-DEFAULT_PROFILE_IDS = (
-    "tabular_q_v2_momentum",
-    "tabular_q_v1_baseline",
-)
+def _default_profile_ids() -> tuple[str, ...]:
+    from src.agents.rl_experiment_manager import get_available_profiles
+    profiles = get_available_profiles()
+    return tuple(profiles) if profiles else ("tabular_q_v2_momentum",)
 
 
 @dataclass
@@ -131,7 +131,7 @@ class RLContinuousImprover:
         dataset_days: int = 180,
         on_progress: Callable[[int], None] | None = None,
     ) -> RetrainOutcome:
-        profile_list = list(profile_ids or DEFAULT_PROFILE_IDS)
+        profile_list = list(profile_ids or _default_profile_ids())
         if not profile_list:
             return RetrainOutcome(
                 ticker=ticker,
