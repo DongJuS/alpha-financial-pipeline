@@ -19,12 +19,12 @@ PostgreSQL (DB), Redis (캐시/메시징), S3 (데이터 레이크), K3s (배포
 
 ---
 
-## 현재 상태 (2026-04-11)
+## 현재 상태 (2026-04-12)
 
 핵심 매매 기능 + 실시간 틱 수집 + 틱 저장소 + AI 모델 통합까지 완성.
 K3s DB에 일봉 시딩 완료 (3종목 2,394건, 2023-01~2026-04).
-클라우드 배포 전 QA Round 1 완료 (테스트 46개 파일, 12,846줄 추가).
-다음은 QA Round 2 → 로컬 데이터 축적 → 클라우드 전환 → RL 피처 확장 순서로 진행.
+클라우드 배포 전 QA Round 1+2 완료 (테스트 2165개 통과).
+다음은 instruments 배포 → 로컬 데이터 축적 → 클라우드 전환 → RL 피처 확장 순서로 진행.
 
 **완료된 것:**
 - 3가지 AI 전략으로 자동 매매 (모의투자 검증 완료)
@@ -35,11 +35,12 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건, 2023-01~2026-04).
 - AI 모델 호출 통합 LLMRouter (Step 9 Phase 2)
 - 과거 데이터로 전략 성과 검증 (백테스트) + 웹 대시보드
 - 에이전트 건강 모니터링 → Telegram 자동 알림
-- K3s(경량 쿠버네티스) 서버 배포, 자동 테스트 798개 통과
+- K3s(경량 쿠버네티스) 서버 배포, 자동 테스트 2165개 통과
 - alpha_db 정리: gen heartbeat 오염 제거 + 무의미한 predictions 정리
-- **클라우드 배포 전 QA Round 1 (PR #140)**: 4-에이전트 병렬 QA, 테스트 커버리지 대폭 확대
+- **클라우드 배포 전 QA Round 1+2 (PR #140, #149)**: 테스트 커버리지 대폭 확대, S3 에러 처리·Ranking 결정적 정렬 코드 수정
 
 **다음 목표:**
+- instruments + trading_universe DB 배포·시딩 (코드 완료, 배포 대기)
 - 로컬에서 틱 데이터 축적 시작 (클라우드 전환 전, 비용 절감)
 - RL 분봉 피처 확장 (분봉 데이터 40영업일 축적 후)
 - 클라우드 전환: Hetzner CX22 + Cloudflare R2 (월 ~5,000원)
@@ -52,21 +53,14 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건, 2023-01~2026-04).
 
 ---
 
+## 완료된 마일스톤 (최근)
+
+### ✅ instruments + 종목 유니버스 배포·시딩 완료 (2026-04-12)
+
+코드(PR #147, #148) + K3s 배포 + DB 시딩 모두 완료. `list_tickers(mode="paper")` → 3종목 정상 반환.
+instruments 2,773건(KOSPI 950 + KOSDAQ 1,823), trading_universe 3건(paper 스코프).
+
 ## 진행 중 마일스톤
-
-### instruments + 종목 유니버스 배포·시딩 (코드 완료, 배포 대기)
-
-**왜 필요한가:** 코드상으로 종목 관리 구조(instruments 경량화 + trading_universe 모드별 분리)가 완성됐지만, 실서버 DB에는 아직 데이터가 없다. 시스템이 종목을 찾으려면 DB에 데이터가 들어가야 한다.
-
-**코드 완료 (2026-04-12):**
-- instruments DDL 경량화 (PK/FK만), trading_universe 테이블 신설, stock_master → krx_stock_master 리네임
-- 27개 쿼리 리팩터링, list_tickers(mode="paper") 시그니처 변경, 테스트 2054개 통과
-
-**남은 작업:**
-1. K3s DB 마이그레이션 — DDL 변경 + 테이블 리네임을 실서버에 적용
-2. instruments 시딩 — krx_stock_master에서 운용할 종목을 instruments에 등록 (기존 스크립트 실행)
-3. trading_universe 시딩 — `scripts/db/seed_trading_universe.py` 실행 (스크립트 작성 완료)
-- 상세: `.agent/discussions/20260411-instruments-trading-universe-design.md`
 
 ### 로컬 데이터 축적 (진행 중)
 
@@ -83,23 +77,6 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건). 틱 수집은 장중 WebSocke
 **설계 토론 완료 (2026-04-11):** Tabular Q-learning 유지 + 분봉 파생 일봉 피처 2개 추가. 상태 공간 27→243, 에피소드·시드 증가로 보완.
 선행 조건: Step 8b 완료 + 분봉 데이터 40영업일 축적.
 - 상세: `.agent/discussions/20260411-rl-intraday-feature-expansion.md`
-
-### 클라우드 배포 전 QA (Round 1 완료, Round 2 커버리지 보강 완료)
-
-**왜 필요한가:** 클라우드 전환 전에 전체 시스템 품질을 검증. 소스 133개 파일(31,040줄) 대비 테스트 커버리지 ~55% → 80%+ 목표.
-
-**Round 1 완료 (PR #140):** 4개 AI QA 에이전트 병렬 작업. 46개 테스트 파일, 12,846줄 추가. src/ 수정 없음.
-- Agent 1: orchestrator/RL/ranking 테스트 ~152개
-- Agent 2: collector/gen/datalake/tick 테스트 ~185개
-- Agent 3: API 통합/E2E/보안 테스트
-- Agent 4: DB/config/scheduler/LLM/conftest ~272개 + 공용 픽스처
-
-**Round 2 완료 (2026-04-12):** 2차에 걸쳐 코드 수정 2건 + 테스트 71개 추가. 전체 2165 passed.
-- 1차: QA Report v2 FAIL/WARN 커버리지 보강 21개
-- 2차: Datalake S3 502 에러 처리 + Ranking 결정적 정렬 (코드 수정 2건) + 7개 영역 에지케이스 50개
-
-파티셔닝 문서: `.agent/partition/20260411-cloud-pre-qa-partition.md`
-
 
 
 ### Predictor MTF 실효과 검증
