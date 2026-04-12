@@ -550,10 +550,6 @@ class TestGymTradingEnvWrapper:
         from src.agents.rl_environment import GymTradingEnv
         assert issubclass(GymTradingEnv, TradingEnv)
 
-    @pytest.mark.xfail(
-        reason="BUG: GymTradingEnv MRO에서 gym.Env.reset이 TradingEnv.reset보다 우선 — "
-               "gym.Env.__init__도 호출되지 않아 reset()이 None 반환"
-    )
     def test_gym_env_creation(self):
         """GymTradingEnv 인스턴스 생성."""
         from src.agents.rl_environment import HAS_GYMNASIUM
@@ -566,10 +562,6 @@ class TestGymTradingEnvWrapper:
         obs, info = env.reset()
         assert isinstance(obs, np.ndarray)
 
-    @pytest.mark.xfail(
-        reason="BUG: GymTradingEnv MRO에서 gym.Env.step이 TradingEnv.step보다 우선 — "
-               "gym.Env.__init__도 호출되지 않아 step()이 NotImplementedError"
-    )
     def test_gym_env_step(self):
         """GymTradingEnv에서 step 실행."""
         from src.agents.rl_environment import HAS_GYMNASIUM
