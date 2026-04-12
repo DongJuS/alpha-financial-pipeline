@@ -93,7 +93,7 @@ class FakeTrainer:
         self.calls: list[dict[str, Any]] = []
 
     def train_with_metadata(
-        self, dataset: RLDataset, *, train_ratio: float
+        self, dataset: RLDataset, *, train_ratio: float, **kwargs,
     ) -> tuple[RLPolicyArtifact, RLSplitMetadata]:
         self.calls.append({"dataset": dataset, "train_ratio": train_ratio})
         artifact = RLPolicyArtifact(
