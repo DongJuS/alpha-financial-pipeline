@@ -68,6 +68,7 @@ def compute_intraday_features(bars: list[dict]) -> IntradayFeatures:
         return IntradayFeatures()
 
     # VWAP deviation: (종가 - 일중 VWAP) / 일중 VWAP
+    # 근사치: 분봉별 VWAP의 거래량 가중 평균. 틱 단위 정밀 VWAP과 오차 미미.
     last_close = bars[-1]["close"]
     daily_vwap = sum(b["vwap"] * b["volume"] for b in bars) / total_volume
     if daily_vwap > 0:
