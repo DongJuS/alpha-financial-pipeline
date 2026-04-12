@@ -267,7 +267,8 @@ class RLContinuousImprover:
         return outcomes
 
     async def list_target_tickers(self) -> list[str]:
-        return await self._policy_store.list_all_tickers()
+        from src.db.queries import list_rl_target_tickers
+        return await list_rl_target_tickers()
 
     async def _build_dataset(
         self,
