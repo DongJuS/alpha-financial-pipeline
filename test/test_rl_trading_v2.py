@@ -267,15 +267,13 @@ class TestV2RewardEdgeCases(unittest.TestCase):
         reward = trainer._reward(100.0, 95.0, position=0, next_position=0)
         self.assertGreater(reward, 0.0)
 
-    def test_reward_long_loss_penalty_applied(self) -> None:
-        """롱 보유 중 손실 시 패널티 계수(0.1) 적용."""
+    def test_reward_long_loss_no_dampening(self) -> None:
+        """롱 보유 중 손실 시 감쇠 없이 실제 손실 반영 (train/eval 일관성)."""
         trainer = TabularQTrainerV2()
-        # next_position=1 + next_return < 0 → position_reward *= 0.1
+        # next_position=1 + next_return < 0 → position_reward = 1 * (-0.01)
         reward = trainer._reward(100.0, 99.0, position=1, next_position=1)
-        # position_reward = 1 * (-0.01) * 0.1 = -0.001
-        self.assertLess(reward, 0.0)
-        # 패널티가 적용되어 원래 -0.01보다 0에 가까움
-        self.assertGreater(reward, -0.01)
+        # 감쇠 없이 -0.01 그대로 (거래 비용 없음: 포지션 유지)
+        self.assertAlmostEqual(reward, -0.01, places=6)
 
 
 class TestV2Bucket5EdgeCases(unittest.TestCase):
