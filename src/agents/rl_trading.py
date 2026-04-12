@@ -296,6 +296,7 @@ class TabularQTrainer:
         dataset: RLDataset,
         *,
         train_ratio: float = 0.7,
+        **kwargs,
     ) -> tuple[RLPolicyArtifact, RLSplitMetadata]:
         if len(dataset.closes) <= self.lookback + 10:
             raise ValueError(f"RL 학습 길이가 너무 짧습니다: ticker={dataset.ticker}, len={len(dataset.closes)}")
