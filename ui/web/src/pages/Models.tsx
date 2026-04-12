@@ -3,23 +3,14 @@ import { useEffect, useState } from "react";
 import {
   useModelConfig,
   useUpdateModelConfig,
+  useAddModelRole,
+  useDeleteModelRole,
   type ModelRoleItem,
   type ModelRoleUpdateItem,
+  type AddModelRoleRequest,
 } from "@/hooks/useModels";
 
 type ModelRoleForm = Record<string, ModelRoleUpdateItem>;
-
-const ROLE_COPY: Record<string, string> = {
-  strategy_a_predictor_1: "전략 A의 첫 번째 가치 관점 슬롯입니다.",
-  strategy_a_predictor_2: "전략 A의 기술 분석 슬롯입니다.",
-  strategy_a_predictor_3: "전략 A의 모멘텀 슬롯입니다.",
-  strategy_a_predictor_4: "전략 A의 역추세 슬롯입니다.",
-  strategy_a_predictor_5: "전략 A의 거시/대안 시나리오 슬롯입니다.",
-  strategy_b_proposer: "초기 가설과 매매 방향을 제시하는 역할입니다.",
-  strategy_b_challenger_1: "주장의 취약점을 빠르게 찌르는 반론 역할입니다.",
-  strategy_b_challenger_2: "거시 변수와 대안을 점검하는 반론 역할입니다.",
-  strategy_b_synthesizer: "최종 결론과 HOLD 정책을 정리하는 역할입니다.",
-};
 
 function toFormRows(rows: ModelRoleItem[]): ModelRoleForm {
   return Object.fromEntries(
@@ -39,11 +30,13 @@ function RoleEditor({
   row,
   form,
   onChange,
+  onDelete,
   supportedModels,
 }: {
   row: ModelRoleItem;
   form: ModelRoleUpdateItem | undefined;
   onChange: (configKey: string, next: Partial<ModelRoleUpdateItem>) => void;
+  onDelete?: (configKey: string) => void;
   supportedModels: Array<{ model: string; label: string; provider: string; description: string }>;
 }) {
   const isEnabled = form?.is_enabled ?? row.is_enabled;
@@ -65,6 +58,17 @@ function RoleEditor({
           <span className="chip">{row.agent_id}</span>
           <span className="chip">{row.strategy_code === "A" ? "Strategy A" : "Strategy B"}</span>
         </div>
+        {onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(row.config_key)}
+            className="rounded-full p-1 text-xs transition-colors hover:bg-[var(--loss-bg)]"
+            style={{ color: "var(--loss)" }}
+            title="역할 삭제"
+          >
+            ✕
+          </button>
+        )}
         <button
           type="button"
           role="switch"
@@ -85,7 +89,7 @@ function RoleEditor({
         </p>
       )}
       <p className="mt-2 text-xs" style={{ color: "var(--text-secondary)" }}>
-        {ROLE_COPY[row.config_key] ?? "이 역할의 모델과 페르소나를 운영합니다."}
+        이 역할의 모델과 페르소나를 운영합니다.
       </p>
 
       <div className="mt-4 space-y-3">
@@ -129,7 +133,12 @@ function RoleEditor({
 export default function Models() {
   const { data, isLoading } = useModelConfig();
   const mutation = useUpdateModelConfig();
+  const addMutation = useAddModelRole();
+  const deleteMutation = useDeleteModelRole();
   const [form, setForm] = useState<ModelRoleForm>({});
+  const [addTarget, setAddTarget] = useState<{ strategy: "A" | "B"; role: string } | null>(null);
+  const [newModel, setNewModel] = useState("");
+  const [newPersona, setNewPersona] = useState("");
 
   useEffect(() => {
     if (!data) return;
@@ -150,6 +159,27 @@ export default function Models() {
 
   function handleSave() {
     mutation.mutate(Object.values(form));
+  }
+
+  function handleAddRole() {
+    if (!addTarget || !newModel || !newPersona.trim()) return;
+    addMutation.mutate({
+      strategy_code: addTarget.strategy,
+      role: addTarget.role,
+      llm_model: newModel,
+      persona: newPersona.trim(),
+    }, {
+      onSuccess: () => {
+        setAddTarget(null);
+        setNewModel("");
+        setNewPersona("");
+      },
+    });
+  }
+
+  function handleDelete(configKey: string) {
+    if (!confirm("이 역할을 삭제하시겠습니까?")) return;
+    deleteMutation.mutate(configKey);
   }
 
   return (
@@ -216,7 +246,7 @@ export default function Models() {
               Strategy A Predictor 슬롯
             </h2>
             <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
-              토너먼트에 참여하는 5개 predictor의 모델과 페르소나를 관리합니다.
+              토너먼트에 참여하는 predictor의 모델과 페르소나를 관리합니다.
             </p>
           </div>
           <span className="chip">Parallel tournament</span>
@@ -224,7 +254,7 @@ export default function Models() {
 
         {isLoading ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 5 }).map((_, index) => (
+            {Array.from({ length: 2 }).map((_, index) => (
               <div key={index} className="h-56 skeleton" />
             ))}
           </div>
@@ -236,9 +266,21 @@ export default function Models() {
                 row={row}
                 form={form[row.config_key]}
                 onChange={updateRow}
+                onDelete={handleDelete}
                 supportedModels={data?.supported_models ?? []}
               />
             ))}
+            <button
+              type="button"
+              onClick={() => {
+                setAddTarget({ strategy: "A", role: "predictor" });
+                setNewModel(data?.supported_models?.[0]?.model ?? "");
+              }}
+              className="flex min-h-[200px] items-center justify-center rounded-[24px] border-2 border-dashed transition-colors hover:border-[var(--green)]"
+              style={{ borderColor: "var(--line-soft)", color: "var(--text-tertiary)" }}
+            >
+              <span className="text-3xl">+</span>
+            </button>
           </div>
         )}
       </section>
@@ -250,7 +292,7 @@ export default function Models() {
               Strategy B Debate 역할
             </h2>
             <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
-              proposer, challenger, synthesizer의 모델과 페르소나를 분리 운영합니다.
+              토론에 참여하는 역할의 모델과 페르소나를 운영합니다.
             </p>
           </div>
           <span className="chip">Debate orchestration</span>
@@ -258,7 +300,7 @@ export default function Models() {
 
         {isLoading ? (
           <div className="grid gap-3 md:grid-cols-2">
-            {Array.from({ length: 4 }).map((_, index) => (
+            {Array.from({ length: 3 }).map((_, index) => (
               <div key={index} className="h-56 skeleton" />
             ))}
           </div>
@@ -270,9 +312,21 @@ export default function Models() {
                 row={row}
                 form={form[row.config_key]}
                 onChange={updateRow}
+                onDelete={handleDelete}
                 supportedModels={data?.supported_models ?? []}
               />
             ))}
+            <button
+              type="button"
+              onClick={() => {
+                setAddTarget({ strategy: "B", role: "challenger" });
+                setNewModel(data?.supported_models?.[0]?.model ?? "");
+              }}
+              className="flex min-h-[200px] items-center justify-center rounded-[24px] border-2 border-dashed transition-colors hover:border-[var(--green)]"
+              style={{ borderColor: "var(--line-soft)", color: "var(--text-tertiary)" }}
+            >
+              <span className="text-3xl">+</span>
+            </button>
           </div>
         )}
       </section>
@@ -290,6 +344,72 @@ export default function Models() {
           {mutation.isPending ? "저장 중..." : "모델 설정 저장"}
         </button>
       </section>
+
+      {addTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setAddTarget(null)}>
+          <div
+            className="w-full max-w-md rounded-[24px] p-6 shadow-xl"
+            style={{ background: "var(--bg-elevated)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
+              {addTarget.strategy === "A" ? "Strategy A" : "Strategy B"} 역할 추가
+            </h3>
+
+            {addTarget.strategy === "B" && (
+              <label className="mt-4 block">
+                <span className="mb-1 block text-sm font-semibold" style={{ color: "var(--text-primary)" }}>역할</span>
+                <select
+                  value={addTarget.role}
+                  onChange={(e) => setAddTarget({ ...addTarget, role: e.target.value })}
+                >
+                  <option value="proposer">Proposer</option>
+                  <option value="challenger">Challenger</option>
+                  <option value="synthesizer">Synthesizer</option>
+                </select>
+              </label>
+            )}
+
+            <label className="mt-4 block">
+              <span className="mb-1 block text-sm font-semibold" style={{ color: "var(--text-primary)" }}>모델</span>
+              <select value={newModel} onChange={(e) => setNewModel(e.target.value)}>
+                {(data?.supported_models ?? []).map((m) => (
+                  <option key={m.model} value={m.model}>{m.label} · {m.provider}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="mt-4 block">
+              <span className="mb-1 block text-sm font-semibold" style={{ color: "var(--text-primary)" }}>페르소나</span>
+              <textarea
+                value={newPersona}
+                onChange={(e) => setNewPersona(e.target.value)}
+                rows={3}
+                placeholder="이 역할의 분석 관점을 설명하세요"
+                className="min-h-[96px]"
+              />
+            </label>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setAddTarget(null)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="btn-primary disabled:opacity-50"
+                disabled={!newModel || !newPersona.trim() || addMutation.isPending}
+                onClick={handleAddRole}
+              >
+                {addMutation.isPending ? "추가 중..." : "추가"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
