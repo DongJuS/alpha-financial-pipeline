@@ -370,8 +370,8 @@ class TestSchedulerTickJobRegistration:
         ):
             await mod.start_unified_scheduler()
 
-        assert len(registered_ids) == 10, (
-            f"Expected 10 registered jobs, got {len(registered_ids)}: {registered_ids}"
+        assert len(registered_ids) == 11, (
+            f"Expected 11 registered jobs, got {len(registered_ids)}: {registered_ids}"
         )
 
 
