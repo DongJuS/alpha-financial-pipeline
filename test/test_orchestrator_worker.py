@@ -40,7 +40,7 @@ class OrchestratorWorkerWeekendGuardTest(unittest.IsolatedAsyncioTestCase):
             result = await _run_cycle_if_weekday(agent, ["005930"], now_kst=now)
 
         self.assertEqual(result, {"orders": 0})
-        agent.run_cycle.assert_awaited_once_with(tickers=["005930"], screener_kwargs=None)
+        agent.run_cycle.assert_awaited_once_with(tickers=["005930"], screener_kwargs=None, strategies=None)
 
     async def test_run_cycle_if_weekday_runs_on_weekend_in_gen_mode(self) -> None:
         """gen 모드(GEN_API_URL 설정)에서는 주말에도 사이클이 실행돼야 한다."""
@@ -53,7 +53,7 @@ class OrchestratorWorkerWeekendGuardTest(unittest.IsolatedAsyncioTestCase):
             result = await _run_cycle_if_weekday(agent, ["005930"], now_kst=now)
 
         self.assertEqual(result, {"orders": 1})
-        agent.run_cycle.assert_awaited_once_with(tickers=["005930"], screener_kwargs=None)
+        agent.run_cycle.assert_awaited_once_with(tickers=["005930"], screener_kwargs=None, strategies=None)
 
     async def test_run_cycle_if_weekday_passes_screener_kwargs(self) -> None:
         """screener_kwargs가 전달되면 run_cycle에도 전달돼야 한다."""
@@ -70,7 +70,7 @@ class OrchestratorWorkerWeekendGuardTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, {"orders": 0})
         agent.run_cycle.assert_awaited_once_with(
-            tickers=["005930"], screener_kwargs=kwargs,
+            tickers=["005930"], screener_kwargs=kwargs, strategies=None,
         )
 
 
