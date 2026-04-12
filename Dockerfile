@@ -22,6 +22,7 @@ RUN apt-get update \
 
 COPY requirements.txt .
 RUN pip install --upgrade pip \
+    && pip install torch --index-url https://download.pytorch.org/whl/cpu \
     && pip install -r requirements.txt
 
 # ── Stage 2: dev (기존 호환 — Claude CLI, Node.js, 볼륨 마운트용) ──
