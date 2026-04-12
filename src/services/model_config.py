@@ -140,9 +140,13 @@ async def add_model_role(
 
 
 async def remove_model_role(config_key: str) -> bool:
-    """모델 역할을 삭제한다."""
-    from src.db.queries import delete_model_role_config
-    return await delete_model_role_config(config_key)
+    """모델 역할을 삭제하고 남은 역할의 번호를 재정렬한다."""
+    from src.db.queries import delete_model_role_config, reorder_model_role_configs
+    strategy_code = await delete_model_role_config(config_key)
+    if strategy_code is None:
+        return False
+    await reorder_model_role_configs(strategy_code)
+    return True
 
 
 def provider_name_for_model(model: str) -> str:
