@@ -183,7 +183,7 @@ async def bootstrap_ticker(
                 "[부트스트랩] %s: 강제 승격 시도 (policy=%s)",
                 ticker, outcome.new_policy_id,
             )
-            promoted = store.force_activate_policy(ticker, outcome.new_policy_id)
+            promoted = await store.force_activate_policy(ticker, outcome.new_policy_id)
             if promoted:
                 outcome.deployed = True
                 outcome.active_policy_after = outcome.new_policy_id

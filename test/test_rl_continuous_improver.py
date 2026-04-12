@@ -5,10 +5,10 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 from src.agents.rl_continuous_improver import RLContinuousImprover
 from src.agents.rl_experiment_manager import RLExperimentManager
-from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
 from src.agents.rl_trading import (
     RLDataset,
     RLEvaluationMetrics,
@@ -175,7 +175,13 @@ class RLContinuousImproverTest(unittest.IsolatedAsyncioTestCase):
         _write_profile(self.root, "tabular_q_v2_momentum", "qlearn_v2")
         _write_profile(self.root, "tabular_q_v1_baseline", "qlearn_v1")
 
-        self.store = RLPolicyStoreV2(models_dir=self.root / "models")
+        self.store = MagicMock()
+        self.store.save_policy = AsyncMock(side_effect=lambda a: a)
+        self.store.activate_policy = AsyncMock(return_value=True)
+        self.store.force_activate_policy = AsyncMock(return_value=True)
+        self.store.list_active_policies = AsyncMock(return_value={})
+        self.store.list_all_tickers = AsyncMock(return_value=[])
+        self.store.list_policies = AsyncMock(return_value=[])
         self.exp_mgr = RLExperimentManager(artifacts_dir=self.root)
         self.builder = StubDatasetBuilder()
 
@@ -183,9 +189,11 @@ class RLContinuousImproverTest(unittest.IsolatedAsyncioTestCase):
         self.temp_dir.cleanup()
 
     async def test_retrain_ticker_promotes_best_approved_candidate(self) -> None:
-        current = _active_artifact("active_old", "005930.KS")
-        self.store.save_policy(current)
-        self.store.force_activate_policy("005930.KS", "active_old")
+        # list_active_policies: 첫 호출=before(기존 활성), 둘째=after(새 활성)
+        self.store.list_active_policies = AsyncMock(side_effect=[
+            {"005930.KS": "active_old"},
+            {"005930.KS": "tabular_q_v2_momentum_005930.KS"},
+        ])
 
         improver = RLContinuousImprover(
             dataset_builder=self.builder,

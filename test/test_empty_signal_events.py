@@ -23,7 +23,7 @@ class TestRLRunnerSkipEvents(unittest.IsolatedAsyncioTestCase):
     @patch("src.utils.db_logger.log_event", new_callable=AsyncMock)
     async def test_registry_load_failed(self, mock_log: AsyncMock):
         runner = self._make_runner()
-        runner._store.load_registry.side_effect = RuntimeError("broken")
+        runner._store.list_active_policies = AsyncMock(side_effect=RuntimeError("broken"))
 
         result = await runner.run(["005930"])
 
@@ -38,9 +38,7 @@ class TestRLRunnerSkipEvents(unittest.IsolatedAsyncioTestCase):
     @patch("src.utils.db_logger.log_event", new_callable=AsyncMock)
     async def test_no_active_policy(self, mock_log: AsyncMock):
         runner = self._make_runner()
-        registry = MagicMock()
-        registry.list_active_policies.return_value = {}
-        runner._store.load_registry.return_value = registry
+        runner._store.list_active_policies = AsyncMock(return_value={})
 
         result = await runner.run(["005930", "035720"])
 
@@ -53,9 +51,7 @@ class TestRLRunnerSkipEvents(unittest.IsolatedAsyncioTestCase):
     @patch("src.utils.db_logger.log_event", new_callable=AsyncMock)
     async def test_no_ticker_policy(self, mock_log: AsyncMock):
         runner = self._make_runner()
-        registry = MagicMock()
-        registry.list_active_policies.return_value = {"999999.KS": "policy_A"}
-        runner._store.load_registry.return_value = registry
+        runner._store.list_active_policies = AsyncMock(return_value={"999999.KS": "policy_A"})
 
         result = await runner.run(["005930"])
 
