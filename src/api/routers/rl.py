@@ -459,7 +459,28 @@ async def start_training_job(job_id: str) -> dict:
 
 async def _execute_training(job_id: str, instrument_id: str, policy_family: str, dataset_days: int) -> None:
     """백그라운드 학습 실행 + 결과 DB 기록."""
-    from src.db.queries import insert_experiment, update_training_job_status
+    from src.db.queries import insert_experiment, update_training_job_progress, update_training_job_status
+
+    _last_pct = -1  # 중복 UPDATE 방지
+
+    async def _report_progress(pct: int) -> None:
+        nonlocal _last_pct
+        if pct == _last_pct:
+            return
+        _last_pct = pct
+        try:
+            await update_training_job_progress(job_id, pct)
+        except Exception:
+            pass
+
+    def _sync_progress(pct: int) -> None:
+        """trainer는 sync 함수이므로 event loop에 비동기 작업을 예약한다."""
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_report_progress(pct))
+        except RuntimeError:
+            pass
 
     try:
         from src.agents.rl_continuous_improver import RLContinuousImprover
@@ -469,6 +490,7 @@ async def _execute_training(job_id: str, instrument_id: str, policy_family: str,
             instrument_id,
             profile_ids=[policy_family] if policy_family else None,
             dataset_days=dataset_days,
+            on_progress=_sync_progress,
         )
 
         if outcome.success:
@@ -493,6 +515,7 @@ async def _execute_training(job_id: str, instrument_id: str, policy_family: str,
                 approved=outcome.walk_forward_passed,
                 deployed=outcome.deployed,
             )
+            await update_training_job_progress(job_id, 100)
             await update_training_job_status(
                 job_id, "completed",
                 result_policy_id=outcome.new_policy_id,
