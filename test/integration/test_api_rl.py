@@ -305,10 +305,11 @@ class TestRLShadowPolicies:
 
 
 class TestRLTickers:
-    """GET /api/v1/rl/tickers"""
+    """RL 종목 관리 API: GET/PUT/DELETE /api/v1/rl/tickers"""
 
+    @patch("src.db.queries.list_rl_targets", new_callable=AsyncMock, return_value=[])
     @patch(f"{_PATCH_PREFIX}._get_store")
-    def test_list_rl_tickers(self, mock_get_store: MagicMock) -> None:
+    def test_list_rl_tickers(self, mock_get_store: MagicMock, mock_list_targets: AsyncMock) -> None:
         """RL 대상 종목 목록을 조회한다."""
         mock_get_store.return_value = _mock_empty_store()
 
@@ -318,12 +319,18 @@ class TestRLTickers:
 
         body = resp.json()
         assert isinstance(body, dict)
-        assert "tickers" in body or "data" in body
+        assert "tickers" in body
+        assert "total" in body
 
+    @patch("src.db.queries.list_rl_targets", new_callable=AsyncMock, return_value=[
+        {"instrument_id": "005930.KS", "data_scope": "daily"},
+    ])
     @patch(f"{_PATCH_PREFIX}._get_store")
-    def test_list_rl_tickers_returns_data(self, mock_get_store: MagicMock) -> None:
+    def test_list_rl_tickers_returns_data(self, mock_get_store: MagicMock, mock_list_targets: AsyncMock) -> None:
         """RL 대상 종목 목록이 데이터를 포함한다."""
-        mock_get_store.return_value = _mock_empty_store()
+        mock_store = _mock_empty_store()
+        mock_store.list_active_policies = AsyncMock(return_value={"005930.KS": "policy_1"})
+        mock_get_store.return_value = mock_store
 
         client = _build_client()
         resp = client.get(f"{API_PREFIX}/tickers")
@@ -331,4 +338,49 @@ class TestRLTickers:
 
         body = resp.json()
         assert isinstance(body, dict)
-        assert "tickers" in body or "data" in body
+        assert "tickers" in body
+        assert len(body["tickers"]) == 1
+        assert body["tickers"][0]["ticker"] == "005930.KS"
+        assert body["tickers"][0]["data_scope"] == "daily"
+        assert body["tickers"][0]["active_policy_id"] == "policy_1"
+        assert body["tickers"][0]["has_policy"] is True
+        assert body["total"] == 1
+
+    @patch("src.db.queries.list_rl_target_tickers", new_callable=AsyncMock, return_value=["005930.KS", "000660.KS"])
+    @patch("src.db.queries.upsert_rl_targets", new_callable=AsyncMock, return_value=["000660.KS"])
+    def test_put_rl_tickers(self, mock_upsert: AsyncMock, mock_list: AsyncMock) -> None:
+        """PUT /tickers -- RL 대상 종목을 추가한다."""
+        client = _build_client()
+        resp = client.put(
+            f"{API_PREFIX}/tickers",
+            json={"tickers": ["005930.KS", "000660.KS"], "data_scope": "daily"},
+        )
+        assert resp.status_code == 200
+
+        body = resp.json()
+        assert "tickers" in body
+        assert "added" in body
+        assert "total" in body
+        assert body["total"] == 2
+        mock_upsert.assert_awaited_once_with(["005930.KS", "000660.KS"], data_scope="daily")
+
+    @patch("src.db.queries.list_rl_target_tickers", new_callable=AsyncMock, return_value=["005930.KS"])
+    @patch("src.db.queries.remove_rl_target", new_callable=AsyncMock, return_value=True)
+    def test_delete_rl_ticker(self, mock_remove: AsyncMock, mock_list: AsyncMock) -> None:
+        """DELETE /tickers/{ticker} -- RL 대상 종목을 제거한다."""
+        client = _build_client()
+        resp = client.delete(f"{API_PREFIX}/tickers/000660.KS")
+        assert resp.status_code == 200
+
+        body = resp.json()
+        assert body["removed"] == "000660.KS"
+        assert "remaining" in body
+        assert "total" in body
+        mock_remove.assert_awaited_once_with("000660.KS")
+
+    @patch("src.db.queries.remove_rl_target", new_callable=AsyncMock, return_value=False)
+    def test_delete_rl_ticker_not_found(self, mock_remove: AsyncMock) -> None:
+        """DELETE /tickers/{ticker} -- 존재하지 않는 종목 제거 시 404."""
+        client = _build_client()
+        resp = client.delete(f"{API_PREFIX}/tickers/999999.KS")
+        assert resp.status_code == 404
