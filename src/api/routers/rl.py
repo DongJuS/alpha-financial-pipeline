@@ -555,6 +555,20 @@ async def get_training_job_endpoint(job_id: str) -> dict:
     return job
 
 
+@router.delete("/training-jobs/{job_id}", summary="학습 작업 삭제", status_code=200)
+async def delete_training_job_endpoint(job_id: str) -> dict:
+    """학습 작업을 삭제합니다. running 상태는 삭제 불가."""
+    from src.db.queries import delete_training_job
+
+    try:
+        deleted = await delete_training_job(job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"학습 작업 {job_id} 없음")
+    return {"deleted": job_id}
+
+
 # ── Walk-Forward 평가 엔드포인트 ──────────────────────────────────────────
 
 
