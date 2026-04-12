@@ -32,3 +32,30 @@ print("remote URL cleaned")
 > `.env`는 `.gitignore`에 등록되어 있으므로 커밋되지 않는다.
 
 ---
+
+## 브랜치 보호 정책
+
+> main 브랜치는 현재 GitHub 레벨 보호가 설정되어 있지 않다. 아래 규칙을 반드시 준수한다.
+
+### 금지 사항
+
+1. **`git push --force origin main` 금지** — main 히스토리가 파괴되면 복구 불가
+2. **`git push origin --delete main` 금지** — main 브랜치 삭제 시 전체 파이프라인 중단
+3. **main에 직접 push 금지** — 반드시 브랜치 → PR → merge 경로를 사용
+
+### 허용 경로
+
+```
+feature 브랜치에서 작업 → git push -u origin <branch> → gh pr create → gh pr merge
+```
+
+### 주의가 필요한 명령어
+
+| 명령어 | 위험도 | 설명 |
+|--------|--------|------|
+| `git push --force` | 🔴 | 원격 히스토리 덮어쓰기. main에 절대 사용 금지 |
+| `git push origin --delete <branch>` | 🟡 | 브랜치 삭제. main/develop 대상 금지 |
+| `git reset --hard` | 🟡 | 로컬 변경 소실. push 전에만 사용 |
+| `git rebase` + force push | 🔴 | 이미 push된 커밋 rebase 후 force push 금지 |
+
+---
