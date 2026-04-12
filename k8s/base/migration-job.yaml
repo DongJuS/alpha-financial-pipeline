@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: instruments-migration
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: instruments-migration
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migration
+          image: alpha-trading:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secret
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "=== [1/3] Schema migration (migrate_to_v2_instruments) ==="
+              python scripts/db/migrate_to_v2_instruments.py
+              echo "=== [2/3] Seed instruments registry ==="
+              python scripts/db/seed_all_instruments.py --market KR --instruments-only
+              echo "=== [3/3] Seed trading universe ==="
+              python scripts/db/seed_trading_universe.py
+              echo "=== Migration complete ==="
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
