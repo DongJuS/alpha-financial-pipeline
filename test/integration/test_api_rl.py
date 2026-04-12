@@ -246,8 +246,10 @@ class TestRLEvaluations:
 class TestRLTrainingJobs:
     """GET /api/v1/rl/training-jobs"""
 
-    def test_list_training_jobs(self) -> None:
+    @patch("src.db.queries.list_training_jobs", new_callable=AsyncMock)
+    def test_list_training_jobs(self, mock_list: AsyncMock) -> None:
         """학습 작업 목록을 조회한다."""
+        mock_list.return_value = []
         client = _build_client()
         resp = client.get(f"{API_PREFIX}/training-jobs")
         assert resp.status_code == 200
@@ -258,8 +260,10 @@ class TestRLTrainingJobs:
         assert isinstance(body["data"], list)
         assert isinstance(body["total"], int)
 
-    def test_training_jobs_items_have_required_fields(self) -> None:
+    @patch("src.db.queries.list_training_jobs", new_callable=AsyncMock)
+    def test_training_jobs_items_have_required_fields(self, mock_list: AsyncMock) -> None:
         """학습 작업 항목의 구조를 확인 (빈 목록에서도 구조 검증)."""
+        mock_list.return_value = []
         client = _build_client()
         resp = client.get(f"{API_PREFIX}/training-jobs")
         assert resp.status_code == 200
@@ -346,10 +350,21 @@ class TestRLTickers:
         assert body["tickers"][0]["has_policy"] is True
         assert body["total"] == 1
 
+    @patch("src.db.queries.insert_training_job", new_callable=AsyncMock, return_value="rl-job-test")
+    @patch("src.db.queries.find_queued_training_job", new_callable=AsyncMock, return_value=None)
+    @patch(f"{_PATCH_PREFIX}._get_store")
     @patch("src.db.queries.list_rl_target_tickers", new_callable=AsyncMock, return_value=["005930.KS", "000660.KS"])
     @patch("src.db.queries.upsert_rl_targets", new_callable=AsyncMock, return_value=["000660.KS"])
-    def test_put_rl_tickers(self, mock_upsert: AsyncMock, mock_list: AsyncMock) -> None:
-        """PUT /tickers -- RL 대상 종목을 추가한다."""
+    def test_put_rl_tickers(
+        self,
+        mock_upsert: AsyncMock,
+        mock_list: AsyncMock,
+        mock_store: MagicMock,
+        mock_find: AsyncMock,
+        mock_insert: AsyncMock,
+    ) -> None:
+        """PUT /tickers -- RL 대상 종목을 추가하고 학습 작업을 자동 생성한다."""
+        mock_store.return_value = _mock_empty_store()
         client = _build_client()
         resp = client.put(
             f"{API_PREFIX}/tickers",
@@ -360,6 +375,7 @@ class TestRLTickers:
         body = resp.json()
         assert "tickers" in body
         assert "added" in body
+        assert "auto_training_jobs" in body
         assert "total" in body
         assert body["total"] == 2
         mock_upsert.assert_awaited_once_with(["005930.KS", "000660.KS"], data_scope="daily")
