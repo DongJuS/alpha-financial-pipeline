@@ -79,16 +79,16 @@ elif $DRY_RUN; then
     echo "[3/5] 이미지 빌드 스킵 (dry-run)"
 else
     echo "[3/5] Docker 이미지 빌드..."
-    docker build -t alpha-trading:latest "$ROOT_DIR"
+    docker build -t alpha-api:latest "$ROOT_DIR"
     if [[ -d "$ROOT_DIR/ui/web" ]]; then
-        docker build -t alpha-trading-ui:latest "$ROOT_DIR/ui/web"
+        docker build -t alpha-ui:latest "$ROOT_DIR/ui/web"
     fi
 
     # Colima/K3s: 로컬 이미지를 K3s에 import
     if command -v k3s &>/dev/null; then
         echo "  K3s 이미지 import..."
-        docker save alpha-trading:latest | sudo k3s ctr images import -
-        docker save alpha-trading-ui:latest | sudo k3s ctr images import - 2>/dev/null || true
+        docker save alpha-api:latest | sudo k3s ctr images import -
+        docker save alpha-ui:latest | sudo k3s ctr images import - 2>/dev/null || true
     fi
     echo "  이미지 빌드 ✅"
 fi
