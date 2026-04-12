@@ -11,15 +11,14 @@ import json
 import random
 import time
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 from zoneinfo import ZoneInfo
 
 import httpx
 import websockets
 
-from src.db.models import MarketDataPoint
-from src.db.queries import insert_collector_error, insert_tick_batch, upsert_market_data
+from src.db.queries import insert_collector_error, insert_tick_batch
 from src.constants import MAX_TICKERS_PER_WS
 from src.utils.config import kis_app_key_for_scope, kis_app_secret_for_scope
 from src.utils.logging import get_logger

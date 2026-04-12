@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
-from src.db.models import AgentHeartbeatRecord, MarketDataPoint
+from src.db.models import AgentHeartbeatRecord
 from src.db.queries import insert_heartbeat
 from src.utils.config import get_settings, has_kis_credentials, kis_app_key_for_scope, kis_app_secret_for_scope
 from src.utils.logging import get_logger, setup_logging
