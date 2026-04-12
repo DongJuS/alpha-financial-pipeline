@@ -18,13 +18,10 @@ from src.agents.rl_environment import (
     ACTION_SELL,
     ACTION_HOLD,
 )
+from unittest.mock import AsyncMock
+
 from src.agents.rl_shadow_inference import ShadowInferenceEngine, ShadowRecord
-from src.agents.rl_policy_registry import (
-    PolicyEntry,
-    PolicyRegistry,
-    PromotionGate,
-    TickerPolicies,
-)
+from src.agents.rl_policy_registry import PolicyEntry
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -38,35 +35,36 @@ def _make_config(closes: list[float], **kwargs) -> TradingEnvConfig:
 def _make_policy_entry(
     policy_id: str = "policy_001",
     ticker: str = "005930.KS",
+    is_active: bool = False,
 ) -> PolicyEntry:
     return PolicyEntry(
         policy_id=policy_id,
-        ticker=ticker,
+        instrument_id=ticker,
         algorithm="tabular_q_learning",
         state_version="qlearn_v1",
         return_pct=10.0,
         max_drawdown_pct=-5.0,
         approved=True,
+        is_active=is_active,
         created_at=datetime.now(timezone.utc),
         file_path=f"tabular/{ticker}/{policy_id}.json",
     )
 
 
-def _make_registry(
+def _make_mock_store(
     ticker: str = "005930.KS",
     policy_id: str | None = None,
-    active_policy_id: str | None = None,
-    auto_promote_paper_only: bool = True,
-) -> PolicyRegistry:
-    """테스트용 PolicyRegistry를 구성합니다."""
-    registry = PolicyRegistry(
-        promotion_gate=PromotionGate(auto_promote_paper_only=auto_promote_paper_only),
-    )
+    is_active: bool = False,
+) -> MagicMock:
+    """테스트용 StoreV2 mock을 구성합니다."""
+    mock_store = MagicMock()
+    entries = []
     if policy_id:
-        tp = TickerPolicies(active_policy_id=active_policy_id)
-        tp.add_policy(_make_policy_entry(policy_id=policy_id, ticker=ticker))
-        registry.tickers[ticker] = tp
-    return registry
+        entries.append(_make_policy_entry(
+            policy_id=policy_id, ticker=ticker, is_active=is_active,
+        ))
+    mock_store.list_policies = AsyncMock(return_value=entries)
+    return mock_store
 
 
 # ── GymTradingEnv Edge Cases ──────────────────────────────────────────────────
@@ -159,82 +157,35 @@ class TestTradingEnvEdgeCases:
 class TestGetPolicyModeEdgeCases:
     """ShadowInferenceEngine.get_policy_mode 다양한 경로 테스트."""
 
-    def test_policy_mode_not_in_registry_no_shadow_returns_inactive(self):
-        """registry에 없고 shadow record도 없으면 'inactive'.
-
-        get_policy_mode 로직:
-        1. registry에서 ticker 조회 -> 없음
-        2. shadow record 확인 -> 없음
-        3. 반환: 'inactive'
-        """
-        mock_store = MagicMock()
-        registry = _make_registry()  # 빈 registry
-        mock_store.load_registry.return_value = registry
+    @pytest.mark.asyncio
+    async def test_policy_mode_not_in_registry_no_shadow_returns_inactive(self):
+        """DB에 없고 shadow record도 없으면 'inactive'."""
+        mock_store = _make_mock_store()  # 빈 store
 
         engine = ShadowInferenceEngine(policy_store=mock_store)
-        # shadow record도 없음 (_shadow_records는 빈 dict)
 
-        mode = engine.get_policy_mode("nonexistent_policy", "005930.KS")
+        mode = await engine.get_policy_mode("nonexistent_policy", "005930.KS")
         assert mode == "inactive"
 
-    def test_policy_mode_auto_promote_paper_only_returns_paper(self):
-        """registry에 있고 auto_promote_paper_only=True면 'paper'.
-
-        get_policy_mode 로직:
-        1. registry에서 ticker 조회 -> 있음
-        2. policy 조회 -> 있음
-        3. active_policy_id == policy_id -> 활성 정책
-        4. auto_promote_paper_only=True -> 'paper'
-        """
-        mock_store = MagicMock()
-        registry = _make_registry(
+    @pytest.mark.asyncio
+    async def test_policy_mode_active_returns_paper(self):
+        """DB에 있고 is_active=True면 'paper'."""
+        mock_store = _make_mock_store(
             ticker="005930.KS",
             policy_id="policy_001",
-            active_policy_id="policy_001",
-            auto_promote_paper_only=True,
+            is_active=True,
         )
-        mock_store.load_registry.return_value = registry
 
         engine = ShadowInferenceEngine(policy_store=mock_store)
-        mode = engine.get_policy_mode("policy_001", "005930.KS")
+        mode = await engine.get_policy_mode("policy_001", "005930.KS")
         assert mode == "paper"
 
-    def test_policy_mode_active_not_paper_only_returns_real(self):
-        """registry에 있고 active=True, auto_promote_paper_only=False면 'real'.
-
-        get_policy_mode 로직:
-        1. registry에서 ticker 조회 -> 있음
-        2. policy 조회 -> 있음
-        3. active_policy_id == policy_id -> 활성 정책
-        4. auto_promote_paper_only=False -> 'real'
-        """
-        mock_store = MagicMock()
-        registry = _make_registry(
-            ticker="005930.KS",
-            policy_id="policy_001",
-            active_policy_id="policy_001",
-            auto_promote_paper_only=False,
-        )
-        mock_store.load_registry.return_value = registry
+    @pytest.mark.asyncio
+    async def test_policy_mode_not_in_registry_with_shadow_returns_shadow(self):
+        """DB에 없지만 shadow record 있으면 'shadow'."""
+        mock_store = _make_mock_store()  # 빈 store
 
         engine = ShadowInferenceEngine(policy_store=mock_store)
-        mode = engine.get_policy_mode("policy_001", "005930.KS")
-        assert mode == "real"
-
-    def test_policy_mode_not_in_registry_with_shadow_returns_shadow(self):
-        """registry에 없지만 shadow record 있으면 'shadow'.
-
-        get_policy_mode 로직:
-        1. registry에서 ticker 조회 -> 없음
-        2. shadow record 확인 -> 있음 (해당 ticker의 record 존재)
-        3. 반환: 'shadow'
-        """
-        mock_store = MagicMock()
-        registry = _make_registry()  # 빈 registry
-        mock_store.load_registry.return_value = registry
-
-        engine = ShadowInferenceEngine(policy_store=mock_store)
-        # shadow record 수동 삽입
         engine._shadow_records["shadow_policy"] = [
             ShadowRecord(
                 policy_id="shadow_policy",
@@ -246,49 +197,30 @@ class TestGetPolicyModeEdgeCases:
             ),
         ]
 
-        mode = engine.get_policy_mode("shadow_policy", "005930.KS")
+        mode = await engine.get_policy_mode("shadow_policy", "005930.KS")
         assert mode == "shadow"
 
-    def test_policy_mode_in_registry_not_active_no_shadow_returns_inactive(self):
-        """registry에 정책이 있지만 active가 아니고 shadow도 없으면 'inactive'.
-
-        get_policy_mode 로직:
-        1. registry에서 ticker 조회 -> 있음
-        2. policy 조회 -> 있음
-        3. active_policy_id != policy_id -> 비활성
-        4. shadow record 확인 -> 없음
-        5. 반환: 'inactive'
-        """
-        mock_store = MagicMock()
-        # policy_001이 등록되었지만 active가 아닌 상태 (active_policy_id=None)
-        registry = _make_registry(
+    @pytest.mark.asyncio
+    async def test_policy_mode_in_db_not_active_no_shadow_returns_inactive(self):
+        """DB에 정책이 있지만 active가 아니고 shadow도 없으면 'inactive'."""
+        mock_store = _make_mock_store(
             ticker="005930.KS",
             policy_id="policy_001",
-            active_policy_id=None,  # 활성 정책 없음
+            is_active=False,
         )
-        mock_store.load_registry.return_value = registry
 
         engine = ShadowInferenceEngine(policy_store=mock_store)
-        mode = engine.get_policy_mode("policy_001", "005930.KS")
+        mode = await engine.get_policy_mode("policy_001", "005930.KS")
         assert mode == "inactive"
 
-    def test_policy_mode_in_registry_not_active_with_shadow_returns_shadow(self):
-        """registry에 정책이 있지만 active가 아니고, shadow record가 있으면 'shadow'.
-
-        get_policy_mode 로직:
-        1. registry에서 ticker 조회 -> 있음
-        2. policy 조회 -> 있음
-        3. active_policy_id != policy_id -> 비활성
-        4. shadow record 확인 -> 있음
-        5. 반환: 'shadow'
-        """
-        mock_store = MagicMock()
-        registry = _make_registry(
+    @pytest.mark.asyncio
+    async def test_policy_mode_in_db_not_active_with_shadow_returns_shadow(self):
+        """DB에 정책이 있지만 active가 아니고, shadow record가 있으면 'shadow'."""
+        mock_store = _make_mock_store(
             ticker="005930.KS",
             policy_id="policy_001",
-            active_policy_id=None,
+            is_active=False,
         )
-        mock_store.load_registry.return_value = registry
 
         engine = ShadowInferenceEngine(policy_store=mock_store)
         engine._shadow_records["policy_001"] = [
@@ -302,22 +234,15 @@ class TestGetPolicyModeEdgeCases:
             ),
         ]
 
-        mode = engine.get_policy_mode("policy_001", "005930.KS")
+        mode = await engine.get_policy_mode("policy_001", "005930.KS")
         assert mode == "shadow"
 
-    def test_policy_mode_shadow_record_different_ticker_returns_inactive(self):
-        """shadow record가 있지만 다른 ticker이면 'inactive'.
-
-        _has_shadow_records는 policy_id에 대한 records 중
-        해당 ticker와 일치하는 것이 있는지 확인한다.
-        다른 ticker의 record만 있으면 False를 반환한다.
-        """
-        mock_store = MagicMock()
-        registry = _make_registry()
-        mock_store.load_registry.return_value = registry
+    @pytest.mark.asyncio
+    async def test_policy_mode_shadow_record_different_ticker_returns_inactive(self):
+        """shadow record가 있지만 다른 ticker이면 'inactive'."""
+        mock_store = _make_mock_store()
 
         engine = ShadowInferenceEngine(policy_store=mock_store)
-        # 다른 ticker의 shadow record
         engine._shadow_records["some_policy"] = [
             ShadowRecord(
                 policy_id="some_policy",
@@ -329,5 +254,5 @@ class TestGetPolicyModeEdgeCases:
             ),
         ]
 
-        mode = engine.get_policy_mode("some_policy", "005930.KS")
+        mode = await engine.get_policy_mode("some_policy", "005930.KS")
         assert mode == "inactive"

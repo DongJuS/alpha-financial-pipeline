@@ -211,7 +211,7 @@ class TestBootstrapTicker(unittest.IsolatedAsyncioTestCase):
             patch("scripts.rl_bootstrap.fetch_recent_market_data", new_callable=AsyncMock) as mock_fetch,
             patch("scripts.rl_bootstrap.RLDatasetBuilder") as mock_builder_cls,
             patch.object(RLContinuousImprover, "retrain_ticker", new_callable=AsyncMock) as mock_retrain,
-            patch.object(RLPolicyStoreV2, "force_activate_policy", return_value=True) as mock_force,
+            patch.object(RLPolicyStoreV2, "force_activate_policy", new_callable=AsyncMock, return_value=True) as mock_force,
         ):
             mock_fetch.return_value = [{"close": 100 + i, "timestamp_kst": f"t{i}"} for i in range(500)]
             mock_builder = AsyncMock()
