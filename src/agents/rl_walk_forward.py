@@ -260,8 +260,12 @@ class WalkForwardEvaluator:
         )
 
     @staticmethod
-    def _extract_q_table(trained: Any) -> dict[str, dict[str, float]]:
+    def _extract_q_table(trained: Any) -> Any:
         if isinstance(trained, dict):
+            return trained
+
+        # SB3 어댑터는 model_path (str)를 반환 — 그대로 통과
+        if isinstance(trained, str):
             return trained
 
         q_table = getattr(trained, "q_table", None)
@@ -269,7 +273,7 @@ class WalkForwardEvaluator:
             return q_table
 
         raise TypeError(
-            "trainer.train() 결과에서 q_table을 추출할 수 없습니다"
+            "trainer.train() 결과에서 q_table/model_path를 추출할 수 없습니다"
         )
 
     @staticmethod

@@ -51,6 +51,19 @@ class RLPolicyStoreV2:
         ticker_dir = self.models_dir / algo_dir / artifact.ticker
         ticker_dir.mkdir(parents=True, exist_ok=True)
 
+        # SB3 모델 .zip 파일을 영구 저장소로 복사
+        if artifact.model_path:
+            import shutil
+            src_path = Path(artifact.model_path)
+            # SB3 save() may or may not append .zip
+            if not src_path.exists():
+                src_path = Path(f"{artifact.model_path}.zip")
+            if src_path.exists():
+                dest_zip = ticker_dir / f"{artifact.policy_id}.zip"
+                shutil.copy2(str(src_path), str(dest_zip))
+                artifact.model_path = str(dest_zip)
+                logger.info("SB3 모델 복사: %s -> %s", src_path, dest_zip)
+
         file_path = ticker_dir / f"{artifact.policy_id}.json"
         payload = artifact.to_dict()
         payload["artifact_path"] = str(file_path)
@@ -64,14 +77,21 @@ class RLPolicyStoreV2:
         relative_path = build_relative_path(
             artifact.algorithm, artifact.ticker, artifact.policy_id
         )
-        hyperparams = json.dumps({
+        hyperparams_dict = {
             "lookback": artifact.lookback,
             "episodes": artifact.episodes,
             "learning_rate": artifact.learning_rate,
             "discount_factor": artifact.discount_factor,
             "epsilon": artifact.epsilon,
             "trade_penalty_bps": artifact.trade_penalty_bps,
-        })
+        }
+        if artifact.model_path:
+            hyperparams_dict["model_path"] = str(
+                Path(artifact.model_path).relative_to(self.models_dir)
+                if Path(artifact.model_path).is_relative_to(self.models_dir)
+                else artifact.model_path
+            )
+        hyperparams = json.dumps(hyperparams_dict)
 
         try:
             await execute(
@@ -390,3 +410,8 @@ class RLPolicyStoreV2:
         if file_path.exists():
             file_path.unlink()
             logger.info("정책 파일 삭제: %s", file_path)
+        # SB3 .zip 파일도 함께 삭제
+        zip_path = file_path.with_suffix(".zip")
+        if zip_path.exists():
+            zip_path.unlink()
+            logger.info("SB3 모델 파일 삭제: %s", zip_path)
