@@ -30,7 +30,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: alpha-trading:latest
+          image: alpha-api:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
