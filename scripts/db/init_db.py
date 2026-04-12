@@ -1112,6 +1112,32 @@ CREATE_TABLES: list[str] = [
     );
     """,
 
+    # ── RL 정책 메타데이터 ─────────────────────────────────────────────────
+    """
+    CREATE TABLE IF NOT EXISTS rl_policies (
+        policy_id         VARCHAR(80)   PRIMARY KEY,
+        instrument_id     VARCHAR(20)   NOT NULL REFERENCES instruments(instrument_id),
+        algorithm         VARCHAR(30)   NOT NULL DEFAULT 'tabular_q_learning',
+        state_version     VARCHAR(20)   NOT NULL,
+        return_pct        REAL          NOT NULL DEFAULT 0,
+        baseline_return_pct REAL        NOT NULL DEFAULT 0,
+        excess_return_pct REAL          NOT NULL DEFAULT 0,
+        max_drawdown_pct  REAL          NOT NULL DEFAULT 0,
+        trades            INT           NOT NULL DEFAULT 0,
+        win_rate          REAL          NOT NULL DEFAULT 0,
+        holdout_steps     INT           NOT NULL DEFAULT 0,
+        approved          BOOLEAN       NOT NULL DEFAULT false,
+        is_active         BOOLEAN       NOT NULL DEFAULT false,
+        file_path         VARCHAR(200)  NOT NULL,
+        hyperparams       JSONB,
+        created_at        TIMESTAMPTZ   NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_rl_policies_active_per_instrument
+        ON rl_policies(instrument_id) WHERE is_active = true;
+    CREATE INDEX IF NOT EXISTS idx_rl_policies_instrument
+        ON rl_policies(instrument_id);
+    """,
+
     # 25. 대형 TEXT 컬럼에 lz4 TOAST 압축 적용 (PostgreSQL 14+)
     # pglz 대비 압축/해제 속도 3배, 대형 TEXT 컬럼 읽기 성능 개선
     """
@@ -1153,6 +1179,9 @@ DROP TABLE IF EXISTS
     debate_transcripts,
     predictor_tournament_scores,
     predictions,
+    backtest_daily,
+    backtest_runs,
+    rl_policies,
     ohlcv_daily,
     instruments,
     markets,

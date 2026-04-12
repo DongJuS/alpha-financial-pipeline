@@ -14,7 +14,7 @@ from src.agents.rl_trading_v2 import TabularQTrainerV2
 from src.db.models import PredictionSignal
 from src.db.queries import fetch_recent_ohlcv
 from src.utils.logging import get_logger
-from src.utils.ticker import find_in_map, to_raw
+from src.utils.ticker import normalize, to_raw
 
 logger = get_logger(__name__)
 
@@ -46,13 +46,12 @@ class RLRunner:
             return []
 
         try:
-            registry = self._store.load_registry()
+            active_map = await self._store.list_active_policies()
         except Exception as e:
             logger.error("RLRunner: 정책 레지스트리 로드 실패: %s", e)
             await self._log_skip("registry_load_failed", len(tickers), exc=e)
             return []
 
-        active_map = registry.list_active_policies()
         if not active_map:
             logger.info("RLRunner: 활성 정책이 없습니다. 건너뜁니다.")
             await self._log_skip("no_active_policy", len(tickers))
@@ -60,8 +59,9 @@ class RLRunner:
 
         signals: list[PredictionSignal] = []
         for ticker in tickers:
-            # 티커 정규화: 005930 ↔ 005930.KS 양방향 매칭
-            policy_id = find_in_map(ticker, active_map)
+            # instrument_id 정규화: DB는 정규화된 키(005930.KS)를 사용
+            canonical = normalize(ticker)
+            policy_id = active_map.get(canonical)
             if not policy_id:
                 logger.debug("RLRunner: %s에 활성 정책 없음, 건너뜁니다.", ticker)
                 await self._log_skip("no_ticker_policy", 1, ticker=ticker)
@@ -97,10 +97,10 @@ class RLRunner:
         signal_ticker = original_ticker or db_ticker
 
         # 정책 아티팩트 로드 (레지스트리에 저장된 티커 형식으로 시도)
-        artifact = self._store.load_policy(policy_id, db_ticker)
+        artifact = await self._store.load_policy(policy_id, db_ticker)
         if artifact is None:
             # 정규화된 형식으로 재시도
-            artifact = self._store.load_policy(policy_id, signal_ticker)
+            artifact = await self._store.load_policy(policy_id, signal_ticker)
         if artifact is None:
             logger.warning("RLRunner: 정책 파일 로드 실패: %s/%s", policy_id, db_ticker)
             await self._log_skip("policy_load_failed", 1, ticker=signal_ticker)
