@@ -13,6 +13,9 @@ from src.api.deps import get_current_settings, get_current_user
 from src.utils.config import Settings
 from src.utils.db_client import fetchrow
 from src.utils.auth import hash_password
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -84,7 +87,14 @@ async def login(
         "SELECT id, email, name, password_hash, is_admin FROM users WHERE email = $1",
         body.email,
     )
-    if not user or user["password_hash"] != hash_password(body.password):
+    if not user:
+        logger.warning("login 401: email=%s — 존재하지 않는 이메일", body.email)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="이메일 또는 비밀번호가 올바르지 않습니다.",
+        )
+    if user["password_hash"] != hash_password(body.password):
+        logger.warning("login 401: email=%s — 비밀번호 불일치", body.email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="이메일 또는 비밀번호가 올바르지 않습니다.",
