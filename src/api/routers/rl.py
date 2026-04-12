@@ -218,6 +218,7 @@ async def get_ticker_policies(ticker: str) -> ListResponse:
         return ListResponse(data=[], meta={"total": 0, "page": 1, "per_page": 0})
 
     if not entries:
+        logger.warning("rl policies 404: ticker=%s — 등록된 정책 없음", ticker)
         raise HTTPException(status_code=404, detail=f"종목 {ticker}에 등록된 정책 없음")
 
     result: list[dict] = []
@@ -264,14 +265,16 @@ async def activate_policy(policy_id: str, ticker: str = Query(...)) -> dict:
     try:
         artifact = await store.load_policy(policy_id, ticker)
         if artifact is None:
+            logger.warning("activate 404: policy_id=%s ticker=%s — 정책 레코드 없음", policy_id, ticker)
             raise HTTPException(status_code=404, detail=f"정책 {policy_id} 없음")
         await store.force_activate_policy(ticker, policy_id)
         logger.info("정책 강제 활성화: %s (ticker=%s)", policy_id, ticker)
         return {"status": "activated", "policy_id": policy_id, "ticker": ticker}
     except FileNotFoundError:
+        logger.warning("activate 404: policy_id=%s ticker=%s — 정책 파일 미존재", policy_id, ticker)
         raise HTTPException(status_code=404, detail=f"정책 파일 {policy_id} 없음")
     except Exception as e:
-        logger.error("정책 활성화 실패: %s", e)
+        logger.error("activate 500: policy_id=%s ticker=%s — %s", policy_id, ticker, e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -328,6 +331,7 @@ async def get_experiment(run_id: str) -> dict:
     mgr = _get_exp_mgr()
     run = mgr.load_run(run_id)
     if run is None:
+        logger.warning("experiment 404: run_id=%s — 실험 기록 없음", run_id)
         raise HTTPException(status_code=404, detail=f"실험 {run_id} 없음")
     return run.model_dump() if hasattr(run, "model_dump") else run.__dict__
 
@@ -450,6 +454,7 @@ async def list_training_jobs() -> dict:
 async def get_training_job(job_id: str) -> dict:
     job = _training_jobs.get(job_id)
     if not job:
+        logger.warning("training-job 404: job_id=%s — 인메모리 작업 목록에 없음 (서버 재시작 시 유실됨)", job_id)
         raise HTTPException(status_code=404, detail=f"학습 작업 {job_id} 없음")
     return job
 
@@ -489,9 +494,10 @@ async def run_walk_forward(req: WalkForwardRequestModel) -> dict:
         result = evaluator.evaluate(dataset.closes, trainer)
         return result.to_dict()
     except ValueError as e:
+        logger.warning("walk-forward 400: ticker=%s — %s", req.ticker, e)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error("Walk-Forward 평가 실패: %s", e)
+        logger.error("walk-forward 500: ticker=%s version=%s — %s", req.ticker, req.trainer_version, e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -687,6 +693,7 @@ async def remove_rl_ticker(ticker: str) -> dict:
 
     policies = await store.list_policies(ticker)
     if not policies:
+        logger.warning("rl ticker delete 404: ticker=%s — rl_policies 테이블에 레코드 없음", ticker)
         raise HTTPException(status_code=404, detail=f"종목 '{ticker}'이(가) RL 레지스트리에 없습니다.")
 
     await db_execute(
