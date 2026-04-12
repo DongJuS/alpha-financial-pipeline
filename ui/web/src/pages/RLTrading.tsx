@@ -108,7 +108,7 @@ function TickersTab() {
   const handleAddSelected = () => {
     const tickers = [...selected];
     if (tickers.length === 0) return;
-    addTickers.mutate(tickers, { onSuccess: () => setSelected(new Set()) });
+    addTickers.mutate({ tickers }, { onSuccess: () => setSelected(new Set()) });
   };
 
   const isLoading = rlLoading || allLoading;
