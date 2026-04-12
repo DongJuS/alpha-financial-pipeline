@@ -32,6 +32,7 @@ class TestCronTriggerConfig:
             "collector_daily",
             "index_warmup",
             "index_collection",
+            "kis_token_health",
             "s3_tick_flush",
             "rl_retrain",
             "blend_weight_adjust",
