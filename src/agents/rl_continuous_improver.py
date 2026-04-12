@@ -99,6 +99,28 @@ class _WalkForwardTrainerAdapter:
         return self._trainer.evaluate(closes, q_table)
 
 
+class _WalkForwardSB3Adapter:
+    """WalkForwardEvaluator와 SB3 trainer를 연결합니다."""
+
+    def __init__(self, ticker: str, trainer: Any) -> None:
+        self._ticker = ticker
+        self._trainer = trainer
+
+    def train(self, closes: list[float]) -> str:
+        """Train and return model path (used as 'q_table' stand-in by WalkForward)."""
+        dataset = RLDataset(
+            ticker=self._ticker,
+            closes=closes,
+            timestamps=[str(idx) for idx in range(len(closes))],
+        )
+        artifact = self._trainer.train(dataset)
+        return artifact.model_path
+
+    def evaluate(self, model_path: str, closes: list[float]) -> Any:
+        """Evaluate using model path."""
+        return self._trainer.evaluate(model_path, closes)
+
+
 class RLContinuousImprover:
     """RL 정책의 지속적 개선을 담당합니다."""
 
@@ -376,6 +398,20 @@ class RLContinuousImprover:
 
     def _trainer_for_profile(self, profile: dict[str, Any]) -> Any:
         params = dict(profile.get("trainer_params", {}))
+        algorithm = str(profile.get("algorithm", "")).lower()
+
+        # SB3 algorithms
+        if algorithm in ("dqn", "a2c", "ppo"):
+            from src.agents.rl_trading_sb3 import SB3Trainer
+            sig = inspect.signature(SB3Trainer.__init__)
+            filtered = {
+                key: value
+                for key, value in params.items()
+                if key in sig.parameters
+            }
+            return SB3Trainer(**filtered)
+
+        # Tabular Q (existing logic unchanged)
         state_version = str(profile.get("state_version", "")).lower()
         trainer_cls = (
             TabularQTrainerV2
@@ -395,7 +431,10 @@ class RLContinuousImprover:
         dataset: RLDataset,
         trainer: Any,
     ) -> WalkForwardResult:
-        adapter = _WalkForwardTrainerAdapter(dataset.ticker, trainer)
+        if hasattr(trainer, 'algorithm') and trainer.algorithm in ("dqn", "a2c", "ppo"):
+            adapter = _WalkForwardSB3Adapter(dataset.ticker, trainer)
+        else:
+            adapter = _WalkForwardTrainerAdapter(dataset.ticker, trainer)
         return self._walk_forward.evaluate(dataset.closes, adapter)
 
     @staticmethod

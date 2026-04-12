@@ -1,0 +1,37 @@
+{
+  "profile_id": "ppo_v1_baseline",
+  "description": "SB3 PPO baseline — clipping 기반 안정적 학습, 상승장 강점",
+  "algorithm": "ppo",
+  "state_version": "sb3_ppo",
+  "trainer_params": {
+    "algorithm": "ppo",
+    "lookback": 20,
+    "num_episodes": 15,
+    "trade_penalty_bps": 2,
+    "opportunity_cost_factor": 0.5,
+    "long_loss_penalty": 0.9,
+    "net_arch": [64, 64],
+    "learning_rate": 3e-4,
+    "gamma": 0.95,
+    "n_steps_ppo": 2048,
+    "n_epochs": 10,
+    "batch_size": 64,
+    "clip_range": 0.2,
+    "ent_coef_ppo": 0.01,
+    "gae_lambda": 0.95,
+    "num_seeds": 3,
+    "random_seed": 42
+  },
+  "dataset": {
+    "default_source": "yfinance",
+    "default_range": "10y",
+    "default_train_ratio": 0.7,
+    "adaptive_ratios": [0.5, 0.6, 0.7, 0.8],
+    "bandit_epsilon": 0.2,
+    "min_history_points": 40
+  },
+  "evaluation": {
+    "min_approval_return_pct": 5.0,
+    "max_drawdown_limit_pct": -50.0
+  }
+}
