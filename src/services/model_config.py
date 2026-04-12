@@ -43,13 +43,9 @@ SUPPORTED_MODEL_OPTIONS = [
 DEFAULT_MODEL_ROLE_CONFIGS = [
     {"config_key": "strategy_a_predictor_1", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 1", "agent_id": "predictor_1", "llm_model": "claude-opus-4-6", "persona": "가치 투자형", "execution_order": 1},
     {"config_key": "strategy_a_predictor_2", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 2", "agent_id": "predictor_2", "llm_model": "gemini-3.1-pro-preview", "persona": "기술적 분석형", "execution_order": 2},
-    {"config_key": "strategy_a_predictor_3", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 3", "agent_id": "predictor_3", "llm_model": "gemini-3.1-pro-preview", "persona": "모멘텀형", "execution_order": 3},
-    {"config_key": "strategy_a_predictor_4", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 4", "agent_id": "predictor_4", "llm_model": "gemini-3.1-pro-preview", "persona": "역추세형", "execution_order": 4},
-    {"config_key": "strategy_a_predictor_5", "strategy_code": "A", "role": "predictor", "role_label": "Predictor 5", "agent_id": "predictor_5", "llm_model": "claude-haiku-4-5-20251001", "persona": "거시경제형", "execution_order": 5},
     {"config_key": "strategy_b_proposer", "strategy_code": "B", "role": "proposer", "role_label": "Proposer", "agent_id": "consensus_proposer", "llm_model": "claude-opus-4-6", "persona": "핵심 매매 가설을 세우는 수석 분석가", "execution_order": 1},
     {"config_key": "strategy_b_challenger_1", "strategy_code": "B", "role": "challenger", "role_label": "Challenger 1", "agent_id": "consensus_challenger_1", "llm_model": "gemini-3.1-pro-preview", "persona": "가설의 약점을 빠르게 파고드는 반론가", "execution_order": 2},
-    {"config_key": "strategy_b_challenger_2", "strategy_code": "B", "role": "challenger", "role_label": "Challenger 2", "agent_id": "consensus_challenger_2", "llm_model": "gemini-3-flash-preview", "persona": "거시 변수와 대안을 점검하는 반론가", "execution_order": 3},
-    {"config_key": "strategy_b_synthesizer", "strategy_code": "B", "role": "synthesizer", "role_label": "Synthesizer", "agent_id": "consensus_synthesizer", "llm_model": "claude-opus-4-6", "persona": "토론을 종합해 최종 결론을 내리는 조정자", "execution_order": 4},
+    {"config_key": "strategy_b_synthesizer", "strategy_code": "B", "role": "synthesizer", "role_label": "Synthesizer", "agent_id": "consensus_synthesizer", "llm_model": "claude-opus-4-6", "persona": "토론을 종합해 최종 결론을 내리는 조정자", "execution_order": 3},
 ]
 
 SUPPORTED_MODEL_VALUES = {item["model"] for item in SUPPORTED_MODEL_OPTIONS}
@@ -81,7 +77,8 @@ async def get_strategy_b_roles(*, enabled_only: bool = True) -> list[dict]:
 
 
 async def update_model_role_configs(items: list[dict]) -> list[dict]:
-    allowed_keys = {item["config_key"] for item in DEFAULT_MODEL_ROLE_CONFIGS}
+    existing_rows = await list_model_role_configs()
+    allowed_keys = {row["config_key"] for row in existing_rows}
     for item in items:
         if item["config_key"] not in allowed_keys:
             raise ValueError(f"알 수 없는 config_key: {item['config_key']}")
@@ -97,6 +94,55 @@ async def update_model_role_configs(items: list[dict]) -> list[dict]:
             is_enabled=bool(item.get("is_enabled", True)),
         )
     return await ensure_model_role_configs()
+
+
+async def add_model_role(
+    *,
+    strategy_code: str,
+    role: str,
+    llm_model: str,
+    persona: str,
+) -> dict:
+    """전략에 새 모델 역할을 추가한다."""
+    if strategy_code not in ("A", "B"):
+        raise ValueError(f"strategy_code는 A 또는 B여야 합니다: {strategy_code}")
+    if llm_model not in SUPPORTED_MODEL_VALUES:
+        raise ValueError(f"지원하지 않는 모델: {llm_model}")
+    persona = persona.strip()
+    if not persona:
+        raise ValueError("persona는 비워둘 수 없습니다.")
+
+    # 현재 역할 목록에서 다음 순서와 config_key 생성
+    existing = await list_model_role_configs(strategy_code=strategy_code)
+    next_order = max((r["execution_order"] for r in existing), default=0) + 1
+
+    if strategy_code == "A":
+        config_key = f"strategy_a_predictor_{next_order}"
+        role_label = f"Predictor {next_order}"
+        agent_id = f"predictor_{next_order}"
+        role = "predictor"
+    else:
+        config_key = f"strategy_b_{role}_{next_order}"
+        role_label = f"{role.capitalize()} {next_order}"
+        agent_id = f"consensus_{role}_{next_order}"
+
+    from src.db.queries import insert_model_role_config
+    return await insert_model_role_config(
+        config_key=config_key,
+        strategy_code=strategy_code,
+        role=role,
+        role_label=role_label,
+        agent_id=agent_id,
+        llm_model=llm_model,
+        persona=persona,
+        execution_order=next_order,
+    )
+
+
+async def remove_model_role(config_key: str) -> bool:
+    """모델 역할을 삭제한다."""
+    from src.db.queries import delete_model_role_config
+    return await delete_model_role_config(config_key)
 
 
 def provider_name_for_model(model: str) -> str:
