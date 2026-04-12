@@ -12,7 +12,9 @@ from pydantic import BaseModel, Field
 from src.api.deps import get_admin_user
 from src.services.model_config import (
     SUPPORTED_MODEL_OPTIONS,
+    add_model_role,
     provider_status,
+    remove_model_role,
     update_model_role_configs,
 )
 
@@ -65,6 +67,13 @@ class ModelConfigUpdateRequest(BaseModel):
     items: list[ModelRoleUpdateItem]
 
 
+class AddModelRoleRequest(BaseModel):
+    strategy_code: str = Field(..., pattern="^[AB]$")
+    role: str = Field(..., min_length=1, max_length=30)
+    llm_model: str
+    persona: str = Field(..., min_length=1, max_length=300)
+
+
 async def _build_response() -> ModelConfigResponse:
     from src.services.model_config import get_strategy_a_profiles, get_strategy_b_roles
 
@@ -95,6 +104,36 @@ async def update_model_config(
         await update_model_role_configs([item.model_dump() for item in body.items])
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return await _build_response()
+
+
+@router.post("/config/roles", response_model=ModelConfigResponse, status_code=status.HTTP_201_CREATED)
+async def add_role(
+    body: AddModelRoleRequest,
+    _: Annotated[dict, Depends(get_admin_user)],
+) -> ModelConfigResponse:
+    """전략에 새 모델 역할을 추가한다."""
+    try:
+        await add_model_role(
+            strategy_code=body.strategy_code,
+            role=body.role,
+            llm_model=body.llm_model,
+            persona=body.persona,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return await _build_response()
+
+
+@router.delete("/config/roles/{config_key}", response_model=ModelConfigResponse)
+async def delete_role(
+    config_key: str,
+    _: Annotated[dict, Depends(get_admin_user)],
+) -> ModelConfigResponse:
+    """모델 역할을 삭제한다."""
+    deleted = await remove_model_role(config_key)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"역할을 찾을 수 없습니다: {config_key}")
     return await _build_response()
 
 
