@@ -70,6 +70,19 @@ class OHLCVDaily(BaseModel):
     adj_close: Optional[float] = None
 
 
+class OhlcvMinute(BaseModel):
+    """ohlcv_minute 테이블 모델 — 1분봉."""
+    instrument_id: str
+    bucket_at: datetime
+    open: int
+    high: int
+    low: int
+    close: int
+    volume: int = 0
+    trade_count: int = 0
+    vwap: float = 0.0
+
+
 class PredictionSignal(BaseModel):
     agent_id: str
     llm_model: str
