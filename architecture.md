@@ -223,8 +223,9 @@ Tournament   Debate      RL Trading    Search/Research
 | `broker_orders` | KIS Broker |
 | `trading_accounts` | KIS Broker |
 | `account_snapshots` | AccountState |
+| `ohlcv_minute` | 배치 집계 크론 (15:50 KST) |
 
-> 전체 20개 테이블의 유니크 제약, 쿼리 파일 매핑은 → [DATA-STOCK_ARCHITECTURE.md §2-1](DATA-STOCK_ARCHITECTURE.md#2-1-postgresql-srcutilsdb_clientpy)
+> 전체 테이블의 유니크 제약, 쿼리 파일 매핑은 → [DATA-STOCK_ARCHITECTURE.md §2-1](DATA-STOCK_ARCHITECTURE.md#2-1-postgresql-srcutilsdb_clientpy)
 
 ### Redis 주요 키
 
@@ -249,6 +250,7 @@ Tournament   Debate      RL Trading    Search/Research
 | `predictions/date=.../` | 예측 시그널 | Snappy |
 | `orders/date=.../` | 주문 기록 | Snappy |
 | `blend_results/date=.../` | 블렌딩 결과 | Snappy |
+| `ohlcv_minute/year=YYYY/month=MM/` | 분봉 아카이브 (종목별) | zstd |
 
 > PyArrow 스키마, 재시도 로직, DataType enum 상세는 → [DATA-STOCK_ARCHITECTURE.md §2-3](DATA-STOCK_ARCHITECTURE.md#2-3-s3minio-srcutilss3_clientpy--srcservicesdatalakepy)
 
