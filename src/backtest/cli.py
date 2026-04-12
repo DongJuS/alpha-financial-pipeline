@@ -64,7 +64,7 @@ def _build_rl_signal_source(
 ) -> RLSignalSource:
     """RL 정책을 학습하거나 로드하여 RLSignalSource를 생성합니다."""
     from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
-    from src.agents.rl_trading import RLDataset, RLPolicyArtifact, TabularQTrainer
+    from src.agents.rl_trading import RLDataset, TabularQTrainer
     from src.agents.rl_trading_v2 import TabularQTrainerV2
 
     profile = _RL_PROFILES[profile_name]
