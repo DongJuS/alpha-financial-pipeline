@@ -20,6 +20,7 @@ src/schedulers/unified_scheduler.py — 통합 스케줄러
 
     [장 후]
     s3_tick_flush       15:40 KST  DB→S3 틱 데이터 일괄 flush (hour 파티셔닝)
+    minute_aggregation  15:50 KST  tick_data→ohlcv_minute 1분봉 배치 집계
     rl_retrain          16:00 KST  RL 전략 재학습
     blend_weight_adjust 16:30 KST  블렌딩 가중치 동적 조정
 """
@@ -53,6 +54,7 @@ _LOCK_TTL: dict[str, int] = {
     "kis_token_health": 30,      # 30초 (토큰 검증 API 호출)
     # 장 후
     "s3_tick_flush": 600,        # 10분 (DB→S3 일괄 flush)
+    "minute_aggregation": 300,   # 5분 (tick→ohlcv_minute 집계)
     "rl_retrain": 3600,          # 60분 (멀티 티커 학습)
     "blend_weight_adjust": 120,  # 2분
 }
@@ -456,6 +458,28 @@ async def start_unified_scheduler() -> None:
         CronTrigger(hour=15, minute=40, day_of_week="0-4", timezone=str(KST)),
         id="s3_tick_flush",
         name="S3 tick flush (15:40 KST)",
+        misfire_grace_time=60,
+        replace_existing=True,
+    )
+
+    # -- 장 후: tick_data → ohlcv_minute 1분봉 배치 집계 (15:50 KST) --
+    async def _run_minute_aggregation() -> None:
+        """장 종료 후 당일 00:00~익일 00:00 틱 데이터를 1분봉으로 UPSERT한다 (멱등성)."""
+        from datetime import datetime as _dt, timedelta
+
+        from src.db.queries import aggregate_ticks_to_minutes
+
+        today = _dt.now(tz=KST).date()
+        start = _dt(today.year, today.month, today.day, 0, 0, 0, tzinfo=KST)
+        end = start + timedelta(days=1)
+        count = await aggregate_ticks_to_minutes(start, end)
+        logger.info("분봉 집계 완료: %s, %d건", today.isoformat(), count)
+
+    scheduler.add_job(
+        _locked_job("minute_aggregation", _run_minute_aggregation),
+        CronTrigger(hour=15, minute=50, day_of_week="0-4", timezone=str(KST)),
+        id="minute_aggregation",
+        name="Minute aggregation (15:50 KST)",
         misfire_grace_time=60,
         replace_existing=True,
     )
