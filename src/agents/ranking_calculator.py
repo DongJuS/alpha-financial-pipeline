@@ -87,7 +87,7 @@ class RankingCalculator:
             WHERE i.is_active = TRUE
               AND sm.is_etf = FALSE AND sm.is_etn = FALSE
               AND sm.market_cap IS NOT NULL AND sm.market_cap > 0
-            ORDER BY sm.market_cap DESC
+            ORDER BY sm.market_cap DESC, i.ticker ASC
             LIMIT $1
             """,
             limit,
@@ -131,7 +131,7 @@ class RankingCalculator:
               AND i.is_active = TRUE
               AND sm.is_etf = FALSE AND sm.is_etn = FALSE
             GROUP BY i.ticker, sm.name, o.change_pct
-            ORDER BY total_volume DESC
+            ORDER BY total_volume DESC, i.ticker ASC
             LIMIT $2
             """,
             ranking_date,
@@ -176,7 +176,7 @@ class RankingCalculator:
               AND i.is_active = TRUE
               AND sm.is_etf = FALSE AND sm.is_etn = FALSE
             GROUP BY i.ticker, sm.name, o.change_pct
-            ORDER BY total_turnover DESC
+            ORDER BY total_turnover DESC, i.ticker ASC
             LIMIT $2
             """,
             ranking_date,
@@ -219,7 +219,7 @@ class RankingCalculator:
               AND o.change_pct > 0
               AND i.is_active = TRUE
               AND sm.is_etf = FALSE AND sm.is_etn = FALSE
-            ORDER BY o.change_pct DESC
+            ORDER BY o.change_pct DESC, i.ticker ASC
             LIMIT $2
             """,
             ranking_date,
@@ -261,7 +261,7 @@ class RankingCalculator:
               AND o.change_pct < 0
               AND i.is_active = TRUE
               AND sm.is_etf = FALSE AND sm.is_etn = FALSE
-            ORDER BY o.change_pct ASC
+            ORDER BY o.change_pct ASC, i.ticker ASC
             LIMIT $2
             """,
             ranking_date,
@@ -358,7 +358,7 @@ class RankingCalculator:
               AND sm.is_etf = FALSE AND sm.is_etn = FALSE
               AND sm.sector IS NOT NULL AND sm.sector != ''
             GROUP BY sm.sector
-            ORDER BY total_market_cap DESC
+            ORDER BY total_market_cap DESC, sm.sector ASC
             """
         )
 
