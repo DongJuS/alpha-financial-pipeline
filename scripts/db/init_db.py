@@ -1178,6 +1178,7 @@ CREATE_TABLES: list[str] = [
         policy_family   VARCHAR(30)   NOT NULL DEFAULT 'tabular_q_v2',
         dataset_days    INT           NOT NULL DEFAULT 720,
         result_policy_id VARCHAR(80)  REFERENCES rl_policies(policy_id),
+        progress_pct    SMALLINT      NOT NULL DEFAULT 0,
         error_message   TEXT,
         created_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
         started_at      TIMESTAMPTZ,

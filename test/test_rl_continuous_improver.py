@@ -54,6 +54,7 @@ class StubTrainer:
         dataset: RLDataset,
         *,
         train_ratio: float = 0.7,
+        **kwargs,
     ) -> tuple[RLPolicyArtifact, RLSplitMetadata]:
         return self.train(dataset), RLSplitMetadata(
             train_ratio=train_ratio,
