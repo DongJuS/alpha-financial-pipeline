@@ -32,6 +32,7 @@ DDL 정의: `scripts/db/init_db.py` | 쿼리: `src/db/queries.py`, `src/db/marke
 | **instruments** | 종목 마스터 (CODE.SUFFIX 정규화) | ✅ | ← markets / → ohlcv_daily, tick_data | [상세](db/pg_instruments.md) |
 | **ohlcv_daily** | 일봉 OHLCV (연도별 파티셔닝 2010~2027) | ✅ | ← instruments | [상세](db/pg_ohlcv_daily.md) |
 | **tick_data** | 실시간 틱 (timestamp_kst 파티셔닝) | ✅ | ← instruments | [상세](db/pg_tick_data.md) |
+| **ohlcv_minute** | 1분봉 집계 (bucket_at 월별 파티셔닝) | ✅ | ← tick_data 집계 | [상세](db/pg_ohlcv_minute.md) |
 | **market_data** | 레거시 OHLCV 통합 | ⚠️ 폐지예정 | 없음 (ohlcv_daily로 이관 중) | [상세](db/pg_market_data.md) |
 
 ## 예측 & 신호
@@ -105,4 +106,4 @@ DDL 정의: `scripts/db/init_db.py` | 쿼리: `src/db/queries.py`, `src/db/marke
 ## 범례
 
 - ✅ 활성 사용 중 | ⚠️ 폐지 예정 | ❌ 미사용/보류
-- 총 **37개 테이블** + alpha_gen_db (동일 스키마) + Redis 캐시/Pub·Sub + MinIO 데이터 레이크
+- 총 **38개 테이블** + alpha_gen_db (동일 스키마) + Redis 캐시/Pub·Sub + MinIO 데이터 레이크
