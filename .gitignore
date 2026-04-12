@@ -41,7 +41,7 @@ artifacts/rl/models/ppo/*
 .vite/
 
 test/archive/
-.claude/worktrees/
+.claude/
 
 # SOPS / age
 # age private key 는 ~/.config/sops/age/keys.txt 에만 존재해야 한다.
