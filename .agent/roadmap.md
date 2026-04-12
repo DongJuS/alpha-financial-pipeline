@@ -71,18 +71,15 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건). 틱 수집은 장중 WebSocke
 
 **✅ tick-collector 서비스 분리 완료 (PR #138):** collector.run() 복원 + 별도 tick-collector 서비스. 장애 격리(틱↔매매 독립) + 독립 재시작. unified_scheduler에서 tick 크론잡 2개 제거(12→10 잡). K3s 배포 후 데이터 축적 시작.
 
-### 틱+일봉 통합 분석 레이어 (진행 중)
+### 틱+일봉 통합 분석 레이어 (Phase 0 완료, Phase 1 대기)
 
 **왜 필요한가:** 틱 데이터를 수집·저장하지만 전략 분석에 활용하지 않아 ROI가 낮음. 분봉 집계 + 통합 빌더로 RL/LLM 양쪽에서 장중 패턴을 활용할 수 있다.
 
 **아키텍처 결정 (2026-04-12):** 안 C(하이브리드) 채택 — DB 최근 90일(`ohlcv_minute`) + S3 Parquet 아카이브. 수집 파이프라인 변경 없음.
 
-Phase 0 (즉시): ohlcv_minute 테이블 + 집계 크론(15:50) + S3 아카이브 + UnifiedMarketData 빌더
+**✅ Phase 0 완료 (2026-04-12, PR #178~#180):** ohlcv_minute 테이블(월별 파티셔닝) + 15:50 KST 배치 집계 크론 + S3 Parquet 아카이브(매월 1일 파티션 관리) + UnifiedMarketData 빌더 + compute_intraday_features()
 Phase 1 (40영업일 후): RL 분봉 피처 2개 추가 (vwap_deviation, volume_skew)
 Phase 2 (Phase 1 검증 후): LLM 장중 패턴 컨텍스트 추가
-- 상세 (아키텍처): `.agent/discussions/20260412-unified-market-data-architecture.md`
-- 상세 (구현): `.agent/discussions/20260412-unified-market-data-implementation.md`
-- 상세 (RL 피처): `.agent/discussions/20260411-rl-intraday-feature-expansion.md`
 
 
 ### Predictor MTF 실효과 검증
