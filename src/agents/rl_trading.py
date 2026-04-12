@@ -73,17 +73,29 @@ class RLPolicyArtifact:
     discount_factor: float
     epsilon: float
     trade_penalty_bps: int
-    q_table: dict[str, dict[str, float]]
     evaluation: RLEvaluationMetrics
+    q_table: Optional[dict[str, dict[str, float]]] = None
     artifact_path: Optional[str] = None
+    model_path: Optional[str] = None
 
     def to_dict(self) -> dict:
         payload = asdict(self)
         payload["evaluation"] = asdict(self.evaluation)
+        if self.q_table is None:
+            payload.pop("q_table", None)
         return payload
 
     @classmethod
     def from_dict(cls, payload: dict) -> "RLPolicyArtifact":
+        q_table_raw = payload.get("q_table")
+        q_table = (
+            {
+                str(state): {str(action): float(value) for action, value in actions.items()}
+                for state, actions in q_table_raw.items()
+            }
+            if q_table_raw is not None
+            else None
+        )
         return cls(
             policy_id=payload["policy_id"],
             ticker=payload["ticker"],
@@ -96,12 +108,10 @@ class RLPolicyArtifact:
             discount_factor=float(payload.get("discount_factor", 0.92)),
             epsilon=float(payload.get("epsilon", 0.15)),
             trade_penalty_bps=int(payload.get("trade_penalty_bps", 5)),
-            q_table={
-                str(state): {str(action): float(value) for action, value in actions.items()}
-                for state, actions in payload.get("q_table", {}).items()
-            },
             evaluation=RLEvaluationMetrics(**payload.get("evaluation", {})),
+            q_table=q_table,
             artifact_path=payload.get("artifact_path"),
+            model_path=payload.get("model_path"),
         )
 
 

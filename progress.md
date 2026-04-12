@@ -29,6 +29,21 @@
 
 ## ✅ 최근 완료
 
+### RL SB3 통합 Trainer + Ensemble Phase 1 (2026-04-12)
+
+Tabular Q → SB3(DQN/A2C/PPO) 통합 trainer 구현 완료.
+- `rl_trading_sb3.py` — SB3Trainer (ALGO_MAP 패턴, lazy import, multi-seed 학습)
+- 프로파일 3개 (`dqn_v1_baseline`, `a2c_v1_baseline`, `ppo_v1_baseline`)
+- `rl_continuous_improver.py` — `_WalkForwardSB3Adapter` + `_trainer_for_profile()` SB3 분기
+- `rl_runner.py` — `_infer_sb3()` SB3 추론 분기 + algorithm별 llm_model 태깅
+- `rl_policy_store_v2.py` — .zip 모델 파일 영구 저장 (shutil.copy2)
+- `rl_walk_forward.py` — `_extract_q_table()` str 통과 (SB3 model_path)
+- `rl_trading.py` — `RLPolicyArtifact.q_table` Optional, `model_path` 필드 추가
+- `rl_environment.py` — `GymTradingEnv` MRO 수정 (TradingEnv → gym.Env)
+- 테스트 55개 (`test_rl_sb3.py`) + 기존 308개 전체 통과
+- `stable-baselines3>=2.3,<3.0` requirements.txt 추가
+- 상세: `.agent/discussions/20260412-rl-sb3-ensemble-phase1-implementation.md`
+
 ### RL 학습 파이프라인 안정화 (2026-04-12, PR #167~#172)
 
 학습 잡 FAILED 원인 해결 + 진행률 추적 + 프로파일 동적 조회.
@@ -70,24 +85,16 @@ ohlcv_minute 인프라 + S3 아카이브 + UnifiedMarketData 빌더 완성.
 1. `collector.run()` 복원 → `collect_daily_bars()` 위임. 08:30 KST 일봉 수집 정상화.
 2. 별도 `tick-collector` 서비스 신규 추가 — 장애 격리(틱↔매매 독립), 독립 재시작. K3s 배포 필요.
 
-### RL 모델 DQN 업그레이드 + Ensemble + Optuna (설계 완료, 구현 대기)
+### RL 모델 DQN 업그레이드 + Optuna (Phase 1 완료, Phase 2 대기)
 
-Tabular Q → SB3 통합 trainer(DQN/A2C/PPO) + Optuna 자동 탐색. MacBook 로컬 학습 → 서버 배포.
+**✅ Phase 1 — SB3 통합 Trainer + Ensemble (2026-04-12):** 완료. 위 "최근 완료" 참조.
 
-**Phase 1 — SB3 통합 Trainer + Ensemble:**
-1. `rl_environment_v2.py` — 연속 상태 Gymnasium 환경
-2. `rl_trading_sb3.py` — SB3 통합 trainer (DQN/A2C/PPO)
-3. 프로파일 3개 (dqn/a2c/ppo)
-4. `rl_continuous_improver.py` + `rl_runner.py` + `rl_policy_store_v2.py` — SB3 분기
-5. 테스트
-
-**Phase 2 — Optuna:**
+**Phase 2 — Optuna (대기):**
 1. `rl_hyperopt.py` — study 관리, 알고리즘별 search space
 2. `requirements.txt` + `.agent/tech_stack.md` — `optuna>=3.0,<4.0`
 
 상세: `.agent/discussions/20260412-rl-dqn-upgrade-optuna.md`
-상세: `.agent/discussions/20260412-rl-algorithm-research-ensemble.md`
-상세: `.agent/discussions/20260412-rl-dqn-to-ppo-migration.md`
+상세: `.agent/discussions/20260412-rl-sb3-ensemble-phase1-implementation.md`
 
 ### RL 실시간 추론 파이프라인 (선행 조건: 위 Phase 1~2 + 분봉 40영업일)
 
