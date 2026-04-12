@@ -452,6 +452,7 @@ export function usePromoteShadowToPaper() {
 
 export interface RLTickerInfo {
   ticker: string;
+  data_scope?: string;
   active_policy_id: string | null;
   has_policy: boolean;
 }
@@ -470,8 +471,11 @@ export function useRLTickers() {
 export function useAddRLTickers() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (tickers: string[]) => {
-      const { data } = await api.put("/rl/tickers", { tickers });
+    mutationFn: async (payload: { tickers: string[]; data_scope?: string }) => {
+      const { data } = await api.put("/rl/tickers", {
+        tickers: payload.tickers,
+        data_scope: payload.data_scope ?? "daily",
+      });
       return data as { tickers: string[]; added: string[]; total: number };
     },
     onSuccess: () => {

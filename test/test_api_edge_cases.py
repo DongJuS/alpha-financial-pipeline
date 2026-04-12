@@ -451,8 +451,10 @@ class TestFeedbackCycleEdgeCases:
         body = resp.json()
         assert body["scope"] == "unknown_scope_xyz"
 
-    def test_feedback_cycle_empty_body(self) -> None:
+    @patch("src.api.routers.feedback._get_rl_improver")
+    def test_feedback_cycle_empty_body(self, mock_improver) -> None:
         """빈 바디로 사이클 실행 시 기본 scope가 적용되어 정상 동작한다."""
+        mock_improver.return_value.retrain_all = AsyncMock(return_value=[])
         app = _build_authed_app()
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/feedback/cycle", json={})
