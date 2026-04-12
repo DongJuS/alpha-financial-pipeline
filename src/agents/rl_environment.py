@@ -408,8 +408,15 @@ class TradingEnv:
 
 if HAS_GYMNASIUM:
 
-    class GymTradingEnv(gym.Env, TradingEnv):
-        """Gymnasium 정식 등록용 래퍼."""
+    class GymTradingEnv(TradingEnv, gym.Env):
+        """Gymnasium 정식 등록용 래퍼.
 
-        def __init__(self, config: TradingEnvConfig) -> None:
+        MRO: GymTradingEnv → TradingEnv → gym.Env
+        TradingEnv.reset()/step()이 gym.Env 기본 구현보다 먼저 해석되어야
+        SB3 DummyVecEnv에서 올바른 (obs, info) 튜플을 반환한다.
+        """
+
+        def __init__(self, config: TradingEnvConfig, render_mode: str | None = None) -> None:
+            gym.Env.__init__(self)
             TradingEnv.__init__(self, config)
+            self.render_mode = render_mode

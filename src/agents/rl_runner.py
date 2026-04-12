@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date
 
 from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
+from src.agents.rl_trading import RLPolicyArtifact
 from src.agents.rl_trading_v2 import TabularQTrainerV2
 from src.db.models import PredictionSignal
 from src.db.queries import fetch_recent_ohlcv
@@ -121,19 +122,22 @@ class RLRunner:
 
         closes = [float(c["close"]) for c in candles]
 
-        # Q-table 추론
-        action, confidence, state, q_values = self._trainer.infer_action(
-            artifact,
-            closes,
-            current_position=0,  # stateless: 매 사이클 새로 시작
-        )
+        # 알고리즘 기반 추론 분기
+        if artifact.algorithm in ("dqn", "a2c", "ppo") and artifact.model_path:
+            action, confidence, state, q_values = self._infer_sb3(artifact, closes)
+        else:
+            action, confidence, state, q_values = self._trainer.infer_action(
+                artifact,
+                closes,
+                current_position=0,  # stateless: 매 사이클 새로 시작
+            )
 
         # RL 액션 → 표준 signal 매핑
         signal = self._map_action_to_signal(action)
 
         return PredictionSignal(
             agent_id=f"rl_agent_{policy_id}",
-            llm_model="tabular-q-learning-v2",
+            llm_model=f"rl-{artifact.algorithm}",
             strategy="RL",
             ticker=db_ticker,
             signal=signal,
@@ -146,6 +150,21 @@ class RLRunner:
             ),
             trading_date=date.today(),
         )
+
+    def _infer_sb3(
+        self,
+        artifact: RLPolicyArtifact,
+        closes: list[float],
+    ) -> tuple[str, float, str, dict[str, float]]:
+        """SB3 모델 추론. artifact 필드에서 환경 파라미터를 복원한다."""
+        from src.agents.rl_trading_sb3 import SB3Trainer
+
+        trainer = SB3Trainer(
+            algorithm=artifact.algorithm,
+            lookback=artifact.lookback,
+            trade_penalty_bps=artifact.trade_penalty_bps,
+        )
+        return trainer.infer_action(artifact, closes, current_position=0)
 
     @staticmethod
     async def _log_skip(

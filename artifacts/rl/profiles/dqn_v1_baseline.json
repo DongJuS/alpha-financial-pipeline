@@ -1,0 +1,38 @@
+{
+  "profile_id": "dqn_v1_baseline",
+  "description": "SB3 DQN baseline — replay buffer 기반 데이터 효율 최적",
+  "algorithm": "dqn",
+  "state_version": "sb3_dqn",
+  "trainer_params": {
+    "algorithm": "dqn",
+    "lookback": 20,
+    "num_episodes": 10,
+    "trade_penalty_bps": 2,
+    "opportunity_cost_factor": 0.5,
+    "long_loss_penalty": 0.9,
+    "net_arch": [64, 64],
+    "learning_rate": 5e-4,
+    "gamma": 0.95,
+    "buffer_size": 10000,
+    "batch_size": 64,
+    "exploration_fraction": 0.2,
+    "exploration_final_eps": 0.05,
+    "target_update_interval": 500,
+    "train_freq": 4,
+    "gradient_steps": 1,
+    "num_seeds": 3,
+    "random_seed": 42
+  },
+  "dataset": {
+    "default_source": "yfinance",
+    "default_range": "10y",
+    "default_train_ratio": 0.7,
+    "adaptive_ratios": [0.5, 0.6, 0.7, 0.8],
+    "bandit_epsilon": 0.2,
+    "min_history_points": 40
+  },
+  "evaluation": {
+    "min_approval_return_pct": 5.0,
+    "max_drawdown_limit_pct": -50.0
+  }
+}

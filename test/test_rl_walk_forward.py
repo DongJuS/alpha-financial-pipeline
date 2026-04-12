@@ -289,9 +289,14 @@ class TestTrainerCompatibility:
         result = WalkForwardEvaluator._extract_q_table(obj)
         assert result == {"state": {"BUY": 0.5}}
 
+    def test_extract_q_table_string_passthrough(self):
+        """SB3 어댑터가 model_path(str)를 반환할 때 그대로 통과."""
+        result = WalkForwardEvaluator._extract_q_table("/tmp/model.zip")
+        assert result == "/tmp/model.zip"
+
     def test_extract_q_table_invalid_raises(self):
         with pytest.raises(TypeError, match="q_table"):
-            WalkForwardEvaluator._extract_q_table("invalid")
+            WalkForwardEvaluator._extract_q_table(12345)
 
     def test_build_dataset(self):
         closes = [100.0, 101.0, 102.0]
