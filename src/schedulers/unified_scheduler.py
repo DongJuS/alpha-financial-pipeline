@@ -16,6 +16,7 @@ src/schedulers/unified_scheduler.py — 통합 스케줄러
 
     [장 중]
     index_collection      30초 인터벌  IndexCollector (장중)
+    kis_token_health    매시 정각 (09~15시, 평일)  KIS OAuth 토큰 유효성 검증
 
     [장 후]
     s3_tick_flush       15:40 KST  DB→S3 틱 데이터 일괄 flush (hour 파티셔닝)
@@ -49,6 +50,7 @@ _LOCK_TTL: dict[str, int] = {
     "collector_daily": 600,      # 10분
     "index_warmup": 60,          # 1분
     "index_collection": 25,      # 30초 인터벌보다 짧게
+    "kis_token_health": 30,      # 30초 (토큰 검증 API 호출)
     # 장 후
     "s3_tick_flush": 600,        # 10분 (DB→S3 일괄 flush)
     "rl_retrain": 3600,          # 60분 (멀티 티커 학습)
@@ -365,6 +367,61 @@ async def start_unified_scheduler() -> None:
         replace_existing=True,
     )
 
+    # -- 장 중: KIS 토큰 health 체크 (매시 정각, 09~15시) --
+    async def _run_kis_token_health() -> None:
+        """KIS OAuth 토큰 유효성을 검증하고, 만료/실패 시 재발급 + 알림."""
+        from src.services.kis_session import get_stored_kis_token, issue_kis_token
+        from src.utils.config import get_settings as _get_settings, has_kis_credentials
+        from src.utils.redis_client import get_redis as _get_redis
+
+        _settings = _get_settings()
+        scope = "paper" if _settings.kis_is_paper_trading else "real"
+
+        if not has_kis_credentials(_settings, scope):
+            logger.warning("KIS health: %s 인증 정보 미설정 — 스킵", scope)
+            return
+
+        redis = await _get_redis()
+        token_key = f"kis:oauth_token:{scope}"
+        ttl = await redis.ttl(token_key)
+        token = await get_stored_kis_token(scope)
+
+        status = "ok"
+        detail = ""
+
+        if not token:
+            try:
+                await issue_kis_token(settings=_settings, account_scope=scope)
+                status = "recovered"
+                detail = "토큰 없음 → 재발급 성공"
+            except Exception as exc:
+                status = "error"
+                detail = f"토큰 재발급 실패: {exc}"
+        elif ttl < 3600:
+            try:
+                await issue_kis_token(settings=_settings, account_scope=scope)
+                status = "renewed"
+                detail = f"TTL {ttl}초 → 갱신 완료"
+            except Exception as exc:
+                status = "warning"
+                detail = f"TTL {ttl}초, 갱신 실패: {exc}"
+        else:
+            detail = f"TTL {ttl // 3600}h {(ttl % 3600) // 60}m"
+
+        logger.info("KIS health [%s]: %s — %s", scope, status, detail)
+
+        if status in ("error", "warning"):
+            try:
+                from src.agents.notifier import NotifierAgent
+
+                notifier = NotifierAgent()
+                await notifier.send(
+                    "kis_health",
+                    f"⚠️ KIS 토큰 이상\n상태: {status}\n스코프: {scope}\n{detail}",
+                )
+            except Exception as exc:
+                logger.warning("KIS health 알림 전송 실패: %s", exc)
+
     # ── 잡 등록: 장 중 ─────────────────────────────────────────────────────
     scheduler.add_job(
         _locked_job("index_collection", _run_index_if_open),
@@ -373,6 +430,15 @@ async def start_unified_scheduler() -> None:
         id="index_collection",
         name="Index collection every 30s",
         misfire_grace_time=5,
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
+        _locked_job("kis_token_health", _run_kis_token_health),
+        CronTrigger(hour="9-15", minute=0, day_of_week="0-4", timezone=str(KST)),
+        id="kis_token_health",
+        name="KIS token health check (hourly 09-15 KST)",
+        misfire_grace_time=60,
         replace_existing=True,
     )
 
