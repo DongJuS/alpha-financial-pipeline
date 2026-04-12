@@ -268,3 +268,173 @@ class RLContinuousImproverTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(outcome.deployed)
         self.assertIsNone(outcome.active_policy_after)
 
+
+import inspect
+import pytest
+from src.agents.rl_continuous_improver import _WalkForwardTrainerAdapter
+
+
+# ── _WalkForwardTrainerAdapter Tests ─────────────────────────────────────────
+
+
+@pytest.mark.rl
+@pytest.mark.unit
+class TestWalkForwardTrainerAdapter:
+    """_WalkForwardTrainerAdapter 단위 테스트."""
+
+    def test_train_returns_q_table(self):
+        mock_trainer = MagicMock()
+        mock_artifact = MagicMock()
+        mock_artifact.q_table = {"s1": {"BUY": 1.0}}
+        mock_trainer.train.return_value = mock_artifact
+
+        adapter = _WalkForwardTrainerAdapter("TEST", mock_trainer)
+        result = adapter.train([100.0, 101.0, 102.0])
+
+        assert result == {"s1": {"BUY": 1.0}}
+        # train에 RLDataset이 전달되었는지 확인
+        call_args = mock_trainer.train.call_args[0][0]
+        assert call_args.ticker == "TEST"
+
+    def test_evaluate_delegates_to_trainer(self):
+        mock_trainer = MagicMock()
+        mock_trainer.evaluate.return_value = "eval_result"
+
+        adapter = _WalkForwardTrainerAdapter("TEST", mock_trainer)
+        result = adapter.evaluate({"s1": {"BUY": 1.0}}, [100.0, 101.0])
+
+        assert result == "eval_result"
+        mock_trainer.evaluate.assert_called_once_with(
+            [100.0, 101.0], {"s1": {"BUY": 1.0}}
+        )
+
+    def test_train_builds_dataset_with_timestamps(self):
+        mock_trainer = MagicMock()
+        mock_artifact = MagicMock()
+        mock_artifact.q_table = {}
+        mock_trainer.train.return_value = mock_artifact
+
+        adapter = _WalkForwardTrainerAdapter("TICK", mock_trainer)
+        adapter.train([1.0, 2.0, 3.0])
+
+        dataset_arg = mock_trainer.train.call_args[0][0]
+        assert len(dataset_arg.timestamps) == 3
+        assert dataset_arg.timestamps[0] == "0"
+
+
+# ── _trainer_for_profile Tests ───────────────────────────────────────────────
+
+
+@pytest.mark.rl
+@pytest.mark.unit
+class TestTrainerForProfile:
+    """_trainer_for_profile dispatch 테스트."""
+
+    def _make_improver(self):
+        return RLContinuousImprover(
+            dataset_builder=StubDatasetBuilder(),
+            experiment_manager=MagicMock(),
+            policy_store=MagicMock(),
+        )
+
+    def test_tabular_v2_selection(self):
+        improver = self._make_improver()
+        profile = {
+            "state_version": "qlearn_v2",
+            "trainer_params": {"lookback": 20, "num_seeds": 3},
+        }
+        trainer = improver._trainer_for_profile(profile)
+        from src.agents.rl_trading_v2 import TabularQTrainerV2
+        assert isinstance(trainer, TabularQTrainerV2)
+
+    def test_tabular_v1_selection(self):
+        improver = self._make_improver()
+        profile = {
+            "state_version": "qlearn_v1",
+            "trainer_params": {"lookback": 6, "episodes": 60},
+        }
+        trainer = improver._trainer_for_profile(profile)
+        from src.agents.rl_trading import TabularQTrainer
+        assert isinstance(trainer, TabularQTrainer)
+
+    def test_v2_detection_by_opportunity_cost(self):
+        """opportunity_cost_factor 파라미터가 있으면 V2 선택."""
+        improver = self._make_improver()
+        profile = {
+            "state_version": "custom",
+            "trainer_params": {"opportunity_cost_factor": 0.5, "lookback": 20},
+        }
+        trainer = improver._trainer_for_profile(profile)
+        from src.agents.rl_trading_v2 import TabularQTrainerV2
+        assert isinstance(trainer, TabularQTrainerV2)
+
+    def test_v2_detection_by_num_seeds(self):
+        """num_seeds 파라미터가 있으면 V2 선택."""
+        improver = self._make_improver()
+        profile = {
+            "state_version": "any",
+            "trainer_params": {"num_seeds": 5, "lookback": 20},
+        }
+        trainer = improver._trainer_for_profile(profile)
+        from src.agents.rl_trading_v2 import TabularQTrainerV2
+        assert isinstance(trainer, TabularQTrainerV2)
+
+    def test_params_filtered_by_signature(self):
+        """시그니처에 없는 파라미터는 필터링."""
+        improver = self._make_improver()
+        profile = {
+            "state_version": "qlearn_v2",
+            "trainer_params": {
+                "lookback": 20,
+                "nonexistent_param": "should_be_filtered",
+            },
+        }
+        # 에러 없이 trainer 생성되어야 함
+        trainer = improver._trainer_for_profile(profile)
+        assert trainer is not None
+
+
+# ── _candidate_sort_key Tests ────────────────────────────────────────────────
+
+
+@pytest.mark.rl
+@pytest.mark.unit
+class TestCandidateSortKey:
+    """후보 정렬 키 검증."""
+
+    def _make_candidate(
+        self, wf_approved=True, consistency=0.8, eval_approved=True,
+        excess=5.0, total_return=10.0, drawdown=-10.0,
+    ):
+        from src.agents.rl_continuous_improver import CandidateResult
+        artifact = MagicMock()
+        artifact.evaluation.approved = eval_approved
+        artifact.evaluation.excess_return_pct = excess
+        artifact.evaluation.total_return_pct = total_return
+        artifact.evaluation.max_drawdown_pct = drawdown
+        wf = MagicMock()
+        wf.overall_approved = wf_approved
+        wf.consistency_score = consistency
+        return CandidateResult(
+            profile_id="test", run_id="r1",
+            artifact=artifact, split_metadata=MagicMock(), walk_forward=wf,
+        )
+
+    def test_approved_beats_unapproved(self):
+        approved = self._make_candidate(wf_approved=True)
+        unapproved = self._make_candidate(wf_approved=False)
+        key = RLContinuousImprover._candidate_sort_key
+        assert key(approved) > key(unapproved)
+
+    def test_higher_consistency_wins(self):
+        high = self._make_candidate(consistency=0.9)
+        low = self._make_candidate(consistency=0.5)
+        key = RLContinuousImprover._candidate_sort_key
+        assert key(high) > key(low)
+
+    def test_higher_excess_return_wins(self):
+        high = self._make_candidate(excess=10.0)
+        low = self._make_candidate(excess=3.0)
+        key = RLContinuousImprover._candidate_sort_key
+        assert key(high) > key(low)
+
