@@ -9,7 +9,7 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 JOB_NAME="bench-${TIMESTAMP}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPORT_DIR="$SCRIPT_DIR/reports"
-IMAGE=$(kubectl get deployment worker -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "alpha-trading:latest")
+IMAGE=$(kubectl get deployment worker -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "alpha-api:latest")
 
 mkdir -p "$REPORT_DIR"
 

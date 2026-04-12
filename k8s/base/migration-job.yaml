@@ -12,7 +12,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: migration
-          image: alpha-trading:latest
+          image: alpha-api:latest
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:
