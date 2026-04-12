@@ -643,41 +643,47 @@ async def get_policy_mode(
 
 class RLTickerUpdate(BaseModel):
     tickers: list[str] = Field(..., min_length=1, description="RL 대상 종목 목록")
+    data_scope: str = Field("daily", description="데이터 범위: daily, tick, combined")
 
 
 @router.get("/tickers", summary="RL 대상 종목 목록 조회")
 async def get_rl_tickers() -> dict:
-    """레지스트리에 등록된 RL 대상 종목과 활성 정책 상태를 반환합니다."""
+    """rl_targets에 등록된 RL 대상 종목과 활성 정책 상태를 반환합니다."""
+    from src.db.queries import list_rl_targets
+
     store = _get_store()
     try:
         active = await store.list_active_policies()
-        all_tickers = await store.list_all_tickers()
     except Exception:
         active = {}
-        all_tickers = []
+
+    try:
+        targets = await list_rl_targets()
+    except Exception:
+        targets = []
 
     return {
         "tickers": [
             {
-                "ticker": t,
-                "active_policy_id": active.get(t),
-                "has_policy": active.get(t) is not None,
+                "ticker": t["instrument_id"],
+                "data_scope": t["data_scope"],
+                "active_policy_id": active.get(t["instrument_id"]),
+                "has_policy": t["instrument_id"] in active,
             }
-            for t in sorted(all_tickers)
+            for t in targets
         ],
-        "total": len(all_tickers),
+        "total": len(targets),
     }
 
 
-@router.put("/tickers", summary="RL 대상 종목 추가/제거")
+@router.put("/tickers", summary="RL 대상 종목 추가")
 async def update_rl_tickers(req: RLTickerUpdate) -> dict:
-    """RL 대상 종목을 확인합니다. DB 기반이므로 종목은 instruments 테이블에서 관리됩니다."""
-    store = _get_store()
-    existing = set(await store.list_all_tickers())
-    requested = set(req.tickers)
-    added = requested - existing
+    """RL 대상 종목을 rl_targets 테이블에 추가합니다."""
+    from src.db.queries import list_rl_target_tickers, upsert_rl_targets
 
-    all_tickers = sorted(existing | requested)
+    added = await upsert_rl_targets(req.tickers, data_scope=req.data_scope)
+    all_tickers = await list_rl_target_tickers()
+
     return {
         "tickers": all_tickers,
         "added": sorted(added),
@@ -687,21 +693,17 @@ async def update_rl_tickers(req: RLTickerUpdate) -> dict:
 
 @router.delete("/tickers/{ticker}", summary="RL 대상 종목 제거")
 async def remove_rl_ticker(ticker: str) -> dict:
-    """RL 레지스트리에서 종목의 모든 정책을 제거합니다."""
-    store = _get_store()
-    from src.utils.db_client import execute as db_execute
+    """rl_targets에서 종목을 제거합니다. 학습된 정책(rl_policies)은 유지됩니다."""
+    from src.db.queries import list_rl_target_tickers, remove_rl_target
 
-    policies = await store.list_policies(ticker)
-    if not policies:
-        logger.warning("rl ticker delete 404: ticker=%s — rl_policies 테이블에 레코드 없음", ticker)
-        raise HTTPException(status_code=404, detail=f"종목 '{ticker}'이(가) RL 레지스트리에 없습니다.")
+    removed = await remove_rl_target(ticker)
+    if not removed:
+        raise HTTPException(
+            status_code=404,
+            detail=f"종목 '{ticker}'이(가) RL 학습 대상에 없습니다.",
+        )
 
-    await db_execute(
-        "DELETE FROM rl_policies WHERE instrument_id = $1",
-        ticker,
-    )
-
-    remaining = await store.list_all_tickers()
+    remaining = await list_rl_target_tickers()
     return {
         "removed": ticker,
         "remaining": sorted(remaining),
