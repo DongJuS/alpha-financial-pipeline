@@ -67,10 +67,20 @@ RL chicken-and-egg 문제 해결 + 이미지 이름 alpha-api/alpha-ui로 통일
 
 클라우드 전환 시 tick_data/ prefix에 30일→IA, 90일→Glacier IR 적용. 콘솔 설정만.
 
-### RL 분봉 피처 확장 (선행 조건: 분봉 40영업일 축적)
+### 틱+일봉 통합 분석 레이어 (Phase 0 착수 대기)
 
-vwap_deviation + volume_skew 2개 피처 추가. 데이터 축적 후 구현 시작.
-상세: `.agent/discussions/20260411-rl-intraday-feature-expansion.md`
+수집은 별개 유지, 분석은 통합. 안 C(DB 90일 + S3 Parquet 아카이브) 채택.
+
+**Phase 0 (즉시 — PR 3개):**
+1. `ohlcv_minute` 테이블 DDL + `aggregate_ticks_to_minutes()` + 15:50 크론잡
+2. S3 Parquet 아카이브 (`archive_minute_bars()`) + 월 1회 파티션 관리 크론
+3. `UnifiedMarketData` 빌더 + `compute_intraday_features()`
+
+**Phase 1 (40영업일 후):** RL 분봉 피처 2개 (vwap_deviation, volume_skew)
+**Phase 2 (Phase 1 검증 후):** LLM 장중 패턴 컨텍스트
+- 상세 (아키텍처): `.agent/discussions/20260412-unified-market-data-architecture.md`
+- 상세 (구현): `.agent/discussions/20260412-unified-market-data-implementation.md`
+- 상세 (RL 피처): `.agent/discussions/20260411-rl-intraday-feature-expansion.md`
 
 ### 클라우드 LLM 인증·비용 전략 (설계 완료)
 
