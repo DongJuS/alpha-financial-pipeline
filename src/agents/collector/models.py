@@ -1,7 +1,7 @@
 """src/agents/collector/models.py — Collector 전용 데이터 모델."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 
