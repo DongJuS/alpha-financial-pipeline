@@ -22,6 +22,12 @@ end-to-end CLI 스크립트.
 
   # dry-run (실제 저장 없이 시뮬레이션)
   python scripts/rl_bootstrap.py --dry-run
+
+  # Optuna 하이퍼파라미터 자동 탐색 (SB3 프로파일)
+  python scripts/rl_bootstrap.py --train-only --hyperopt --hyperopt-trials 50
+
+  # 특정 SB3 프로파일로 Optuna 탐색
+  python scripts/rl_bootstrap.py --tickers 005930 --train-only --profiles dqn_v1_baseline --hyperopt
 """
 
 from __future__ import annotations
@@ -150,6 +156,8 @@ async def bootstrap_ticker(
     seed_only: bool = False,
     train_only: bool = False,
     force_seed: bool = False,
+    use_hyperopt: bool = False,
+    hyperopt_trials: int = 50,
 ) -> BootstrapResult:
     """단일 티커 부트스트랩: 시딩 → 학습 → 활성화."""
     result = BootstrapResult(ticker=ticker)
@@ -174,6 +182,8 @@ async def bootstrap_ticker(
             ticker,
             profile_ids=profiles,
             dataset_days=train_days,
+            use_hyperopt=use_hyperopt or None,
+            hyperopt_n_trials=hyperopt_trials if use_hyperopt else None,
         )
         result.retrain = outcome
 
@@ -248,12 +258,14 @@ async def run_bootstrap(args: argparse.Namespace) -> dict:
         "  학습 기간: %d일\n"
         "  프로파일: %s\n"
         "  강제 승격: %s\n"
+        "  Hyperopt: %s\n"
         "  모드: %s",
         tickers,
         args.seed_days,
         args.train_days,
         profiles or DEFAULT_PROFILES,
         args.force_promote,
+        f"ON ({args.hyperopt_trials} trials)" if args.hyperopt else "OFF",
         "시딩만" if args.seed_only else "학습만" if args.train_only else "전체",
     )
 
@@ -273,6 +285,8 @@ async def run_bootstrap(args: argparse.Namespace) -> dict:
             seed_only=args.seed_only,
             train_only=args.train_only,
             force_seed=args.force_seed,
+            use_hyperopt=args.hyperopt,
+            hyperopt_trials=args.hyperopt_trials,
         )
         results.append(result)
 
@@ -413,6 +427,17 @@ def main() -> None:
         "--dry-run",
         action="store_true",
         help="실제 실행 없이 대상 티커와 설정만 표시",
+    )
+    parser.add_argument(
+        "--hyperopt",
+        action="store_true",
+        help="Optuna 하이퍼파라미터 자동 탐색 활성화 (SB3 프로파일만 해당)",
+    )
+    parser.add_argument(
+        "--hyperopt-trials",
+        type=int,
+        default=50,
+        help="Optuna 탐색 trial 수 (기본: 50)",
     )
     args = parser.parse_args()
 
