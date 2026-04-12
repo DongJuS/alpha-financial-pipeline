@@ -14,6 +14,7 @@ import {
   useActivatePolicy,
   useTrainingJobs,
   useStartTrainingJob,
+  useDeleteTrainingJob,
   useRunWalkForward,
   usePromoteShadowToPaper,
   usePromotePaperToReal,
@@ -416,6 +417,7 @@ function ExperimentsTab() {
   const { data: experiments, isLoading } = useExperiments();
   const { data: trainingJobs, isLoading: isJobsLoading } = useTrainingJobs();
   const startJob = useStartTrainingJob();
+  const deleteJob = useDeleteTrainingJob();
   const runWF = useRunWalkForward();
 
   if (isLoading && isJobsLoading) return <div className="card"><div className="h-40 skeleton" /></div>;
@@ -459,8 +461,8 @@ function ExperimentsTab() {
                   <td className="py-2 text-xs" style={{ color: "var(--text-secondary)" }}>
                     {(job.created_at ?? job.started_at)?.slice(0, 16).replace("T", " ") ?? "—"}
                   </td>
-                  <td className="py-2">
-                    {job.status === "queued" ? (
+                  <td className="py-2 flex gap-1">
+                    {job.status === "queued" && (
                       <button
                         onClick={() => startJob.mutate(job.job_id)}
                         disabled={startJob.isPending}
@@ -468,7 +470,17 @@ function ExperimentsTab() {
                       >
                         학습 시작
                       </button>
-                    ) : "—"}
+                    )}
+                    {job.status !== "running" && (
+                      <button
+                        onClick={() => { if (confirm("이 작업을 삭제하시겠습니까?")) deleteJob.mutate(job.job_id); }}
+                        disabled={deleteJob.isPending}
+                        className="text-xs px-3 py-1 rounded"
+                        style={{ color: "var(--text-secondary)", border: "1px solid var(--border)" }}
+                      >
+                        삭제
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
