@@ -85,7 +85,14 @@ async def get_datalake_overview(
                 prefix_stats[top_prefix]["size"] += obj.get("Size", 0)
         return total_objects, total_size, prefix_stats
 
-    total_objects, total_size, prefix_stats = await asyncio.to_thread(_scan)
+    try:
+        total_objects, total_size, prefix_stats = await asyncio.to_thread(_scan)
+    except Exception as exc:
+        logger.error("S3 연결 실패 (/overview): %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="S3 스토리지 연결에 실패했습니다.",
+        ) from exc
 
     prefixes = [
         {
@@ -141,7 +148,14 @@ async def list_datalake_objects(
         common_prefixes = [cp["Prefix"] for cp in resp.get("CommonPrefixes", [])]
         return objects, common_prefixes
 
-    objects, common_prefixes = await asyncio.to_thread(_list)
+    try:
+        objects, common_prefixes = await asyncio.to_thread(_list)
+    except Exception as exc:
+        logger.error("S3 연결 실패 (/objects): %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="S3 스토리지 연결에 실패했습니다.",
+        ) from exc
 
     return S3ObjectListResponse(
         prefix=prefix,
@@ -167,7 +181,14 @@ async def get_object_info(
         except Exception:
             return None
 
-    resp = await asyncio.to_thread(_head)
+    try:
+        resp = await asyncio.to_thread(_head)
+    except Exception as exc:
+        logger.error("S3 연결 실패 (/object-info): %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="S3 스토리지 연결에 실패했습니다.",
+        ) from exc
     if resp is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -199,6 +220,13 @@ async def delete_object(
     def _delete():
         client.delete_object(Bucket=bucket, Key=key)
 
-    await asyncio.to_thread(_delete)
+    try:
+        await asyncio.to_thread(_delete)
+    except Exception as exc:
+        logger.error("S3 연결 실패 (/objects DELETE): %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="S3 스토리지 연결에 실패했습니다.",
+        ) from exc
     logger.info("S3 오브젝트 삭제: s3://%s/%s", bucket, key)
     return {"message": f"오브젝트 '{key}'가 삭제되었습니다."}
