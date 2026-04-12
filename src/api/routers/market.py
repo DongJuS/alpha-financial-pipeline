@@ -152,9 +152,13 @@ async def get_ohlcv(
         instrument_id,
     )
     if not meta:
+        logger.warning(
+            "ohlcv 404: ticker=%s instrument_id=%s — instruments 테이블에 존재하지 않음",
+            ticker, instrument_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"종목 '{ticker}'를 찾을 수 없습니다.",
+            detail=f"종목 '{ticker}'를 찾을 수 없습니다. instruments 테이블에 등록이 필요합니다.",
         )
 
     return OHLCVResponse(
@@ -208,12 +212,14 @@ async def get_opensource_ohlcv(
     try:
         name, rows = await asyncio.to_thread(_fetch_fdr_ohlcv_sync, ticker, days)
     except Exception as e:
+        logger.warning("opensource ohlcv 502: ticker=%s days=%d — FDR 조회 예외: %s", ticker, days, e)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"오픈소스 데이터 조회 실패: {e}",
         ) from e
 
     if not rows:
+        logger.warning("opensource ohlcv 404: ticker=%s days=%d — FDR에서 데이터 없음", ticker, days)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"종목 '{ticker}'의 오픈소스 데이터가 없습니다.",
@@ -271,9 +277,10 @@ async def get_quote(
     )
 
     if not row:
+        logger.warning("quote 404: ticker=%s instrument_id=%s — ohlcv_daily에 데이터 없음 (Redis 캐시도 없음)", ticker, instrument_id)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"종목 '{ticker}'의 시세 데이터가 없습니다.",
+            detail=f"종목 '{ticker}'의 시세 데이터가 없습니다. ohlcv_daily 수집이 필요합니다.",
         )
 
     return QuoteResponse(
@@ -346,9 +353,13 @@ async def get_realtime_series(
         min(limit, 60),
     )
     if not rows:
+        logger.warning(
+            "realtime 404: ticker=%s instrument_id=%s — Redis 캐시 비어 있고 ohlcv_daily에도 데이터 없음",
+            ticker, instrument_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"종목 '{ticker}'의 시계열 데이터가 없습니다.",
+            detail=f"종목 '{ticker}'의 시계열 데이터가 없습니다. ohlcv_daily 수집이 필요합니다.",
         )
 
     data = [dict(r) for r in rows]
