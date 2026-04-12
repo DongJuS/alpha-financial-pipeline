@@ -301,10 +301,6 @@ class TabularQTrainerV2:
 
         # 포지션 수익: 롱(+1*return), 숏(-1*return), 플랫(0)
         position_reward = next_position * next_return
-        
-        # 롱 보유 중 손실 발생 시 패널티를 아주 적게 (압박만 주는 용도)
-        if next_position == 1 and next_return < 0:
-            position_reward *= 0.1
 
         # 기회비용 및 회피 보상: 플랫 상태에서 시장 상승 시 놓친 기회 패널티, 시장 하락 시 손실 회피 보상
         opportunity_cost = 0.0
