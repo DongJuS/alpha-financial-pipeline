@@ -38,7 +38,7 @@ from src.agents.rl_trading import (
 from src.agents.rl_trading_v2 import TabularQTrainerV2
 from src.agents.rl_walk_forward import WalkForwardEvaluator, WalkForwardResult
 from src.utils.logging import get_logger
-from src.utils.ticker import find_in_map, normalize_with_db, to_raw
+from src.utils.ticker import normalize_with_db, to_raw
 
 logger = get_logger(__name__)
 
@@ -139,7 +139,7 @@ class RLContinuousImprover:
 
         canonical_ticker = await normalize_with_db(ticker)
         raw_ticker = to_raw(canonical_ticker)
-        active_before = self._active_policy_id(canonical_ticker)
+        active_before = await self._active_policy_id(canonical_ticker)
 
         try:
             dataset = await self._build_dataset(raw_ticker, canonical_ticker, dataset_days, profile_list[0])
@@ -183,11 +183,11 @@ class RLContinuousImprover:
         best = max(candidates, key=self._candidate_sort_key)
         deployed = False
         if best.artifact.evaluation.approved and best.walk_forward.overall_approved:
-            deployed = self._policy_store.activate_policy(best.artifact)
+            deployed = await self._policy_store.activate_policy(best.artifact)
             if deployed:
                 self._mark_promoted(best.run_id)
 
-        active_after = self._active_policy_id(canonical_ticker)
+        active_after = await self._active_policy_id(canonical_ticker)
 
         # S3 Data Lake에 학습 에피소드 아카이빙 (비필수)
         await self._store_episode_to_s3(
@@ -238,7 +238,7 @@ class RLContinuousImprover:
         profile_ids: Sequence[str] | None = None,
         dataset_days: int = 180,
     ) -> list[RetrainOutcome]:
-        targets = list(dict.fromkeys(tickers or self.list_target_tickers()))
+        targets = list(dict.fromkeys(tickers or await self.list_target_tickers()))
         outcomes: list[RetrainOutcome] = []
         for ticker in targets:
             outcomes.append(
@@ -250,9 +250,8 @@ class RLContinuousImprover:
             )
         return outcomes
 
-    def list_target_tickers(self) -> list[str]:
-        registry = self._policy_store.load_registry()
-        return registry.list_all_tickers()
+    async def list_target_tickers(self) -> list[str]:
+        return await self._policy_store.list_all_tickers()
 
     async def _build_dataset(
         self,
@@ -299,7 +298,7 @@ class RLContinuousImprover:
             dataset,
         )
         artifact, split_metadata = trainer.train_with_metadata(dataset, train_ratio=train_ratio)
-        artifact = self._policy_store.save_policy(artifact)
+        artifact = await self._policy_store.save_policy(artifact)
 
         run_dir = self._experiment_manager.record_results(
             run_id,
@@ -389,9 +388,9 @@ class RLContinuousImprover:
             candidate.artifact.evaluation.max_drawdown_pct,
         )
 
-    def _active_policy_id(self, ticker: str) -> str | None:
-        active_map = self._policy_store.load_registry().list_active_policies()
-        return find_in_map(ticker, {k: v for k, v in active_map.items() if v})
+    async def _active_policy_id(self, ticker: str) -> str | None:
+        active_map = await self._policy_store.list_active_policies()
+        return active_map.get(ticker)
 
     @staticmethod
     def _write_walk_forward(run_dir: Path, result: WalkForwardResult) -> None:

@@ -99,21 +99,17 @@ class TestRLBootstrapJob:
     async def test_warmup_loads_active_policies(self):
         """활성 정책 있는 티커는 load_policy로 워밍업."""
         mock_store = MagicMock()
-        mock_registry = MagicMock()
-        mock_registry.list_active_policies.return_value = {
+        mock_store.list_active_policies = AsyncMock(return_value={
             "005930": "policy_a",
             "000660": "policy_b",
-        }
-        mock_registry.list_all_tickers.return_value = ["005930", "000660"]
-        mock_store.load_registry.return_value = mock_registry
-        mock_store.load_policy = MagicMock()
+        })
+        mock_store.load_policy = AsyncMock(return_value=None)
 
-        registry = mock_store.load_registry()
-        active_map = registry.list_active_policies()
+        active_map = await mock_store.list_active_policies()
         warmed = 0
         for ticker, policy_id in active_map.items():
             try:
-                mock_store.load_policy(policy_id, ticker)
+                await mock_store.load_policy(policy_id, ticker)
                 warmed += 1
             except Exception:
                 pass
@@ -124,12 +120,12 @@ class TestRLBootstrapJob:
     @pytest.mark.asyncio
     async def test_bootstrap_detects_missing_policies(self):
         """활성 정책 없는 티커를 부트스트랩 대상으로 식별."""
-        mock_registry = MagicMock()
-        mock_registry.list_active_policies.return_value = {"005930": "policy_a"}
-        mock_registry.list_all_tickers.return_value = ["005930", "000660", "259960"]
+        mock_store = MagicMock()
+        mock_store.list_active_policies = AsyncMock(return_value={"005930": "policy_a"})
+        mock_store.list_all_tickers = AsyncMock(return_value=["005930", "000660", "259960"])
 
-        active_map = mock_registry.list_active_policies()
-        all_tickers = mock_registry.list_all_tickers()
+        active_map = await mock_store.list_active_policies()
+        all_tickers = await mock_store.list_all_tickers()
         missing = [t for t in all_tickers if t not in active_map]
 
         assert missing == ["000660", "259960"]
@@ -137,15 +133,15 @@ class TestRLBootstrapJob:
     @pytest.mark.asyncio
     async def test_skips_when_all_tickers_have_policies(self):
         """모든 티커에 활성 정책이 있으면 부트스트랩 스킵."""
-        mock_registry = MagicMock()
-        mock_registry.list_active_policies.return_value = {
+        mock_store = MagicMock()
+        mock_store.list_active_policies = AsyncMock(return_value={
             "005930": "policy_a",
             "000660": "policy_b",
-        }
-        mock_registry.list_all_tickers.return_value = ["005930", "000660"]
+        })
+        mock_store.list_all_tickers = AsyncMock(return_value=["005930", "000660"])
 
-        active_map = mock_registry.list_active_policies()
-        all_tickers = mock_registry.list_all_tickers()
+        active_map = await mock_store.list_active_policies()
+        all_tickers = await mock_store.list_all_tickers()
         missing = [t for t in all_tickers if t not in active_map]
         assert len(missing) == 0
 
@@ -153,18 +149,17 @@ class TestRLBootstrapJob:
     async def test_warmup_handles_load_failure_gracefully(self):
         """개별 정책 로드 실패 시 나머지는 계속 진행."""
         mock_store = MagicMock()
-        mock_registry = MagicMock()
-        mock_registry.list_active_policies.return_value = {
+        mock_store.list_active_policies = AsyncMock(return_value={
             "005930": "policy_a",
             "000660": "policy_b",
-        }
-        mock_store.load_registry.return_value = mock_registry
-        mock_store.load_policy = MagicMock(side_effect=[FileNotFoundError("missing"), None])
+        })
+        mock_store.load_policy = AsyncMock(side_effect=[FileNotFoundError("missing"), None])
 
+        active_map = await mock_store.list_active_policies()
         loaded = 0
-        for ticker, policy_id in mock_registry.list_active_policies().items():
+        for ticker, policy_id in active_map.items():
             try:
-                mock_store.load_policy(policy_id, ticker)
+                await mock_store.load_policy(policy_id, ticker)
                 loaded += 1
             except Exception:
                 pass
