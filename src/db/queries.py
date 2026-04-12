@@ -1556,3 +1556,75 @@ async def fetch_latest_paper_trading_run(scenario: str | None = None) -> Optiona
             """
         )
     return dict(row) if row else None
+
+
+# ── RL 학습 대상 종목 (rl_targets) ────────────────────────────────────
+
+
+async def list_rl_targets(*, active_only: bool = True) -> list[dict]:
+    """rl_targets에서 학습 대상 종목 목록을 반환합니다."""
+    if active_only:
+        rows = await fetch(
+            """
+            SELECT t.instrument_id, t.data_scope, t.is_active, t.memo,
+                   t.added_at, t.updated_at
+            FROM rl_targets t
+            WHERE t.is_active = true
+            ORDER BY t.instrument_id
+            """
+        )
+    else:
+        rows = await fetch(
+            """
+            SELECT t.instrument_id, t.data_scope, t.is_active, t.memo,
+                   t.added_at, t.updated_at
+            FROM rl_targets t
+            ORDER BY t.instrument_id
+            """
+        )
+    return [dict(r) for r in rows]
+
+
+async def upsert_rl_targets(tickers: list[str], data_scope: str = "daily") -> list[str]:
+    """rl_targets에 종목을 추가합니다. 이미 존재하면 is_active=true로 복원합니다.
+    Returns: 실제로 새로 추가되거나 재활성화된 instrument_id 리스트
+    """
+    if not tickers:
+        return []
+    added: list[str] = []
+    for ticker in tickers:
+        result = await execute(
+            """
+            INSERT INTO rl_targets (instrument_id, data_scope)
+            VALUES ($1, $2)
+            ON CONFLICT (instrument_id) DO UPDATE
+                SET is_active = true, updated_at = now()
+            """,
+            ticker,
+            data_scope,
+        )
+        added.append(ticker)
+    return added
+
+
+async def remove_rl_target(ticker: str) -> bool:
+    """rl_targets에서 종목을 삭제합니다. Returns: 삭제 여부"""
+    result = await execute(
+        "DELETE FROM rl_targets WHERE instrument_id = $1",
+        ticker,
+    )
+    # asyncpg execute returns status string like "DELETE 1" or "DELETE 0"
+    return result is not None and result.endswith("1")
+
+
+async def list_rl_target_tickers(*, active_only: bool = True) -> list[str]:
+    """rl_targets에서 instrument_id 목록만 반환합니다 (경량 조회)."""
+    if active_only:
+        rows = await fetch(
+            "SELECT instrument_id FROM rl_targets WHERE is_active = true ORDER BY instrument_id"
+        )
+    else:
+        rows = await fetch(
+            "SELECT instrument_id FROM rl_targets ORDER BY instrument_id"
+        )
+    return [row["instrument_id"] for row in rows]

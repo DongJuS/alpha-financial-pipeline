@@ -130,29 +130,29 @@ async def start_unified_scheduler() -> None:
 
         store = RLPolicyStoreV2()
 
-        # ── DB 에서 활성 정책 + 등록 종목 조회 ──
+        # ── DB 에서 활성 정책 + RL 학습 대상 종목 조회 ──
         try:
             active_map = await store.list_active_policies()
-            all_tickers = await store.list_all_tickers()
         except Exception as exc:
             logger.warning("RL bootstrap: DB 조회 실패 — %s", exc)
             return
 
-        # instruments DB 종목 중 RL 정책이 없는 종목도 대상에 포함
         try:
-            from src.db.queries import list_tickers as db_list_tickers
-
-            db_rows = await db_list_tickers(mode="paper", limit=500)
-            db_tickers = [row["instrument_id"] for row in db_rows]
-            # DB instruments 종목 중 rl_policies에 없는 종목도 부트스트랩 대상
-            all_tickers = list(dict.fromkeys(all_tickers + db_tickers))
-            logger.info(
-                "RL bootstrap: %d tickers from instruments, %d with RL policies",
-                len(db_tickers),
-                len(active_map),
-            )
+            from src.db.queries import list_rl_target_tickers
+            all_tickers = await list_rl_target_tickers()
         except Exception as exc:
-            logger.warning("RL bootstrap: instruments DB 조회 실패, 기존 RL 종목으로 진행 — %s", exc)
+            logger.warning("RL bootstrap: rl_targets 조회 실패 — %s", exc)
+            return
+
+        if not all_tickers:
+            logger.info("RL 부트스트랩: rl_targets에 등록된 종목 없음 — 스킵")
+            return
+
+        logger.info(
+            "RL bootstrap: %d target tickers from rl_targets, %d with active policies",
+            len(all_tickers),
+            len(active_map),
+        )
 
         # 활성 정책 있는 티커 → 워밍업 (로드·검증)
         warmed = 0
