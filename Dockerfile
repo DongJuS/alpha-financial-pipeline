@@ -42,6 +42,7 @@ RUN pip install pytest pytest-asyncio pytest-mock
 
 COPY src ./src
 COPY scripts ./scripts
+COPY artifacts/rl/profiles ./artifacts/rl/profiles
 COPY .env.example ./.env.example
 
 EXPOSE 8000
@@ -69,6 +70,7 @@ RUN mkdir -p /root/.config/gcloud /root/.claude
 # 앱 코드 복사
 COPY src ./src
 COPY scripts ./scripts
+COPY artifacts/rl/profiles ./artifacts/rl/profiles
 
 EXPOSE 8000
 
