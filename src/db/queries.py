@@ -1628,3 +1628,173 @@ async def list_rl_target_tickers(*, active_only: bool = True) -> list[str]:
             "SELECT instrument_id FROM rl_targets ORDER BY instrument_id"
         )
     return [row["instrument_id"] for row in rows]
+
+
+# ── RL 학습 작업 (rl_training_jobs) ──────────────────────────────────────
+
+
+async def insert_training_job(
+    job_id: str,
+    instrument_id: str,
+    *,
+    policy_family: str = "tabular_q_v2",
+    dataset_days: int = 720,
+) -> str:
+    """rl_training_jobs에 새 작업을 queued 상태로 생성합니다."""
+    await execute(
+        """
+        INSERT INTO rl_training_jobs (job_id, instrument_id, policy_family, dataset_days)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (job_id) DO NOTHING
+        """,
+        job_id, instrument_id, policy_family, dataset_days,
+    )
+    return job_id
+
+
+async def update_training_job_status(
+    job_id: str,
+    status: str,
+    *,
+    result_policy_id: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    """학습 작업 상태를 업데이트합니다."""
+    if status == "running":
+        await execute(
+            "UPDATE rl_training_jobs SET status = $1, started_at = now() WHERE job_id = $2",
+            status, job_id,
+        )
+    elif status in ("completed", "failed"):
+        await execute(
+            """
+            UPDATE rl_training_jobs
+            SET status = $1, completed_at = now(),
+                result_policy_id = COALESCE($2, result_policy_id),
+                error_message = $3
+            WHERE job_id = $4
+            """,
+            status, result_policy_id, error_message, job_id,
+        )
+    else:
+        await execute(
+            "UPDATE rl_training_jobs SET status = $1 WHERE job_id = $2",
+            status, job_id,
+        )
+
+
+async def fetch_training_job(job_id: str) -> dict | None:
+    """학습 작업 상세를 반환합니다."""
+    row = await fetchrow(
+        "SELECT * FROM rl_training_jobs WHERE job_id = $1", job_id
+    )
+    return dict(row) if row else None
+
+
+async def list_training_jobs(
+    *, instrument_id: str | None = None, status: str | None = None
+) -> list[dict]:
+    """학습 작업 목록을 반환합니다."""
+    conditions: list[str] = []
+    params: list = []
+    idx = 1
+    if instrument_id:
+        conditions.append(f"instrument_id = ${idx}")
+        params.append(instrument_id)
+        idx += 1
+    if status:
+        conditions.append(f"status = ${idx}")
+        params.append(status)
+        idx += 1
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = await fetch(
+        f"SELECT * FROM rl_training_jobs {where} ORDER BY created_at DESC",
+        *params,
+    )
+    return [dict(r) for r in rows]
+
+
+async def find_queued_training_job(instrument_id: str) -> dict | None:
+    """특정 종목의 queued 상태 학습 작업을 반환합니다."""
+    row = await fetchrow(
+        """
+        SELECT * FROM rl_training_jobs
+        WHERE instrument_id = $1 AND status = 'queued'
+        ORDER BY created_at DESC LIMIT 1
+        """,
+        instrument_id,
+    )
+    return dict(row) if row else None
+
+
+# ── RL 실험 기록 (rl_experiments) ────────────────────────────────────────
+
+
+async def insert_experiment(
+    *,
+    run_id: str,
+    job_id: str | None,
+    instrument_id: str,
+    policy_id: str | None,
+    profile_id: str | None,
+    algorithm: str | None,
+    return_pct: float | None,
+    baseline_return_pct: float | None,
+    excess_return_pct: float | None,
+    max_drawdown_pct: float | None,
+    trades: int | None,
+    win_rate: float | None,
+    holdout_steps: int | None,
+    walk_forward_passed: bool = False,
+    walk_forward_consistency: float | None = None,
+    approved: bool = False,
+    deployed: bool = False,
+) -> str:
+    """rl_experiments에 실험 결과를 기록합니다."""
+    await execute(
+        """
+        INSERT INTO rl_experiments (
+            run_id, job_id, instrument_id, policy_id, profile_id, algorithm,
+            return_pct, baseline_return_pct, excess_return_pct, max_drawdown_pct,
+            trades, win_rate, holdout_steps,
+            walk_forward_passed, walk_forward_consistency,
+            approved, deployed
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, $10,
+            $11, $12, $13,
+            $14, $15,
+            $16, $17
+        )
+        ON CONFLICT (run_id) DO NOTHING
+        """,
+        run_id, job_id, instrument_id, policy_id, profile_id, algorithm,
+        return_pct, baseline_return_pct, excess_return_pct, max_drawdown_pct,
+        trades, win_rate, holdout_steps,
+        walk_forward_passed, walk_forward_consistency,
+        approved, deployed,
+    )
+    return run_id
+
+
+async def list_experiments(
+    *, instrument_id: str | None = None, job_id: str | None = None
+) -> list[dict]:
+    """실험 기록 목록을 반환합니다."""
+    conditions: list[str] = []
+    params: list = []
+    idx = 1
+    if instrument_id:
+        conditions.append(f"instrument_id = ${idx}")
+        params.append(instrument_id)
+        idx += 1
+    if job_id:
+        conditions.append(f"job_id = ${idx}")
+        params.append(job_id)
+        idx += 1
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = await fetch(
+        f"SELECT * FROM rl_experiments {where} ORDER BY created_at DESC",
+        *params,
+    )
+    return [dict(r) for r in rows]
