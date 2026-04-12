@@ -175,14 +175,27 @@ class OrchestratorAgent:
     async def run_strategies(
         self,
         tickers: list[str],
+        strategies: list[str] | None = None,
     ) -> dict[str, list[PredictionSignal]]:
-        """등록된 모든 러너를 병렬 실행합니다 (StrategyRegistry.run_all 위임)."""
+        """등록된 러너를 병렬 실행합니다.
+
+        Args:
+            tickers: 분석할 티커 목록
+            strategies: 실행할 전략 코드 목록 (None이면 전체 실행)
+        """
         if self.registry.runner_count == 0:
             logger.warning("전략 러너가 등록되지 않았습니다. registry가 비어 있습니다.")
             return {}
+        if strategies is not None:
+            return await self.registry.run_selected(tickers, strategies)
         return await self.registry.run_all(tickers)
 
-    async def run_cycle(self, tickers: list[str], screener_kwargs: dict | None = None) -> dict:
+    async def run_cycle(
+        self,
+        tickers: list[str],
+        screener_kwargs: dict | None = None,
+        strategies: list[str] | None = None,
+    ) -> dict:
         """한 사이클 실행: 수집 -> 스크리너 -> 전략 실행 -> 블렌딩/독립 처리 -> 주문 실행.
 
         장외 시간에는 cycle을 스킵합니다 (LLM 호출 낭비 방지).
@@ -191,6 +204,7 @@ class OrchestratorAgent:
         Args:
             tickers: 분석할 티커 목록
             screener_kwargs: 스크리너 파라미터 (None이면 스크리너 스킵)
+            strategies: 실행할 전략 코드 목록 (None이면 전체 실행)
 
         Returns:
             사이클 실행 결과 dict
@@ -224,7 +238,7 @@ class OrchestratorAgent:
         started = datetime.now(timezone.utc)
         try:
             # ── 전략 병렬 실행 ──
-            all_predictions = await self.run_strategies(tickers)
+            all_predictions = await self.run_strategies(tickers, strategies=strategies)
 
             if not all_predictions:
                 logger.warning("No predictions returned from strategies")
