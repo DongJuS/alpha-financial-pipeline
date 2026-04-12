@@ -390,6 +390,12 @@ class RLExperimentManager:
 
         return json.loads(profile_path.read_text(encoding="utf-8"))
 
+    def list_profiles(self) -> list[str]:
+        """프로파일 디렉토리에서 사용 가능한 프로파일 ID 목록을 반환합니다."""
+        if not self.profiles_dir.exists():
+            return []
+        return sorted(p.stem for p in self.profiles_dir.glob("*.json"))
+
     # ────────────────────────────── Private Helpers ──────────────────────────────
 
     @staticmethod
@@ -502,3 +508,8 @@ class RLExperimentManager:
             if dataset.timestamps else "",
             test_end=dataset.timestamps[-1] if dataset.timestamps else "",
         )
+
+
+def get_available_profiles() -> list[str]:
+    """프로파일 디렉토리에서 사용 가능한 프로파일 ID 목록을 반환한다."""
+    return RLExperimentManager().list_profiles()
