@@ -623,13 +623,42 @@ async def insert_model_role_config(
     return dict(rows[0])
 
 
-async def delete_model_role_config(config_key: str) -> bool:
-    """모델 역할을 삭제한다. 삭제 성공 시 True."""
-    result = await execute(
-        "DELETE FROM model_role_configs WHERE config_key = $1",
+async def delete_model_role_config(config_key: str) -> str | None:
+    """모델 역할을 삭제한다. 삭제된 역할의 strategy_code를 반환, 없으면 None."""
+    rows = await fetch(
+        "DELETE FROM model_role_configs WHERE config_key = $1 RETURNING strategy_code",
         config_key,
     )
-    return result != "DELETE 0"
+    return rows[0]["strategy_code"] if rows else None
+
+
+async def reorder_model_role_configs(strategy_code: str) -> None:
+    """해당 전략의 역할 번호를 1부터 순차적으로 재정렬한다."""
+    rows = await fetch(
+        """
+        SELECT config_key, role
+        FROM model_role_configs
+        WHERE strategy_code = $1
+        ORDER BY execution_order, config_key
+        """,
+        strategy_code,
+    )
+    for idx, row in enumerate(rows, 1):
+        role = row["role"]
+        if strategy_code == "A":
+            role_label = f"Predictor {idx}"
+            agent_id = f"predictor_{idx}"
+        else:
+            role_label = f"{role.capitalize()} {idx}"
+            agent_id = f"consensus_{role}_{idx}"
+        await execute(
+            """
+            UPDATE model_role_configs
+            SET execution_order = $2, role_label = $3, agent_id = $4, updated_at = NOW()
+            WHERE config_key = $1
+            """,
+            row["config_key"], idx, role_label, agent_id,
+        )
 
 
 async def today_trade_totals(account_scope: AccountScope = "paper") -> dict:
