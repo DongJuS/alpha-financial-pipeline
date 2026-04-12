@@ -40,9 +40,15 @@ sys.path.insert(0, str(ROOT))
 
 from src.agents.rl_policy_registry import (
     PolicyEntry,
-    PolicyRegistry,
     build_relative_path,
 )
+
+# 주의: PolicyRegistry 클래스가 제거됨 (DB 전환).
+# 이 스크립트는 V1→V2 파일 마이그레이션용이며, DB 마이그레이션은
+# scripts/db/migrate_rl_registry.py 를 사용한다.
+# registry.json 재생성이 필요하면 이 스크립트의 registry 관련 로직을 제거하고
+# 파일 복사만 수행하도록 수정해야 한다.
+_DEPRECATED = True
 
 
 ARTIFACTS_DIR = ROOT / "artifacts" / "rl"
@@ -110,7 +116,7 @@ def policy_to_entry(data: dict, relative_path: str) -> PolicyEntry:
 
     return PolicyEntry(
         policy_id=data["policy_id"],
-        ticker=data.get("ticker", "unknown"),
+        instrument_id=data.get("ticker", "unknown"),
         algorithm=data.get("algorithm", "tabular_q_learning"),
         state_version=data.get("state_version", "qlearn_v1"),
         return_pct=ev.get("total_return_pct", 0.0),
@@ -133,7 +139,13 @@ def policy_to_entry(data: dict, relative_path: str) -> PolicyEntry:
 
 
 def run_migration(*, execute: bool = False, clean: bool = False) -> None:
-    """마이그레이션을 실행합니다."""
+    """마이그레이션을 실행합니다.
+
+    DEPRECATED: registry.json 기반 마이그레이션. DB 마이그레이션은
+    scripts/db/migrate_rl_registry.py 를 사용하세요.
+    """
+    print("\n[DEPRECATED] 이 스크립트는 registry.json 기반입니다.")
+    print("DB 마이그레이션은 scripts/db/migrate_rl_registry.py 를 사용하세요.\n")
     mode = "EXECUTE" if execute else "DRY-RUN"
     print(f"\n{'='*60}")
     print(f"  RL 정책 마이그레이션 ({mode})")
@@ -271,21 +283,9 @@ def run_migration(*, execute: bool = False, clean: bool = False) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="RL 정책 아티팩트를 새 디렉토리 구조로 마이그레이션합니다."
-    )
-    parser.add_argument(
-        "--execute",
-        action="store_true",
-        help="실제 마이그레이션을 실행합니다 (기본: dry-run)",
-    )
-    parser.add_argument(
-        "--clean",
-        action="store_true",
-        help="마이그레이션 후 레거시 파일을 정리합니다",
-    )
-    args = parser.parse_args()
-    run_migration(execute=args.execute, clean=args.clean)
+    print("[DEPRECATED] 이 스크립트는 registry.json 기반이며 더 이상 사용되지 않습니다.")
+    print("DB 마이그레이션: python scripts/db/migrate_rl_registry.py")
+    sys.exit(1)
 
 
 if __name__ == "__main__":

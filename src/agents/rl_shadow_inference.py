@@ -416,30 +416,25 @@ class ShadowInferenceEngine:
 
     # ── 정책 모드 관리 ────────────────────────────────────────────────────
 
-    def get_policy_mode(self, policy_id: str, ticker: str) -> str:
+    async def get_policy_mode(self, policy_id: str, ticker: str) -> str:
         """정책의 현재 운용 모드를 반환합니다.
 
         Returns:
             "shadow" | "paper" | "real" | "inactive"
         """
         store = self.policy_store
-        registry = store.load_registry()
         has_shadow_records = self._has_shadow_records(policy_id, ticker)
 
-        # 레지스트리에서 정책 조회
-        tp = registry.tickers.get(ticker)
-        if not tp:
-            return "shadow" if has_shadow_records else "inactive"
+        # DB 에서 정책 조회
+        entries = await store.list_policies(ticker)
+        entry = next((e for e in entries if e.policy_id == policy_id), None)
 
-        entry = tp.get_policy(policy_id)
         if not entry:
             return "shadow" if has_shadow_records else "inactive"
 
-        # 활성 정책이면 paper 또는 real
-        if tp.active_policy_id == policy_id:
-            if registry.promotion_gate.auto_promote_paper_only:
-                return "paper"
-            return "real"
+        # 활성 정책이면 paper (auto_promote_paper_only=True 기본값)
+        if entry.is_active:
+            return "paper"
 
         # Shadow 기록이 있으면 shadow
         if has_shadow_records:
