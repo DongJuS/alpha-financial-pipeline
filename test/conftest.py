@@ -160,6 +160,22 @@ def _clear_settings_cache():
 
 
 @pytest.fixture(autouse=True)
+def _clear_ticker_cache():
+    """테스트 간 ticker 정규화 캐시 오염을 방지합니다."""
+    try:
+        from src.utils.ticker import clear_cache
+        clear_cache()
+    except Exception:
+        pass
+    yield
+    try:
+        from src.utils.ticker import clear_cache
+        clear_cache()
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
 def _mark_integration_tests(request):
     """
     DB나 Redis를 사용하는 테스트를 자동으로 'integration'으로 마킹합니다.
