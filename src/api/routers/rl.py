@@ -107,7 +107,7 @@ class ExperimentSummary(BaseModel):
 
 class TrainingJobRequest(BaseModel):
     tickers: list[str] = Field(..., min_length=1, max_length=20)
-    policy_family: str = Field(default="tabular_q_v2", description="알고리즘 프로파일 ID")
+    policy_family: str = Field(default="", description="알고리즘 프로파일 ID (빈 문자열이면 기본 프로파일 사용)")
     dataset_interval: Literal["daily", "tick"] = "daily"
     dataset_days: int = Field(default=120, ge=30, le=365)
 
