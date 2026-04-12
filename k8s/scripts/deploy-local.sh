@@ -85,13 +85,29 @@ echo "=== [4/6] kubectl apply -k k8s/base/ ==="
 kubectl apply -k k8s/base/ 2>&1 | grep -v "PersistentVolumeClaim\|is forbidden" || true
 
 # ── 5. Rolling restart (새 이미지 강제 적용) ──
-echo "=== [5/6] rollout restart ==="
+echo "=== [5/7] rollout restart ==="
 for deploy in worker api; do
   kubectl rollout restart "deployment/$deploy" -n "$NAMESPACE" 2>/dev/null && echo "  $deploy restarted" || echo "  $deploy not found"
 done
 
-# ── 6. 검증 ──
-echo "=== [6/6] 검증 (30초 대기) ==="
+# ── 6. RL 프로파일 PVC 동기화 ──
+echo "=== [6/7] RL 프로파일 동기화 ==="
+PROFILES_DIR="$REPO_ROOT/artifacts/rl/profiles"
+if [ -d "$PROFILES_DIR" ]; then
+  # api Pod이 Ready될 때까지 대기
+  kubectl rollout status deployment/api -n "$NAMESPACE" --timeout=120s 2>/dev/null || true
+  API_POD=$(kubectl get pod -n "$NAMESPACE" -l app=api -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+  if [ -n "$API_POD" ]; then
+    for f in "$PROFILES_DIR"/*.json; do
+      [ -f "$f" ] || continue
+      kubectl cp "$f" "$NAMESPACE/$API_POD:/app/artifacts/rl/profiles/$(basename "$f")" 2>/dev/null \
+        && echo "  $(basename "$f") synced" || echo "  $(basename "$f") skip"
+    done
+  fi
+fi
+
+# ── 7. 검증 ──
+echo "=== [7/7] 검증 (30초 대기) ==="
 sleep 30
 echo ""
 echo "--- Pod 상태 ---"
