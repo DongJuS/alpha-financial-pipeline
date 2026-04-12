@@ -15,7 +15,8 @@ resources:
   - tick-collector.yaml
   - ui.yaml
   - ingress.yaml
-  - migration-job.yaml
+  # migration-job.yaml — standalone 수동 실행용으로 보존.
+  # 마이그레이션은 api.yaml initContainers로 매 배포 자동 실행.
   # gen 시뮬레이터(gen + gen-collector) 는 별도 overlay 로 분리되었다.
   # 활성화: kubectl apply -k k8s/overlays/gen/
   # 데이터는 alpha_gen_db (별도 DB) 에만 쓰이며 실 alpha_db 와 격리된다.
