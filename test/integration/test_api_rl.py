@@ -52,13 +52,12 @@ def _build_client(*, authenticated: bool = True) -> TestClient:
 
 
 def _mock_empty_store():
-    """빈 레지스트리를 반환하는 store mock."""
+    """빈 DB를 시뮬레이션하는 store mock."""
     mock_store = MagicMock()
-    mock_registry = MagicMock()
-    mock_registry.list_all_tickers.return_value = []
-    mock_registry.list_active_policies.return_value = {}
-    mock_registry.get_ticker.return_value = None
-    mock_store.load_registry.return_value = mock_registry
+    mock_store.list_all_tickers = AsyncMock(return_value=[])
+    mock_store.list_active_policies = AsyncMock(return_value={})
+    mock_store.list_policies = AsyncMock(return_value=[])
+    mock_store.load_policy = AsyncMock(return_value=None)
     return mock_store
 
 

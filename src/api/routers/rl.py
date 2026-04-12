@@ -136,27 +136,23 @@ async def list_policies(
 ) -> ListResponse:
     try:
         store = _get_store()
-        registry = store.load_registry()
+        active_map = await store.list_active_policies()
+        tickers_list = [ticker] if ticker else await store.list_all_tickers()
     except Exception as e:
         logger.warning("RL 정책 레지스트리 로드 실패: %s", e)
         return ListResponse(data=[], meta={"total": 0, "page": page, "per_page": per_page})
 
     policies: list[dict] = []
-    active_map = registry.list_active_policies()
 
-    tickers = [ticker] if ticker else registry.list_all_tickers()
-
-    for t in tickers:
-        ticker_policies = registry.get_ticker(t)
-        if not ticker_policies:
-            continue
-        for entry in ticker_policies.policies:
+    for t in tickers_list:
+        entries = await store.list_policies(t)
+        for entry in entries:
             if approved_only and not entry.approved:
                 continue
             policies.append(
                 PolicySummary(
                     policy_id=entry.policy_id,
-                    ticker=entry.ticker,
+                    ticker=entry.instrument_id,
                     algorithm=entry.algorithm,
                     state_version=entry.state_version,
                     return_pct=entry.return_pct,
@@ -165,7 +161,7 @@ async def list_policies(
                     win_rate=entry.win_rate,
                     approved=entry.approved,
                     created_at=entry.created_at.isoformat() if isinstance(entry.created_at, datetime) else str(entry.created_at),
-                    is_active=(active_map.get(t) == entry.policy_id),
+                    is_active=entry.is_active,
                 ).model_dump()
             )
 
@@ -185,18 +181,17 @@ async def list_policies(
 async def list_active_policies() -> ListResponse:
     try:
         store = _get_store()
-        registry = store.load_registry()
+        active_map = await store.list_active_policies()
     except Exception as e:
         logger.warning("RL 정책 레지스트리 로드 실패: %s", e)
         return ListResponse(data=[], meta={"total": 0, "page": 1, "per_page": 0})
-    active_map = registry.list_active_policies()
 
     result: list[dict] = []
     for t, pid in active_map.items():
         if pid is None:
             continue
-        tp = registry.get_ticker(t)
-        entry = tp.get_policy(pid) if tp else None
+        entries = await store.list_policies(t)
+        entry = next((e for e in entries if e.policy_id == pid), None)
         result.append(
             ActivePolicyResponse(
                 ticker=t,
@@ -217,22 +212,20 @@ async def list_active_policies() -> ListResponse:
 async def get_ticker_policies(ticker: str) -> ListResponse:
     try:
         store = _get_store()
-        registry = store.load_registry()
+        entries = await store.list_policies(ticker)
     except Exception as e:
         logger.warning("RL 정책 레지스트리 로드 실패: %s", e)
         return ListResponse(data=[], meta={"total": 0, "page": 1, "per_page": 0})
-    tp = registry.get_ticker(ticker)
 
-    if not tp:
+    if not entries:
         raise HTTPException(status_code=404, detail=f"종목 {ticker}에 등록된 정책 없음")
 
-    active_pid = tp.active_policy_id
     result: list[dict] = []
-    for entry in tp.policies:
+    for entry in entries:
         result.append(
             PolicyDetail(
                 policy_id=entry.policy_id,
-                ticker=entry.ticker,
+                ticker=entry.instrument_id,
                 algorithm=entry.algorithm,
                 state_version=entry.state_version,
                 return_pct=entry.return_pct,
@@ -244,7 +237,7 @@ async def get_ticker_policies(ticker: str) -> ListResponse:
                 holdout_steps=entry.holdout_steps,
                 approved=entry.approved,
                 created_at=entry.created_at.isoformat() if isinstance(entry.created_at, datetime) else str(entry.created_at),
-                is_active=(entry.policy_id == active_pid),
+                is_active=entry.is_active,
                 lookback=entry.lookback,
                 episodes=entry.episodes,
                 learning_rate=entry.learning_rate,
@@ -269,10 +262,10 @@ async def get_ticker_policies(ticker: str) -> ListResponse:
 async def activate_policy(policy_id: str, ticker: str = Query(...)) -> dict:
     store = _get_store()
     try:
-        artifact = store.load_policy(policy_id, ticker)
+        artifact = await store.load_policy(policy_id, ticker)
         if artifact is None:
             raise HTTPException(status_code=404, detail=f"정책 {policy_id} 없음")
-        store.force_activate_policy(ticker, policy_id)
+        await store.force_activate_policy(ticker, policy_id)
         logger.info("정책 강제 활성화: %s (ticker=%s)", policy_id, ticker)
         return {"status": "activated", "policy_id": policy_id, "ticker": ticker}
     except FileNotFoundError:
@@ -354,7 +347,7 @@ async def list_evaluations(
 ) -> ListResponse:
     try:
         store = _get_store()
-        registry = store.load_registry()
+        tickers_list = [ticker] if ticker else await store.list_all_tickers()
     except Exception as e:
         logger.warning("RL 정책 레지스트리 로드 실패: %s", e)
         return ListResponse(
@@ -363,13 +356,10 @@ async def list_evaluations(
         )
 
     evaluations: list[dict] = []
-    tickers = [ticker] if ticker else registry.list_all_tickers()
 
-    for t in tickers:
-        tp = registry.get_ticker(t)
-        if not tp:
-            continue
-        for entry in tp.policies:
+    for t in tickers_list:
+        entries = await store.list_policies(t)
+        for entry in entries:
             if policy_id and entry.policy_id != policy_id:
                 continue
 
@@ -638,7 +628,7 @@ async def get_policy_mode(
 ) -> dict:
     """정책의 현재 운용 모드를 반환합니다."""
     engine = _get_shadow_engine()
-    mode = engine.get_policy_mode(policy_id, ticker)
+    mode = await engine.get_policy_mode(policy_id, ticker)
     return {"policy_id": policy_id, "ticker": ticker, "mode": mode}
 
 
@@ -654,9 +644,8 @@ async def get_rl_tickers() -> dict:
     """레지스트리에 등록된 RL 대상 종목과 활성 정책 상태를 반환합니다."""
     store = _get_store()
     try:
-        registry = store.load_registry()
-        active = registry.list_active_policies()
-        all_tickers = registry.list_all_tickers()
+        active = await store.list_active_policies()
+        all_tickers = await store.list_all_tickers()
     except Exception:
         active = {}
         all_tickers = []
@@ -676,45 +665,38 @@ async def get_rl_tickers() -> dict:
 
 @router.put("/tickers", summary="RL 대상 종목 추가/제거")
 async def update_rl_tickers(req: RLTickerUpdate) -> dict:
-    """RL 레지스트리에 종목을 추가합니다. 기존 종목의 정책은 유지됩니다."""
+    """RL 대상 종목을 확인합니다. DB 기반이므로 종목은 instruments 테이블에서 관리됩니다."""
     store = _get_store()
-    try:
-        registry = store.load_registry()
-    except Exception:
-        from src.agents.rl_policy_registry import RLPolicyRegistry
-        registry = RLPolicyRegistry()
-
-    existing = set(registry.list_all_tickers())
+    existing = set(await store.list_all_tickers())
     requested = set(req.tickers)
     added = requested - existing
 
-    for ticker in added:
-        registry.get_ticker(ticker)  # 없으면 자동 생성
-
-    store.save_registry(registry)
-
+    all_tickers = sorted(existing | requested)
     return {
-        "tickers": sorted(registry.list_all_tickers()),
+        "tickers": all_tickers,
         "added": sorted(added),
-        "total": len(registry.list_all_tickers()),
+        "total": len(all_tickers),
     }
 
 
 @router.delete("/tickers/{ticker}", summary="RL 대상 종목 제거")
 async def remove_rl_ticker(ticker: str) -> dict:
-    """RL 레지스트리에서 종목을 제거합니다. 활성 정책도 함께 제거됩니다."""
+    """RL 레지스트리에서 종목의 모든 정책을 제거합니다."""
     store = _get_store()
-    registry = store.load_registry()
+    from src.utils.db_client import execute as db_execute
 
-    if ticker not in registry.tickers:
+    policies = await store.list_policies(ticker)
+    if not policies:
         raise HTTPException(status_code=404, detail=f"종목 '{ticker}'이(가) RL 레지스트리에 없습니다.")
 
-    del registry.tickers[ticker]
-    registry.last_updated = datetime.now(timezone.utc)
-    store.save_registry(registry)
+    await db_execute(
+        "DELETE FROM rl_policies WHERE instrument_id = $1",
+        ticker,
+    )
 
+    remaining = await store.list_all_tickers()
     return {
         "removed": ticker,
-        "remaining": sorted(registry.list_all_tickers()),
-        "total": len(registry.list_all_tickers()),
+        "remaining": sorted(remaining),
+        "total": len(remaining),
     }

@@ -129,42 +129,36 @@ async def start_unified_scheduler() -> None:
         from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
 
         store = RLPolicyStoreV2()
-        registry = store.load_registry()
 
-        # ── instruments DB 에서 종목 가져와 레지스트리에 자동 등록 ──
+        # ── DB 에서 활성 정책 + 등록 종목 조회 ──
+        try:
+            active_map = await store.list_active_policies()
+            all_tickers = await store.list_all_tickers()
+        except Exception as exc:
+            logger.warning("RL bootstrap: DB 조회 실패 — %s", exc)
+            return
+
+        # instruments DB 종목 중 RL 정책이 없는 종목도 대상에 포함
         try:
             from src.db.queries import list_tickers as db_list_tickers
 
-            from src.agents.rl_policy_registry import TickerPolicies
-
             db_rows = await db_list_tickers(mode="paper", limit=500)
             db_tickers = [row["instrument_id"] for row in db_rows]
-            existing_count = len(registry.tickers)
-            newly_registered = 0
-            for ticker in db_tickers:
-                if ticker not in registry.tickers:
-                    registry.tickers[ticker] = TickerPolicies()
-                    newly_registered += 1
-                    logger.info("RL registry: 신규 종목 자동 등록 — %s", ticker)
-            if newly_registered:
-                store.save_registry()
+            # DB instruments 종목 중 rl_policies에 없는 종목도 부트스트랩 대상
+            all_tickers = list(dict.fromkeys(all_tickers + db_tickers))
             logger.info(
-                "RL bootstrap: %d tickers from instruments, %d already in registry, %d newly registered",
+                "RL bootstrap: %d tickers from instruments, %d with RL policies",
                 len(db_tickers),
-                existing_count,
-                newly_registered,
+                len(active_map),
             )
         except Exception as exc:
-            logger.warning("RL bootstrap: instruments DB 조회 실패, 기존 레지스트리로 진행 — %s", exc)
-
-        active_map = registry.list_active_policies()
-        all_tickers = registry.list_all_tickers()
+            logger.warning("RL bootstrap: instruments DB 조회 실패, 기존 RL 종목으로 진행 — %s", exc)
 
         # 활성 정책 있는 티커 → 워밍업 (로드·검증)
         warmed = 0
         for ticker, policy_id in active_map.items():
             try:
-                store.load_policy(policy_id, ticker)
+                await store.load_policy(policy_id, ticker)
                 warmed += 1
             except Exception as exc:
                 logger.warning("RL 워밍업: %s/%s 로드 실패 — %s", ticker, policy_id, exc)
