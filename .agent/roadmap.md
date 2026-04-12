@@ -65,7 +65,7 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건, 2023-01~2026-04).
 **남은 작업:**
 1. K3s DB 마이그레이션 — DDL 변경 + 테이블 리네임을 실서버에 적용
 2. instruments 시딩 — krx_stock_master에서 운용할 종목을 instruments에 등록 (기존 스크립트 실행)
-3. trading_universe 시드 스크립트 작성 — "가상투자 계좌에 이 종목을 매핑" 데이터 생성 (미작성)
+3. trading_universe 시딩 — `scripts/db/seed_trading_universe.py` 실행 (스크립트 작성 완료)
 - 상세: `.agent/discussions/20260411-instruments-trading-universe-design.md`
 
 ### 로컬 데이터 축적 (진행 중)
@@ -84,7 +84,7 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건). 틱 수집은 장중 WebSocke
 선행 조건: Step 8b 완료 + 분봉 데이터 40영업일 축적.
 - 상세: `.agent/discussions/20260411-rl-intraday-feature-expansion.md`
 
-### 클라우드 배포 전 QA (Round 1 완료, Round 2 미착수)
+### 클라우드 배포 전 QA (Round 1 완료, Round 2 커버리지 보강 완료)
 
 **왜 필요한가:** 클라우드 전환 전에 전체 시스템 품질을 검증. 소스 133개 파일(31,040줄) 대비 테스트 커버리지 ~55% → 80%+ 목표.
 
@@ -94,12 +94,9 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건). 틱 수집은 장중 WebSocke
 - Agent 3: API 통합/E2E/보안 테스트
 - Agent 4: DB/config/scheduler/LLM/conftest ~272개 + 공용 픽스처
 
-**Round 2 미착수:** Round 1 품질 검증에서 발견된 커버리지 갭 보강.
-- orchestrator independent portfolio 모드, dynamic weight 최적화
-- RL GymTradingEnv 래퍼, get_policy_mode paper/real 분기
-- ranking sector heatmap, tie-handling
-- strategy_a/b, portfolio_manager, rl_trading_v2 에지케이스 (Round 1 누락 확인됨)
-- Agent 2~4 품질 검증 + 보강
+**Round 2 완료 (2026-04-12):** 2차에 걸쳐 코드 수정 2건 + 테스트 71개 추가. 전체 2165 passed.
+- 1차: QA Report v2 FAIL/WARN 커버리지 보강 21개
+- 2차: Datalake S3 502 에러 처리 + Ranking 결정적 정렬 (코드 수정 2건) + 7개 영역 에지케이스 50개
 
 파티셔닝 문서: `.agent/partition/20260411-cloud-pre-qa-partition.md`
 
