@@ -148,6 +148,67 @@ async def get_ohlcv_bars(
     ]
 
 
+async def aggregate_ticks_to_minutes(start: datetime, end: datetime) -> int:
+    """tick_data를 1분봉으로 집계하여 ohlcv_minute에 UPSERT합니다.
+
+    Args:
+        start: 집계 시작 시각 (KST)
+        end: 집계 종료 시각 (KST)
+
+    Returns:
+        집계된 행 수
+    """
+    query = """
+        INSERT INTO ohlcv_minute
+            (instrument_id, bucket_at, open, high, low, close,
+             volume, trade_count, vwap)
+        SELECT
+            instrument_id,
+            date_trunc('minute', timestamp_kst) AS bucket_at,
+            (array_agg(price ORDER BY timestamp_kst ASC))[1]   AS open,
+            MAX(price)                                           AS high,
+            MIN(price)                                           AS low,
+            (array_agg(price ORDER BY timestamp_kst DESC))[1]  AS close,
+            SUM(volume)                                          AS volume,
+            COUNT(*)                                             AS trade_count,
+            CASE WHEN SUM(volume) > 0
+                 THEN SUM(price::numeric * volume) / SUM(volume)
+                 ELSE 0 END                                      AS vwap
+        FROM tick_data
+        WHERE timestamp_kst >= $1
+          AND timestamp_kst < $2
+        GROUP BY instrument_id, date_trunc('minute', timestamp_kst)
+        ON CONFLICT (instrument_id, bucket_at) DO UPDATE SET
+            open = EXCLUDED.open, high = EXCLUDED.high, low = EXCLUDED.low,
+            close = EXCLUDED.close, volume = EXCLUDED.volume,
+            trade_count = EXCLUDED.trade_count, vwap = EXCLUDED.vwap
+    """
+    result = await execute(query, start, end)
+    # asyncpg execute() returns status string, e.g. "INSERT 0 150"
+    return int(result.split()[-1]) if result else 0
+
+
+async def fetch_minute_bars(
+    instrument_id: str,
+    start: datetime,
+    end: datetime,
+) -> list[dict]:
+    """ohlcv_minute에서 분봉 데이터를 조회합니다."""
+    rows = await fetch(
+        """
+        SELECT instrument_id, bucket_at, open, high, low, close,
+               volume, trade_count, vwap
+        FROM ohlcv_minute
+        WHERE instrument_id = $1
+          AND bucket_at >= $2
+          AND bucket_at < $3
+        ORDER BY bucket_at ASC
+        """,
+        instrument_id, start, end,
+    )
+    return [dict(row) for row in rows]
+
+
 async def list_tickers(mode: str = "paper", limit: int = 30) -> list[dict]:
     rows = await fetch(
         """
