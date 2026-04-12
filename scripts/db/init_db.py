@@ -1112,6 +1112,22 @@ CREATE_TABLES: list[str] = [
     );
     """,
 
+    # ── RL 학습 대상 종목 ──────────────────────────────────────────────────
+    """
+    CREATE TABLE IF NOT EXISTS rl_targets (
+        instrument_id   VARCHAR(20)   NOT NULL REFERENCES instruments(instrument_id),
+        data_scope      VARCHAR(10)   NOT NULL DEFAULT 'daily'
+                        CHECK (data_scope IN ('daily', 'tick', 'combined')),
+        is_active       BOOLEAN       NOT NULL DEFAULT true,
+        memo            TEXT,
+        added_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
+        updated_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
+        PRIMARY KEY (instrument_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_rl_targets_active
+        ON rl_targets(is_active) WHERE is_active = true;
+    """,
+
     # ── RL 정책 메타데이터 ─────────────────────────────────────────────────
     """
     CREATE TABLE IF NOT EXISTS rl_policies (
@@ -1181,6 +1197,7 @@ DROP TABLE IF EXISTS
     predictions,
     backtest_daily,
     backtest_runs,
+    rl_targets,
     rl_policies,
     ohlcv_daily,
     instruments,
