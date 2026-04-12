@@ -435,7 +435,7 @@ class TestRLAPIModels:
 
         req = TrainingJobRequest(tickers=["005930", "035720"])
         assert len(req.tickers) == 2
-        assert req.policy_family == "tabular_q_v2"
+        assert req.policy_family == ""
         assert req.dataset_interval == "daily"
 
         # 빈 tickers 는 실패

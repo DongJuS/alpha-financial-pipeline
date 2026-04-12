@@ -1175,7 +1175,7 @@ CREATE_TABLES: list[str] = [
         instrument_id   VARCHAR(20)   NOT NULL REFERENCES instruments(instrument_id),
         status          VARCHAR(10)   NOT NULL DEFAULT 'queued'
                         CHECK (status IN ('queued', 'running', 'completed', 'failed')),
-        policy_family   VARCHAR(30)   NOT NULL DEFAULT 'tabular_q_v2',
+        policy_family   VARCHAR(30)   NOT NULL DEFAULT 'tabular_q_v2_momentum',
         dataset_days    INT           NOT NULL DEFAULT 720,
         result_policy_id VARCHAR(80)  REFERENCES rl_policies(policy_id),
         progress_pct    SMALLINT      NOT NULL DEFAULT 0,

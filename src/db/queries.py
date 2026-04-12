@@ -1637,10 +1637,14 @@ async def insert_training_job(
     job_id: str,
     instrument_id: str,
     *,
-    policy_family: str = "tabular_q_v2",
+    policy_family: str = "",
     dataset_days: int = 720,
 ) -> str:
     """rl_training_jobs에 새 작업을 queued 상태로 생성합니다."""
+    if not policy_family:
+        from src.agents.rl_experiment_manager import get_available_profiles
+        profiles = get_available_profiles()
+        policy_family = profiles[0] if profiles else "tabular_q_v2_momentum"
     await execute(
         """
         INSERT INTO rl_training_jobs (job_id, instrument_id, policy_family, dataset_days)
