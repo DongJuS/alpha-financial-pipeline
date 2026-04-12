@@ -398,6 +398,23 @@ export function useCreateTrainingJob() {
   });
 }
 
+export function useStartTrainingJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (jobId: string) => {
+      const { data } = await api.post<{ job_id: string; status: string }>(
+        `/rl/training-jobs/${jobId}/start`,
+      );
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rl", "training-jobs"] });
+      qc.invalidateQueries({ queryKey: ["rl", "experiments"] });
+      qc.invalidateQueries({ queryKey: ["rl", "policies"] });
+    },
+  });
+}
+
 export function useRunWalkForward() {
   const qc = useQueryClient();
   return useMutation({
