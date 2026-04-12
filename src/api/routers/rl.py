@@ -402,59 +402,132 @@ async def list_evaluations(
 
 # ── 학습 작업 엔드포인트 ──────────────────────────────────────────────────
 
-# 인메모리 작업 큐 (프로덕션에서는 Redis/Celery로 대체)
-_training_jobs: dict[str, dict] = {}
-
-
 @router.post(
     "/training-jobs",
     summary="RL 학습 작업 생성",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def create_training_job(req: TrainingJobRequest) -> TrainingJobResponse:
+    from src.db.queries import insert_training_job
+
     job_id = f"rl-job-{uuid.uuid4().hex[:8]}"
-    now = datetime.now(timezone.utc).isoformat()
-
-    job = {
-        "job_id": job_id,
-        "status": "queued",
-        "tickers": req.tickers,
-        "policy_family": req.policy_family,
-        "dataset_interval": req.dataset_interval,
-        "dataset_days": req.dataset_days,
-        "created_at": now,
-        "completed_at": None,
-        "results": None,
-    }
-    _training_jobs[job_id] = job
-
-    logger.info(
-        "RL 학습 작업 생성: job_id=%s, tickers=%s, family=%s",
-        job_id,
-        req.tickers,
-        req.policy_family,
-    )
+    # For simplicity, create one job per ticker
+    for ticker in req.tickers:
+        await insert_training_job(
+            job_id=job_id,
+            instrument_id=ticker,
+            policy_family=req.policy_family,
+            dataset_days=req.dataset_days,
+        )
 
     return TrainingJobResponse(
         job_id=job_id,
         status="queued",
         tickers=req.tickers,
-        created_at=now,
+        created_at=datetime.now(timezone.utc).isoformat(),
     )
 
 
+@router.post(
+    "/training-jobs/{job_id}/start",
+    summary="학습 작업 실행 시작",
+    status_code=status.HTTP_200_OK,
+)
+async def start_training_job(job_id: str) -> dict:
+    """queued 상태의 학습 작업을 실행합니다."""
+    import asyncio
+    from src.db.queries import fetch_training_job, update_training_job_status
+
+    job = await fetch_training_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"학습 작업 {job_id} 없음")
+    if job["status"] != "queued":
+        raise HTTPException(
+            status_code=400,
+            detail=f"학습 작업이 '{job['status']}' 상태입니다. 'queued' 상태에서만 시작 가능합니다.",
+        )
+
+    # 즉시 running으로 전환
+    await update_training_job_status(job_id, "running")
+
+    # 백그라운드에서 학습 실행
+    asyncio.create_task(_execute_training(job_id, job["instrument_id"], job["policy_family"], job["dataset_days"]))
+
+    logger.info("RL 학습 시작: job_id=%s, ticker=%s", job_id, job["instrument_id"])
+    return {"job_id": job_id, "status": "running", "instrument_id": job["instrument_id"]}
+
+
+async def _execute_training(job_id: str, instrument_id: str, policy_family: str, dataset_days: int) -> None:
+    """백그라운드 학습 실행 + 결과 DB 기록."""
+    from src.db.queries import insert_experiment, update_training_job_status
+
+    try:
+        from src.agents.rl_continuous_improver import RLContinuousImprover
+
+        improver = RLContinuousImprover()
+        outcome = await improver.retrain_ticker(
+            instrument_id,
+            profile_ids=[policy_family] if policy_family else None,
+            dataset_days=dataset_days,
+        )
+
+        if outcome.success:
+            # 실험 기록을 DB에 저장
+            run_id = f"exp-{job_id}-{uuid.uuid4().hex[:6]}"
+            await insert_experiment(
+                run_id=run_id,
+                job_id=job_id,
+                instrument_id=outcome.ticker,
+                policy_id=outcome.new_policy_id,
+                profile_id=outcome.profile_id,
+                algorithm=policy_family,
+                return_pct=outcome.excess_return,
+                baseline_return_pct=None,
+                excess_return_pct=outcome.excess_return,
+                max_drawdown_pct=None,
+                trades=None,
+                win_rate=None,
+                holdout_steps=None,
+                walk_forward_passed=outcome.walk_forward_passed,
+                walk_forward_consistency=outcome.walk_forward_consistency,
+                approved=outcome.walk_forward_passed,
+                deployed=outcome.deployed,
+            )
+            await update_training_job_status(
+                job_id, "completed",
+                result_policy_id=outcome.new_policy_id,
+            )
+            logger.info("RL 학습 완료: job_id=%s, policy=%s, deployed=%s", job_id, outcome.new_policy_id, outcome.deployed)
+        else:
+            await update_training_job_status(
+                job_id, "failed",
+                error_message=outcome.error,
+            )
+            logger.warning("RL 학습 실패: job_id=%s, error=%s", job_id, outcome.error)
+
+    except Exception as e:
+        logger.error("RL 학습 예외: job_id=%s — %s", job_id, e, exc_info=True)
+        try:
+            await update_training_job_status(job_id, "failed", error_message=str(e)[:500])
+        except Exception:
+            pass
+
+
 @router.get("/training-jobs", summary="학습 작업 전체 목록 조회")
-async def list_training_jobs() -> dict:
-    """인메모리에 저장된 학습 작업 목록을 반환합니다."""
-    jobs = sorted(_training_jobs.values(), key=lambda j: j.get("created_at", ""), reverse=True)
+async def list_training_jobs_endpoint() -> dict:
+    """DB에서 학습 작업 목록을 반환합니다."""
+    from src.db.queries import list_training_jobs
+
+    jobs = await list_training_jobs()
     return {"data": jobs, "total": len(jobs)}
 
 
 @router.get("/training-jobs/{job_id}", summary="학습 작업 상태 조회")
-async def get_training_job(job_id: str) -> dict:
-    job = _training_jobs.get(job_id)
+async def get_training_job_endpoint(job_id: str) -> dict:
+    from src.db.queries import fetch_training_job
+
+    job = await fetch_training_job(job_id)
     if not job:
-        logger.warning("training-job 404: job_id=%s — 인메모리 작업 목록에 없음 (서버 재시작 시 유실됨)", job_id)
         raise HTTPException(status_code=404, detail=f"학습 작업 {job_id} 없음")
     return job
 
@@ -678,15 +751,39 @@ async def get_rl_tickers() -> dict:
 
 @router.put("/tickers", summary="RL 대상 종목 추가")
 async def update_rl_tickers(req: RLTickerUpdate) -> dict:
-    """RL 대상 종목을 rl_targets 테이블에 추가합니다."""
-    from src.db.queries import list_rl_target_tickers, upsert_rl_targets
+    """RL 대상 종목을 rl_targets 테이블에 추가하고, 활성 정책이 없는 종목에 학습 작업을 자동 생성합니다."""
+    from src.db.queries import (
+        find_queued_training_job,
+        insert_training_job,
+        list_rl_target_tickers,
+        upsert_rl_targets,
+    )
 
     added = await upsert_rl_targets(req.tickers, data_scope=req.data_scope)
     all_tickers = await list_rl_target_tickers()
 
+    # 활성 정책이 없는 종목에 학습 작업 자동 생성
+    store = _get_store()
+    try:
+        active_map = await store.list_active_policies()
+    except Exception:
+        active_map = {}
+
+    auto_jobs: list[str] = []
+    for ticker in req.tickers:
+        if ticker not in active_map:
+            # 이미 queued인 작업이 있으면 스킵
+            existing = await find_queued_training_job(ticker)
+            if existing:
+                continue
+            job_id = f"rl-job-{uuid.uuid4().hex[:8]}"
+            await insert_training_job(job_id=job_id, instrument_id=ticker)
+            auto_jobs.append(job_id)
+
     return {
         "tickers": all_tickers,
         "added": sorted(added),
+        "auto_training_jobs": auto_jobs,
         "total": len(all_tickers),
     }
 
