@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime, timedelta
-from typing import Optional
 from zoneinfo import ZoneInfo
 
 from src.db.models import MarketDataPoint
