@@ -1739,6 +1739,23 @@ async def find_queued_training_job(instrument_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+async def delete_training_job(job_id: str) -> bool:
+    """학습 작업을 삭제합니다. running 상태는 삭제 불가."""
+    row = await fetchrow(
+        "SELECT status FROM rl_training_jobs WHERE job_id = $1", job_id
+    )
+    if not row:
+        return False
+    if row["status"] == "running":
+        raise ValueError("실행 중인 작업은 삭제할 수 없습니다")
+    # 연관 실험 레코드의 job_id 참조를 해제
+    await execute(
+        "UPDATE rl_experiments SET job_id = NULL WHERE job_id = $1", job_id
+    )
+    await execute("DELETE FROM rl_training_jobs WHERE job_id = $1", job_id)
+    return True
+
+
 # ── RL 실험 기록 (rl_experiments) ────────────────────────────────────────
 
 
