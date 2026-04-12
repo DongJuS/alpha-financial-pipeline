@@ -29,6 +29,17 @@
 
 ## ✅ 최근 완료
 
+### Optuna 하이퍼파라미터 자동 탐색 Phase 2 (2026-04-12, PR #186)
+
+SB3 알고리즘의 하이퍼파라미터를 Optuna TPE sampler로 자동 탐색.
+- `rl_hyperopt.py` — RLHyperOptimizer (DQN 10개, A2C 6개, PPO 9개 search space)
+- TPE sampler + MedianPruner, SQLite 저장, best_params JSON 출력
+- `rl_continuous_improver.py` — 프로파일 `hyperopt.enabled` 또는 `use_hyperopt` 플래그 연동
+- `rl_bootstrap.py` — `--hyperopt`, `--hyperopt-trials N` CLI 플래그
+- SB3 프로파일 3개에 `hyperopt` 섹션 추가 (기본 disabled)
+- `requirements.txt` + `tech_stack.md`에 `optuna>=3.0,<4.0` 등록
+- 테스트 27개 추가, 전체 2377개 통과
+
 ### RL SB3 통합 Trainer + Ensemble Phase 1 (2026-04-12)
 
 Tabular Q → SB3(DQN/A2C/PPO) 통합 trainer 구현 완료.
@@ -85,16 +96,12 @@ ohlcv_minute 인프라 + S3 아카이브 + UnifiedMarketData 빌더 완성.
 1. `collector.run()` 복원 → `collect_daily_bars()` 위임. 08:30 KST 일봉 수집 정상화.
 2. 별도 `tick-collector` 서비스 신규 추가 — 장애 격리(틱↔매매 독립), 독립 재시작. K3s 배포 필요.
 
-### RL 모델 DQN 업그레이드 + Optuna (Phase 1 완료, Phase 2 대기)
+### RL 모델 DQN 업그레이드 + Optuna (Phase 1~2 완료)
 
-**✅ Phase 1 — SB3 통합 Trainer + Ensemble (2026-04-12):** 완료. 위 "최근 완료" 참조.
-
-**Phase 2 — Optuna (대기):**
-1. `rl_hyperopt.py` — study 관리, 알고리즘별 search space
-2. `requirements.txt` + `.agent/tech_stack.md` — `optuna>=3.0,<4.0`
+**✅ Phase 1 — SB3 통합 Trainer + Ensemble (2026-04-12):** 완료.
+**✅ Phase 2 — Optuna 자동 탐색 (2026-04-12, PR #186):** 완료. 위 "최근 완료" 참조.
 
 상세: `.agent/discussions/20260412-rl-dqn-upgrade-optuna.md`
-상세: `.agent/discussions/20260412-rl-sb3-ensemble-phase1-implementation.md`
 
 ### RL 실시간 추론 파이프라인 (선행 조건: 위 Phase 1~2 + 분봉 40영업일)
 
@@ -138,4 +145,4 @@ Hetzner CX22 + Cloudflare R2 결정 완료. Docker Compose 배포 + Cold migrati
 - DB 정리 크론 (7일 초과 틱 파티션 DROP) — 용량 > 5GB 시
 ---
 
-*Last updated: 2026-04-12*
+*Last updated: 2026-04-13*
