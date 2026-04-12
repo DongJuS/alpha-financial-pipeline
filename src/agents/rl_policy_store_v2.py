@@ -73,48 +73,57 @@ class RLPolicyStoreV2:
             "trade_penalty_bps": artifact.trade_penalty_bps,
         })
 
-        await execute(
-            """
-            INSERT INTO rl_policies (
-                policy_id, instrument_id, algorithm, state_version,
-                return_pct, baseline_return_pct, excess_return_pct,
-                max_drawdown_pct, trades, win_rate, holdout_steps,
-                approved, is_active, file_path, hyperparams, created_at
-            ) VALUES (
-                $1, $2, $3, $4,
-                $5, $6, $7,
-                $8, $9, $10, $11,
-                $12, $13, $14, $15::jsonb, $16
+        try:
+            await execute(
+                """
+                INSERT INTO rl_policies (
+                    policy_id, instrument_id, algorithm, state_version,
+                    return_pct, baseline_return_pct, excess_return_pct,
+                    max_drawdown_pct, trades, win_rate, holdout_steps,
+                    approved, is_active, file_path, hyperparams, created_at
+                ) VALUES (
+                    $1, $2, $3, $4,
+                    $5, $6, $7,
+                    $8, $9, $10, $11,
+                    $12, $13, $14, $15::jsonb, $16
+                )
+                ON CONFLICT (policy_id) DO UPDATE SET
+                    return_pct       = EXCLUDED.return_pct,
+                    baseline_return_pct = EXCLUDED.baseline_return_pct,
+                    excess_return_pct = EXCLUDED.excess_return_pct,
+                    max_drawdown_pct = EXCLUDED.max_drawdown_pct,
+                    trades           = EXCLUDED.trades,
+                    win_rate         = EXCLUDED.win_rate,
+                    holdout_steps    = EXCLUDED.holdout_steps,
+                    approved         = EXCLUDED.approved,
+                    file_path        = EXCLUDED.file_path,
+                    hyperparams      = EXCLUDED.hyperparams
+                """,
+                artifact.policy_id,
+                artifact.ticker,
+                artifact.algorithm,
+                artifact.state_version,
+                artifact.evaluation.total_return_pct,
+                artifact.evaluation.baseline_return_pct,
+                artifact.evaluation.excess_return_pct,
+                artifact.evaluation.max_drawdown_pct,
+                artifact.evaluation.trades,
+                artifact.evaluation.win_rate,
+                artifact.evaluation.holdout_steps,
+                artifact.evaluation.approved,
+                False,  # is_active: 저장 시에는 비활성
+                relative_path,
+                hyperparams,
+                datetime.fromisoformat(artifact.created_at),
             )
-            ON CONFLICT (policy_id) DO UPDATE SET
-                return_pct       = EXCLUDED.return_pct,
-                baseline_return_pct = EXCLUDED.baseline_return_pct,
-                excess_return_pct = EXCLUDED.excess_return_pct,
-                max_drawdown_pct = EXCLUDED.max_drawdown_pct,
-                trades           = EXCLUDED.trades,
-                win_rate         = EXCLUDED.win_rate,
-                holdout_steps    = EXCLUDED.holdout_steps,
-                approved         = EXCLUDED.approved,
-                file_path        = EXCLUDED.file_path,
-                hyperparams      = EXCLUDED.hyperparams
-            """,
-            artifact.policy_id,
-            artifact.ticker,
-            artifact.algorithm,
-            artifact.state_version,
-            artifact.evaluation.total_return_pct,
-            artifact.evaluation.baseline_return_pct,
-            artifact.evaluation.excess_return_pct,
-            artifact.evaluation.max_drawdown_pct,
-            artifact.evaluation.trades,
-            artifact.evaluation.win_rate,
-            artifact.evaluation.holdout_steps,
-            artifact.evaluation.approved,
-            False,  # is_active: 저장 시에는 비활성
-            relative_path,
-            hyperparams,
-            datetime.fromisoformat(artifact.created_at),
-        )
+        except Exception as exc:
+            if "foreign" in str(exc).lower() or "ForeignKeyViolation" in type(exc).__name__:
+                logger.error(
+                    "정책 저장 실패 — instruments 테이블에 ticker 없음: %s (policy_id=%s)",
+                    artifact.ticker,
+                    artifact.policy_id,
+                )
+            raise
 
         logger.info("정책 저장 완료: %s -> %s", artifact.policy_id, relative_path)
         return artifact
