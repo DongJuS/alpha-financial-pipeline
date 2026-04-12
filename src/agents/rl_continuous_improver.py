@@ -152,6 +152,8 @@ class RLContinuousImprover:
         profile_ids: Sequence[str] | None = None,
         dataset_days: int = 180,
         on_progress: Callable[[int], None] | None = None,
+        use_hyperopt: bool | None = None,
+        hyperopt_n_trials: int | None = None,
     ) -> RetrainOutcome:
         profile_list = list(profile_ids or _default_profile_ids())
         if not profile_list:
@@ -185,6 +187,8 @@ class RLContinuousImprover:
                     dataset=dataset,
                     profile_id=profile_id,
                     on_progress=on_progress,
+                    use_hyperopt=use_hyperopt,
+                    hyperopt_n_trials=hyperopt_n_trials,
                 )
                 candidates.append(candidate)
             except Exception as exc:
@@ -278,6 +282,8 @@ class RLContinuousImprover:
         tickers: Sequence[str] | None = None,
         profile_ids: Sequence[str] | None = None,
         dataset_days: int = 180,
+        use_hyperopt: bool | None = None,
+        hyperopt_n_trials: int | None = None,
     ) -> list[RetrainOutcome]:
         targets = list(dict.fromkeys(tickers or await self.list_target_tickers()))
         outcomes: list[RetrainOutcome] = []
@@ -287,6 +293,8 @@ class RLContinuousImprover:
                     ticker,
                     profile_ids=profile_ids,
                     dataset_days=dataset_days,
+                    use_hyperopt=use_hyperopt,
+                    hyperopt_n_trials=hyperopt_n_trials,
                 )
             )
         return outcomes
@@ -316,9 +324,10 @@ class RLContinuousImprover:
         dataset: RLDataset,
         profile_id: str,
         on_progress: Callable[[int], None] | None = None,
+        use_hyperopt: bool | None = None,
+        hyperopt_n_trials: int | None = None,
     ) -> CandidateResult:
         profile = self._experiment_manager.load_profile(profile_id)
-        trainer = self._trainer_for_profile(profile)
         bandit = self._bandit_for_profile(profile_id, profile)
 
         fallback_ratio = float(profile.get("dataset", {}).get("default_train_ratio", 0.7))
@@ -333,6 +342,22 @@ class RLContinuousImprover:
                 exc,
             )
             train_ratio = fallback_ratio
+
+        # Hyperopt: 프로파일 설정 또는 명시적 플래그로 활성화
+        hyperopt_cfg = profile.get("hyperopt", {})
+        should_hyperopt = use_hyperopt if use_hyperopt is not None else hyperopt_cfg.get("enabled", False)
+        algorithm = str(profile.get("algorithm", "")).lower()
+
+        if should_hyperopt and algorithm in ("dqn", "a2c", "ppo"):
+            trainer = self._run_hyperopt_then_build_trainer(
+                profile=profile,
+                dataset=dataset,
+                train_ratio=train_ratio,
+                n_trials=hyperopt_n_trials or int(hyperopt_cfg.get("n_trials", 50)),
+                timeout=hyperopt_cfg.get("timeout_seconds"),
+            )
+        else:
+            trainer = self._trainer_for_profile(profile)
 
         run_id = self._experiment_manager.create_run(
             dataset.ticker,
@@ -373,6 +398,39 @@ class RLContinuousImprover:
             split_metadata=split_metadata,
             walk_forward=walk_forward,
         )
+
+    def _run_hyperopt_then_build_trainer(
+        self,
+        *,
+        profile: dict[str, Any],
+        dataset: RLDataset,
+        train_ratio: float,
+        n_trials: int,
+        timeout: int | None,
+    ) -> Any:
+        """Optuna 탐색 후 best_params로 SB3Trainer를 생성한다."""
+        from src.agents.rl_hyperopt import RLHyperOptimizer
+        from src.agents.rl_trading_sb3 import SB3Trainer
+
+        algorithm = str(profile.get("algorithm", "")).lower()
+        base_params = dict(profile.get("trainer_params", {}))
+
+        optimizer = RLHyperOptimizer(
+            algorithm=algorithm,
+            dataset=dataset,
+            base_params=base_params,
+            train_ratio=train_ratio,
+        )
+        best_params = optimizer.optimize(
+            n_trials=n_trials,
+            timeout=timeout,
+        )
+
+        # Merge: base_params + best_params (best overrides base)
+        merged = {**base_params, **best_params}
+        sig = inspect.signature(SB3Trainer.__init__)
+        filtered = {k: v for k, v in merged.items() if k in sig.parameters}
+        return SB3Trainer(**filtered)
 
     def _bandit_for_profile(
         self, profile_id: str, profile: dict[str, Any]
