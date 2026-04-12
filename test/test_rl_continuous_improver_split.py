@@ -183,12 +183,10 @@ def _build_improver(
     fake_em.experiments_dir = Path(tempfile.gettempdir())
 
     fake_store = MagicMock()
-    fake_store.save_policy = MagicMock(side_effect=lambda artifact: artifact)
-    fake_store.activate_policy = MagicMock(return_value=True)
-    registry = MagicMock()
-    registry.list_active_policies = MagicMock(return_value={})
-    registry.list_all_tickers = MagicMock(return_value=["005930.KS"])
-    fake_store.load_registry = MagicMock(return_value=registry)
+    fake_store.save_policy = AsyncMock(side_effect=lambda artifact: artifact)
+    fake_store.activate_policy = AsyncMock(return_value=True)
+    fake_store.list_active_policies = AsyncMock(return_value={})
+    fake_store.list_all_tickers = AsyncMock(return_value=["005930.KS"])
 
     fake_walk = MagicMock()
     fake_walk.evaluate = MagicMock(return_value=walk_forward_result)
