@@ -37,6 +37,7 @@ class TestCronTriggerConfig:
             "minute_aggregation",
             "rl_retrain",
             "blend_weight_adjust",
+            "minute_partition_mgmt",
         }
         assert expected_keys == set(_LOCK_TTL.keys())
 
