@@ -28,6 +28,36 @@ spec:
       labels:
         app: api
     spec:
+      initContainers:
+        - name: db-migrate
+          image: alpha-api:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secret
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "=== [1/4] Schema migration (migrate_to_v2_instruments) ==="
+              python scripts/db/migrate_to_v2_instruments.py
+              echo "=== [2/4] Create ohlcv_minute table + partitions ==="
+              python scripts/db/migrate_ohlcv_minute.py
+              echo "=== [3/4] Seed instruments registry ==="
+              python scripts/db/seed_all_instruments.py --market KR --instruments-only
+              echo "=== [4/4] Seed trading universe ==="
+              python scripts/db/seed_trading_universe.py
+              echo "=== Migration complete ==="
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
       containers:
         - name: api
           image: alpha-api:latest
