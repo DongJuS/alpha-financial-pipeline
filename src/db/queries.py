@@ -1798,3 +1798,44 @@ async def list_experiments(
         *params,
     )
     return [dict(r) for r in rows]
+
+
+# ── Prediction Schedule ───────────────────────────────────────────────────
+
+
+async def fetch_prediction_schedules() -> list[dict]:
+    """prediction_schedule 테이블에서 전략별 예측 주기를 조회한다."""
+    rows = await fetch(
+        "SELECT strategy_code, interval_minutes, is_enabled, last_run_at, updated_at "
+        "FROM prediction_schedule ORDER BY strategy_code"
+    )
+    return [dict(r) for r in rows]
+
+
+async def upsert_prediction_schedule(
+    strategy_code: str,
+    interval_minutes: int,
+    is_enabled: bool = True,
+) -> dict:
+    """전략별 예측 주기를 생성/수정한다."""
+    row = await fetchrow(
+        """
+        INSERT INTO prediction_schedule (strategy_code, interval_minutes, is_enabled, updated_at)
+        VALUES ($1, $2, $3, now())
+        ON CONFLICT (strategy_code) DO UPDATE
+            SET interval_minutes = $2, is_enabled = $3, updated_at = now()
+        RETURNING strategy_code, interval_minutes, is_enabled, last_run_at, updated_at
+        """,
+        strategy_code,
+        interval_minutes,
+        is_enabled,
+    )
+    return dict(row)
+
+
+async def touch_prediction_schedule(strategy_code: str) -> None:
+    """전략 실행 후 last_run_at을 갱신한다."""
+    await execute(
+        "UPDATE prediction_schedule SET last_run_at = now() WHERE strategy_code = $1",
+        strategy_code,
+    )
