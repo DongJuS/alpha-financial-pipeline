@@ -186,6 +186,22 @@ class RLContinuousImprover:
             deployed = await self._policy_store.activate_policy(best.artifact)
             if deployed:
                 self._mark_promoted(best.run_id)
+            elif not deployed:
+                logger.warning(
+                    "RL 정책 DB 승격 실패 [%s]: policy_id=%s (activate_policy 거부)",
+                    canonical_ticker,
+                    best.artifact.policy_id,
+                )
+        else:
+            logger.warning(
+                "RL 정책 승격 게이트 미통과 [%s]: holdout_approved=%s, wf_approved=%s, "
+                "return=%.2f%%, drawdown=%.2f%%",
+                canonical_ticker,
+                best.artifact.evaluation.approved,
+                best.walk_forward.overall_approved,
+                best.artifact.evaluation.total_return_pct,
+                best.artifact.evaluation.max_drawdown_pct,
+            )
 
         active_after = await self._active_policy_id(canonical_ticker)
 
