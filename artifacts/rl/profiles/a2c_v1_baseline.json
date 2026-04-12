@@ -30,5 +30,10 @@
   "evaluation": {
     "min_approval_return_pct": 5.0,
     "max_drawdown_limit_pct": -50.0
+  },
+  "hyperopt": {
+    "enabled": false,
+    "n_trials": 50,
+    "timeout_seconds": null
   }
 }
