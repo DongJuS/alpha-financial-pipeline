@@ -74,7 +74,7 @@ async def list_tickers(
     _: Annotated[dict, Depends(get_current_user)],
     market: Optional[str] = Query(default=None, pattern="^(KOSPI|KOSDAQ)$"),
     page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=20, ge=1, le=100),
+    per_page: int = Query(default=20, ge=1, le=3000),
 ) -> dict:
     """추적 중인 종목 목록을 반환합니다."""
     offset = (page - 1) * per_page
