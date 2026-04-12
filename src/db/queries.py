@@ -591,6 +591,47 @@ async def update_model_role_config(
     )
 
 
+async def insert_model_role_config(
+    *,
+    config_key: str,
+    strategy_code: str,
+    role: str,
+    role_label: str,
+    agent_id: str,
+    llm_model: str,
+    persona: str,
+    execution_order: int,
+) -> dict:
+    """새 모델 역할을 추가한다. config_key 중복 시 예외."""
+    rows = await fetch(
+        """
+        INSERT INTO model_role_configs (
+            config_key, strategy_code, role, role_label, agent_id,
+            llm_model, persona, execution_order, is_enabled, created_at, updated_at
+        ) VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, true, NOW(), NOW()
+        )
+        RETURNING
+            config_key, strategy_code, role, role_label, agent_id,
+            llm_model, persona, execution_order, is_enabled,
+            to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
+        """,
+        config_key, strategy_code, role, role_label, agent_id,
+        llm_model, persona, execution_order,
+    )
+    return dict(rows[0])
+
+
+async def delete_model_role_config(config_key: str) -> bool:
+    """모델 역할을 삭제한다. 삭제 성공 시 True."""
+    result = await execute(
+        "DELETE FROM model_role_configs WHERE config_key = $1",
+        config_key,
+    )
+    return result != "DELETE 0"
+
+
 async def today_trade_totals(account_scope: AccountScope = "paper") -> dict:
     scope = normalize_account_scope(account_scope)
     row = await fetchrow(

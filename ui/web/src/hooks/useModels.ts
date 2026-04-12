@@ -70,3 +70,40 @@ export function useUpdateModelConfig() {
     },
   });
 }
+
+export interface AddModelRoleRequest {
+  strategy_code: "A" | "B";
+  role: string;
+  llm_model: string;
+  persona: string;
+}
+
+async function addModelRole(body: AddModelRoleRequest): Promise<ModelConfigResponse> {
+  const { data } = await api.post<ModelConfigResponse>("/models/config/roles", body);
+  return data;
+}
+
+async function deleteModelRole(configKey: string): Promise<ModelConfigResponse> {
+  const { data } = await api.delete<ModelConfigResponse>(`/models/config/roles/${configKey}`);
+  return data;
+}
+
+export function useAddModelRole() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AddModelRoleRequest) => addModelRole(body),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["models", "config"] });
+    },
+  });
+}
+
+export function useDeleteModelRole() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (configKey: string) => deleteModelRole(configKey),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["models", "config"] });
+    },
+  });
+}
