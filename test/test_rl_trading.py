@@ -459,5 +459,131 @@ class RLTrainerEdgeCaseTest(unittest.TestCase):
         self.assertGreater(len(artifact_many.q_table), 0)
 
 
+import pytest
+
+
+@pytest.mark.rl
+@pytest.mark.unit
+class TestRLPolicyArtifactSerialization:
+    """RLPolicyArtifact to_dict / from_dict SB3 호환 테스트."""
+
+    def _make_eval(self) -> RLEvaluationMetrics:
+        return RLEvaluationMetrics(
+            total_return_pct=10.0,
+            baseline_return_pct=5.0,
+            excess_return_pct=5.0,
+            max_drawdown_pct=-10.0,
+            trades=20,
+            win_rate=0.6,
+            holdout_steps=40,
+            approved=True,
+        )
+
+    def test_to_dict_with_q_table(self):
+        a = RLPolicyArtifact(
+            policy_id="p1", ticker="T", created_at="2026-01-01",
+            algorithm="tabular_q", state_version="v2", lookback=20,
+            episodes=10, learning_rate=0.01, discount_factor=0.95,
+            epsilon=0.1, trade_penalty_bps=2, evaluation=self._make_eval(),
+            q_table={"s1": {"BUY": 1.0}},
+        )
+        d = a.to_dict()
+        assert "q_table" in d
+        assert d["q_table"] == {"s1": {"BUY": 1.0}}
+        assert d.get("model_path") is None
+
+    def test_to_dict_sb3_no_q_table(self):
+        """SB3 아티팩트: q_table=None, model_path 존재."""
+        a = RLPolicyArtifact(
+            policy_id="p1", ticker="T", created_at="2026-01-01",
+            algorithm="dqn", state_version="sb3_dqn", lookback=20,
+            episodes=10, learning_rate=0.001, discount_factor=0.95,
+            epsilon=0.05, trade_penalty_bps=2, evaluation=self._make_eval(),
+            q_table=None, model_path="/models/dqn_model.zip",
+        )
+        d = a.to_dict()
+        assert "q_table" not in d  # None이면 제거
+        assert d["model_path"] == "/models/dqn_model.zip"
+
+    def test_from_dict_with_model_path(self):
+        payload = {
+            "policy_id": "p2", "ticker": "X", "created_at": "2026-01-01",
+            "algorithm": "ppo", "state_version": "sb3_ppo", "lookback": 20,
+            "episodes": 15, "learning_rate": 0.0003, "discount_factor": 0.95,
+            "epsilon": 0.01, "trade_penalty_bps": 2,
+            "evaluation": {
+                "total_return_pct": 8.0, "baseline_return_pct": 3.0,
+                "excess_return_pct": 5.0, "max_drawdown_pct": -15.0,
+                "trades": 10, "win_rate": 0.5, "holdout_steps": 30, "approved": True,
+            },
+            "model_path": "/models/ppo_model.zip",
+        }
+        a = RLPolicyArtifact.from_dict(payload)
+        assert a.model_path == "/models/ppo_model.zip"
+        assert a.q_table is None
+        assert a.algorithm == "ppo"
+
+    def test_from_dict_missing_model_path_defaults_none(self):
+        payload = {
+            "policy_id": "p3", "ticker": "Y", "created_at": "2026-01-01",
+            "algorithm": "tabular_q_learning", "state_version": "v1",
+            "lookback": 6, "episodes": 60,
+            "learning_rate": 0.18, "discount_factor": 0.92,
+            "epsilon": 0.15, "trade_penalty_bps": 5,
+            "q_table": {"s1": {"BUY": 0.5, "SELL": 0.3, "HOLD": 0.2}},
+            "evaluation": {
+                "total_return_pct": 3.0, "baseline_return_pct": 2.0,
+                "excess_return_pct": 1.0, "max_drawdown_pct": -5.0,
+                "trades": 15, "win_rate": 0.55, "holdout_steps": 20, "approved": False,
+            },
+        }
+        a = RLPolicyArtifact.from_dict(payload)
+        assert a.model_path is None
+        assert a.q_table == {"s1": {"BUY": 0.5, "SELL": 0.3, "HOLD": 0.2}}
+
+    def test_roundtrip_with_q_table(self):
+        """to_dict → from_dict 왕복."""
+        original = RLPolicyArtifact(
+            policy_id="rt1", ticker="RT", created_at="2026-01-01",
+            algorithm="tabular_q", state_version="v2", lookback=20,
+            episodes=10, learning_rate=0.01, discount_factor=0.95,
+            epsilon=0.1, trade_penalty_bps=2, evaluation=self._make_eval(),
+            q_table={"s1": {"BUY": 1.5, "SELL": -0.3}},
+        )
+        restored = RLPolicyArtifact.from_dict(original.to_dict())
+        assert restored.policy_id == original.policy_id
+        assert restored.q_table == original.q_table
+        assert restored.model_path is None
+
+    def test_roundtrip_sb3_no_q_table(self):
+        """SB3 아티팩트 to_dict → from_dict 왕복."""
+        original = RLPolicyArtifact(
+            policy_id="rt2", ticker="RT2", created_at="2026-01-01",
+            algorithm="a2c", state_version="sb3_a2c", lookback=20,
+            episodes=15, learning_rate=0.0007, discount_factor=0.95,
+            epsilon=0.0, trade_penalty_bps=2, evaluation=self._make_eval(),
+            q_table=None, model_path="/tmp/a2c_model.zip",
+        )
+        restored = RLPolicyArtifact.from_dict(original.to_dict())
+        assert restored.model_path == "/tmp/a2c_model.zip"
+        assert restored.q_table is None
+        assert restored.algorithm == "a2c"
+
+    def test_from_dict_backward_compat_no_algorithm(self):
+        """기존 payload에 algorithm 키 없을 때 기본값."""
+        payload = {
+            "policy_id": "old", "ticker": "OLD", "created_at": "2025-01-01",
+            "q_table": {}, "evaluation": {
+                "total_return_pct": 0, "baseline_return_pct": 0,
+                "excess_return_pct": 0, "max_drawdown_pct": 0,
+                "trades": 0, "win_rate": 0, "holdout_steps": 0, "approved": False,
+            },
+        }
+        a = RLPolicyArtifact.from_dict(payload)
+        assert a.algorithm == "tabular_q_learning"
+        assert a.state_version == "qlearn_v1"
+        assert a.lookback == 6  # default
+
+
 if __name__ == "__main__":
     unittest.main()
