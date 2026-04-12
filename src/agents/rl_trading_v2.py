@@ -13,6 +13,7 @@ V1 대비 개선점:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 import random
 
@@ -83,6 +84,7 @@ class TabularQTrainerV2:
         dataset: RLDataset,
         *,
         train_ratio: float = 0.7,
+        on_progress: Callable[[int], None] | None = None,
     ) -> tuple[RLPolicyArtifact, RLSplitMetadata]:
         if len(dataset.closes) <= self.lookback + 10:
             raise ValueError(
@@ -109,6 +111,10 @@ class TabularQTrainerV2:
             if evaluation.total_return_pct > best_holdout_return:
                 best_holdout_return = evaluation.total_return_pct
                 best_q_table = q_table
+            if on_progress is not None:
+                # 학습 80% + 평가/저장 20% 비중으로 환산
+                pct = int(((seed_offset + 1) / self.num_seeds) * 80)
+                on_progress(pct)
 
         assert best_q_table is not None
         evaluation = self._evaluate_internal(holdout_prices, best_q_table)
