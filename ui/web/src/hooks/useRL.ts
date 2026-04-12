@@ -415,6 +415,21 @@ export function useStartTrainingJob() {
   });
 }
 
+export function useDeleteTrainingJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (jobId: string) => {
+      const { data } = await api.delete<{ deleted: string }>(
+        `/rl/training-jobs/${jobId}`,
+      );
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rl", "training-jobs"] });
+    },
+  });
+}
+
 export function useRunWalkForward() {
   const qc = useQueryClient();
   return useMutation({
