@@ -34,6 +34,7 @@ class TestCronTriggerConfig:
             "index_collection",
             "kis_token_health",
             "s3_tick_flush",
+            "minute_aggregation",
             "rl_retrain",
             "blend_weight_adjust",
         }
