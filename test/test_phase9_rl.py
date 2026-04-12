@@ -255,9 +255,13 @@ class TestShadowInferenceEngine:
     """Shadow 추론 및 승격 게이트를 검증합니다."""
 
     def _make_engine(self):
+        from unittest.mock import AsyncMock, MagicMock
+
         from src.agents.rl_shadow_inference import ShadowInferenceEngine
 
-        return ShadowInferenceEngine()
+        mock_store = MagicMock()
+        mock_store.list_policies = AsyncMock(return_value=[])
+        return ShadowInferenceEngine(policy_store=mock_store)
 
     def test_create_shadow_signal(self):
         engine = self._make_engine()
@@ -383,10 +387,11 @@ class TestShadowInferenceEngine:
         assert removed == 1
         assert engine.get_shadow_records("p1") == []
 
-    def test_policy_mode(self):
+    @pytest.mark.asyncio
+    async def test_policy_mode(self):
         engine = self._make_engine()
         # 기록 없는 정책 → inactive
-        mode = engine.get_policy_mode("unknown", "005930")
+        mode = await engine.get_policy_mode("unknown", "005930")
         assert mode == "inactive"
 
         # Shadow 기록 있는 정책 → shadow
@@ -394,7 +399,7 @@ class TestShadowInferenceEngine:
             policy_id="shadow-p1", ticker="005930", signal="BUY",
             confidence=0.6, close_price=70000,
         )
-        mode = engine.get_policy_mode("shadow-p1", "005930")
+        mode = await engine.get_policy_mode("shadow-p1", "005930")
         assert mode == "shadow"
 
 

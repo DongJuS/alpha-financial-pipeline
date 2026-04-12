@@ -128,25 +128,20 @@ class TestRLV2Edge(unittest.TestCase):
 # ── Shadow Inference: 정책 모드 ticker 격리 ──────────────────────────────────
 
 
-class TestPolicyModeEdge(unittest.TestCase):
+class TestPolicyModeEdge(unittest.IsolatedAsyncioTestCase):
     """get_policy_mode의 ticker별 격리 검증."""
 
-    def test_policy_mode_different_ticker(self):
+    async def test_policy_mode_different_ticker(self):
         """policy_v1이 005930에 학습되었을 때, 000660으로 조회하면 inactive.
 
-        해당 ticker에 대한 registry entry도 shadow_records도 없으므로 "inactive".
+        해당 ticker에 대한 DB entry도 shadow_records도 없으므로 "inactive".
         """
+        from unittest.mock import AsyncMock
         mock_store = MagicMock()
-
-        # registry: 005930에는 policy_v1이 등록, 000660에는 아무것도 없음
-        mock_registry = MagicMock()
-        mock_registry.tickers = {}  # 000660 에 대한 entry 없음
-        mock_store.load_registry.return_value = mock_registry
+        mock_store.list_policies = AsyncMock(return_value=[])
 
         engine = ShadowInferenceEngine(policy_store=mock_store)
 
-        # 005930에 대한 shadow record가 있어도 000660에는 영향 없음
-        # _shadow_records에 005930 ticker 기록 추가
         from src.agents.rl_shadow_inference import ShadowRecord
         from datetime import date
 
@@ -162,11 +157,11 @@ class TestPolicyModeEdge(unittest.TestCase):
         ]
 
         # 000660으로 조회 → shadow_records에 000660 record 없음 → inactive
-        mode = engine.get_policy_mode("policy_v1", "000660")
+        mode = await engine.get_policy_mode("policy_v1", "000660")
         self.assertEqual(mode, "inactive")
 
         # 반면 005930은 shadow record가 있으므로 "shadow"
-        mode_005930 = engine.get_policy_mode("policy_v1", "005930")
+        mode_005930 = await engine.get_policy_mode("policy_v1", "005930")
         self.assertEqual(mode_005930, "shadow")
 
 
