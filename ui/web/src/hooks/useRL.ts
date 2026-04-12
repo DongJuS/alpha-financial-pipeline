@@ -528,7 +528,7 @@ export function useMarketTickers(enabled = true) {
     queryKey: ["market", "tickers-all"],
     queryFn: async (): Promise<MarketTickerItem[]> => {
       const { data } = await api.get<{ data: MarketTickerItem[] }>("/market/tickers", {
-        params: { per_page: 200 },
+        params: { per_page: 3000 },
       });
       return data?.data ?? [];
     },
