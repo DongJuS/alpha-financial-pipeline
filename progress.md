@@ -29,17 +29,26 @@
 
 ## ✅ 최근 완료
 
-### instruments + trading_universe K3s 배포·시딩 완료 (2026-04-12)
+### RL 학습 파이프라인 안정화 (2026-04-12, PR #167~#172)
 
-4-에이전트 병렬로 K3s 실서버 DB 마이그레이션 + 시딩 + 이미지 빌드를 동시 실행.
+학습 잡 FAILED 원인 해결 + 진행률 추적 + 프로파일 동적 조회.
+- `progress_pct` 컬럼 추가 — 멀티시드 학습 루프에서 seed 완료마다 진행률 콜백 (PR #167)
+- 프로파일 이름 하드코딩 제거 — `artifacts/rl/profiles/` 디렉토리 동적 스캔 (PR #168)
+- Dockerfile 프로파일 COPY + deploy-local.sh PVC 자동 동기화 (PR #169, #171)
+- V1 TabularQTrainer `**kwargs` 호환성 수정 (PR #172)
 
-1. **DB 스키마 마이그레이션** — stock_master → krx_stock_master 리네임, instruments 16→6 컬럼 경량화, trading_universe 테이블 생성
-2. **instruments 시딩** — FDR에서 KRX 2,773종목 등록 (KOSPI 950 + KOSDAQ 1,823)
-3. **trading_universe 시딩** — paper 스코프 3종목: 005930(삼성전자), 000660(SK하이닉스), 035420(NAVER)
-4. **이미지 빌드 + 롤아웃** — alpha-trading:latest 재빌드, api/worker/tick-collector rollout restart
-5. **검증** — `list_tickers(mode="paper")` → 3종목 정상 반환, API health OK, 테스트 2,165 passed
+### prediction_schedule 테이블 구현 (2026-04-12, PR #166)
 
-`krx_stock_master` 데이터는 0행 (name=None). 다음 collector 스케줄 실행 시 자동 채워짐.
+전략별 예측 주기를 DB 테이블로 관리. Orchestrator 1분 체크 + 전략별 30분 간격 skip 로직.
+GET/PUT /api/v1/scheduler/prediction-schedule API. K3s 마이그레이션 완료.
+
+### rl_targets 테이블 + Docker 이미지 정리 (2026-04-12, PR #163, #164)
+
+RL chicken-and-egg 문제 해결 + 이미지 이름 alpha-api/alpha-ui로 통일.
+
+### KIS 토큰 health 체크 크론잡 (2026-04-12, PR #170)
+
+장중 09~15시 매시 정각 KIS OAuth 토큰 유효성 자동 검증.
 
 ---
 
