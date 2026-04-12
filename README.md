@@ -116,6 +116,34 @@ Day 3: 722일 일봉으로 재학습 → Q-table v3 생성 (그제+어제 반영
 
 walk-forward 검증을 통과한 정책만 활성화되므로, 성능이 나빠진 모델은 자동으로 교체됩니다.
 
+### RL Bootstrap & Hyperparameter Tuning
+
+```bash
+# 기본 부트스트랩: FDR 720일 시딩 → 멀티 프로파일 학습 → 활성 정책 등록
+python scripts/rl_bootstrap.py --tickers 005930,000660
+
+# 학습만 (시딩 스킵, DB에 데이터가 이미 있을 때)
+python scripts/rl_bootstrap.py --tickers 005930 --train-only
+
+# SB3 프로파일 지정 (DQN/A2C/PPO)
+python scripts/rl_bootstrap.py --tickers 005930 --train-only --profiles dqn_v1_baseline
+
+# Optuna 하이퍼파라미터 자동 탐색 (TPE sampler, 50 trials)
+python scripts/rl_bootstrap.py --tickers 005930 --train-only \
+  --profiles dqn_v1_baseline --hyperopt --hyperopt-trials 50
+
+# dry-run (실제 실행 없이 대상 확인)
+python scripts/rl_bootstrap.py --dry-run
+```
+
+| 알고리즘 | 탐색 파라미터 수 | 특성 |
+|----------|-----------------|------|
+| **DQN** | 10개 | Discrete action 최적, replay buffer로 데이터 효율 높음 |
+| **A2C** | 6개 | 경량 on-policy, 빠른 학습 |
+| **PPO** | 9개 | Clipping 기반 안정적 학습 |
+
+Optuna 탐색 결과는 `artifacts/rl/hyperopt/`에 best_params JSON + SQLite study DB로 저장됩니다.
+
 ---
 
 ## Workflow Orchestration
