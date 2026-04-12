@@ -477,6 +477,7 @@ class TestRLAPIModels:
             "/evaluations",
             "/training-jobs",
             "/training-jobs/{job_id}",
+            "/training-jobs/{job_id}/start",
             "/walk-forward",
             "/shadow/signals",
             "/shadow/policies",

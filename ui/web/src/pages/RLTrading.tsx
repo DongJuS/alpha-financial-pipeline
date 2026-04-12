@@ -12,8 +12,8 @@ import {
   useShadowPolicies,
   useShadowPerformance,
   useActivatePolicy,
-  useCreateTrainingJob,
   useTrainingJobs,
+  useStartTrainingJob,
   useRunWalkForward,
   usePromoteShadowToPaper,
   usePromotePaperToReal,
@@ -25,7 +25,6 @@ import {
   type RLPolicy,
   type RLTickerInfo,
   type TrainingJob,
-  type TrainingJobRequest,
 } from "@/hooks/useRL";
 import { api, formatPct } from "@/utils/api";
 
@@ -412,217 +411,17 @@ function PolicyRow({ policy: p, onActivate }: { policy: RLPolicy; onActivate: ()
   );
 }
 
-/* ── 종목 선택 모달 ──────────────────────────────────────────────────── */
-function TickerPickerModal({
-  open,
-  onClose,
-  onSelect,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSelect: (ticker: string, name: string) => void;
-}) {
-  const [tab, setTab] = useState<string>("KOSPI");
-  const [search, setSearch] = useState("");
-  const { data: allTickers = [], isLoading } = useMarketTickers(open);
-
-  if (!open) return null;
-  const markets = [...new Set(allTickers.map((t) => t.market))].sort();
-  const filtered = allTickers
-    .filter((t) => t.market === tab)
-    .filter(
-      (t) =>
-        !search ||
-        t.ticker.includes(search) ||
-        t.name.toLowerCase().includes(search.toLowerCase())
-    );
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.5)" }}
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-2xl p-5"
-        style={{ background: "var(--bg-primary)", maxHeight: "80vh" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
-            종목 선택
-          </h3>
-          <button onClick={onClose} className="text-xl" style={{ color: "var(--text-tertiary)" }}>
-            ✕
-          </button>
-        </div>
-
-        {/* 검색 */}
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="종목명 또는 코드 검색..."
-          className="mt-3 w-full rounded-xl border px-3 py-2 text-sm"
-          style={{ borderColor: "var(--border)", background: "var(--bg-secondary)", color: "var(--text-primary)" }}
-          autoFocus
-        />
-
-        {/* 마켓 탭 */}
-        <div className="mt-3 flex gap-2">
-          {markets.map((m) => (
-            <button
-              key={m}
-              onClick={() => setTab(m)}
-              className="rounded-full px-3 py-1 text-xs font-semibold"
-              style={{
-                background: tab === m ? "var(--brand-500)" : "var(--bg-secondary)",
-                color: tab === m ? "white" : "var(--text-secondary)",
-              }}
-            >
-              {m} ({allTickers.filter((t) => t.market === m).length})
-            </button>
-          ))}
-        </div>
-
-        {/* 종목 리스트 */}
-        <div className="mt-3 overflow-y-auto" style={{ maxHeight: "50vh" }}>
-          {isLoading && <div className="h-40 skeleton" />}
-          {filtered.map((t) => (
-            <button
-              key={t.ticker}
-              onClick={() => {
-                onSelect(t.ticker, t.name);
-                onClose();
-              }}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left hover:opacity-80"
-              style={{ borderBottom: "1px solid var(--border)" }}
-            >
-              <div>
-                <span className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
-                  {t.name}
-                </span>
-                <span className="ml-2 text-xs" style={{ color: "var(--text-tertiary)" }}>
-                  {t.ticker}
-                </span>
-              </div>
-              <span
-                className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                style={{
-                  background: t.market === "KOSPI" ? "var(--blue-bg)" : "var(--purple-bg)",
-                  color: t.market === "KOSPI" ? "var(--blue)" : "var(--purple)",
-                }}
-              >
-                {t.market}
-              </span>
-            </button>
-          ))}
-          {filtered.length === 0 && !isLoading && (
-            <p className="py-8 text-center text-sm" style={{ color: "var(--text-tertiary)" }}>
-              검색 결과가 없습니다.
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ── 학습 실험 탭 ──────────────────────────────────────────────────────── */
 function ExperimentsTab() {
   const { data: experiments, isLoading } = useExperiments();
   const { data: trainingJobs, isLoading: isJobsLoading } = useTrainingJobs();
-  const createJob = useCreateTrainingJob();
+  const startJob = useStartTrainingJob();
   const runWF = useRunWalkForward();
-  const [ticker, setTicker] = useState("");
-  const [tickerName, setTickerName] = useState("");
-  const [episodes, setEpisodes] = useState(500);
-  const [formError, setFormError] = useState("");
-  const [pickerOpen, setPickerOpen] = useState(false);
-
-  function handleTrain() {
-    setFormError("");
-    if (!ticker.trim()) {
-      setFormError("종목 코드를 입력하세요.");
-      return;
-    }
-    if (!/^\d{6}$/.test(ticker.trim())) {
-      setFormError("종목 코드는 6자리 숫자여야 합니다 (예: 005930).");
-      return;
-    }
-    if (episodes < 10 || episodes > 10000) {
-      setFormError("에피소드는 10 ~ 10,000 사이여야 합니다.");
-      return;
-    }
-    const payload: TrainingJobRequest = { ticker: ticker.trim(), episodes };
-    createJob.mutate(payload);
-    setTicker("");
-    setTickerName("");
-  }
 
   if (isLoading && isJobsLoading) return <div className="card"><div className="h-40 skeleton" /></div>;
 
   return (
     <div className="space-y-4">
-      {/* 종목 선택 모달 */}
-      <TickerPickerModal
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onSelect={(code, name) => {
-          setTicker(code);
-          setTickerName(name);
-        }}
-      />
-
-      {/* 새 트레이닝 잡 */}
-      <div className="card">
-        <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>새 트레이닝 실행</h3>
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <div>
-            <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>종목 코드</label>
-            <button
-              onClick={() => setPickerOpen(true)}
-              className="mt-1 flex w-44 items-center justify-between rounded-xl border px-3 py-2 text-sm text-left"
-              style={{ borderColor: "var(--border)", background: "var(--bg-secondary)", color: ticker ? "var(--text-primary)" : "var(--text-tertiary)" }}
-            >
-              {ticker ? (
-                <span>{tickerName} <span style={{ color: "var(--text-tertiary)" }}>({ticker})</span></span>
-              ) : (
-                <span>종목 선택...</span>
-              )}
-              <span style={{ color: "var(--text-tertiary)" }}>▾</span>
-            </button>
-          </div>
-          <div>
-            <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
-              에피소드 <span style={{ color: "var(--text-tertiary)" }}>(10 ~ 10,000)</span>
-            </label>
-            <input
-              type="number"
-              value={episodes}
-              min={10}
-              max={10000}
-              onChange={(e) => setEpisodes(Number(e.target.value))}
-              className="mt-1 block w-24 rounded-xl border px-3 py-2 text-sm"
-              style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
-            />
-          </div>
-          <button onClick={handleTrain} disabled={createJob.isPending || !ticker} className="btn-primary">
-            {createJob.isPending ? "실행 중..." : "학습 시작"}
-          </button>
-        </div>
-        {formError && (
-          <p className="mt-2 text-xs font-semibold" style={{ color: "var(--red)" }}>
-            {formError}
-          </p>
-        )}
-        {createJob.isSuccess && (
-          <p className="mt-2 text-xs font-semibold" style={{ color: "var(--green)" }}>
-            트레이닝 잡 생성 완료: {createJob.data?.job_id}
-          </p>
-        )}
-      </div>
-
       {/* 트레이닝 잡 목록 */}
       <div className="card">
         <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>트레이닝 잡</h3>
@@ -636,6 +435,7 @@ function ExperimentsTab() {
                 <th className="pb-2 font-semibold" style={{ color: "var(--text-secondary)" }}>상태</th>
                 <th className="pb-2 font-semibold text-right" style={{ color: "var(--text-secondary)" }}>진행률</th>
                 <th className="pb-2 font-semibold" style={{ color: "var(--text-secondary)" }}>생성</th>
+                <th className="pb-2 font-semibold" style={{ color: "var(--text-secondary)" }}>액션</th>
               </tr>
             </thead>
             <tbody>
@@ -659,11 +459,22 @@ function ExperimentsTab() {
                   <td className="py-2 text-xs" style={{ color: "var(--text-secondary)" }}>
                     {(job.created_at ?? job.started_at)?.slice(0, 16).replace("T", " ") ?? "—"}
                   </td>
+                  <td className="py-2">
+                    {job.status === "queued" ? (
+                      <button
+                        onClick={() => startJob.mutate(job.job_id)}
+                        disabled={startJob.isPending}
+                        className="btn-primary text-xs px-3 py-1"
+                      >
+                        학습 시작
+                      </button>
+                    ) : "—"}
+                  </td>
                 </tr>
               ))}
               {(trainingJobs ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-sm" style={{ color: "var(--text-secondary)" }}>
+                  <td colSpan={7} className="py-8 text-center text-sm" style={{ color: "var(--text-secondary)" }}>
                     아직 트레이닝 잡이 없습니다.
                   </td>
                 </tr>
