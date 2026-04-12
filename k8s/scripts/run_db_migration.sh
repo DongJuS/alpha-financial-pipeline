@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Run instruments v2 migration against K3s PostgreSQL
+# Run DB migrations against K3s PostgreSQL
 # Usage: bash k8s/scripts/run_db_migration.sh
 #
 # This script port-forwards to the K3s PostgreSQL pod,
 # sets DATABASE_URL for the local Python scripts, and
-# runs the 3-step migration sequence.
+# runs the 4-step migration sequence.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -74,15 +74,19 @@ for i in $(seq 1 15); do
 done
 
 # ── 3. Run migration scripts ──
-echo "=== [1/3] Running schema migration ==="
+echo "=== [1/4] Running schema migration ==="
 python scripts/db/migrate_to_v2_instruments.py
 echo "  Schema migration complete."
 
-echo "=== [2/3] Seeding instruments registry ==="
+echo "=== [2/4] Creating ohlcv_minute table + partitions ==="
+python scripts/db/migrate_ohlcv_minute.py
+echo "  ohlcv_minute migration complete."
+
+echo "=== [3/4] Seeding instruments registry ==="
 python scripts/db/seed_all_instruments.py --market KR --instruments-only
 echo "  Instruments seeded."
 
-echo "=== [3/3] Seeding trading universe ==="
+echo "=== [4/4] Seeding trading universe ==="
 python scripts/db/seed_trading_universe.py
 echo "  Trading universe seeded."
 
