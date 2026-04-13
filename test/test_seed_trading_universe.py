@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -96,7 +96,7 @@ async def seed_trading_universe(conn, args: argparse.Namespace) -> dict:
             "VALUES ($1, $2, $3, $4) "
             "ON CONFLICT (account_scope, instrument_id) DO UPDATE SET "
             "priority = EXCLUDED.priority, memo = EXCLUDED.memo",
-            scope, ticker, priority, f"seeded",
+            scope, ticker, priority, "seeded",
         )
 
     return {"count": len(tickers), "scope": scope, "dry_run": False}
@@ -266,7 +266,6 @@ class TestClearFlagDeletesBeforeInsert:
         ))
 
         execution_order: list[str] = []
-        original_execute = conn.execute.side_effect
 
         async def _tracking_execute(query, *args):
             q = query.strip().lower()
