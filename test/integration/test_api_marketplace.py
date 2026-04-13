@@ -23,12 +23,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api.deps import get_current_settings, get_current_user
-from src.api.routers import marketplace as mp_module
 from src.api.routers.marketplace import router as mp_router
 
 API_PREFIX = "/api/v1/marketplace"
