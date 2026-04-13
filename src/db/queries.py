@@ -1654,7 +1654,7 @@ async def upsert_rl_targets(tickers: list[str], data_scope: str = "daily") -> li
         return []
     added: list[str] = []
     for ticker in tickers:
-        result = await execute(
+        await execute(
             """
             INSERT INTO rl_targets (instrument_id, data_scope)
             VALUES ($1, $2)
