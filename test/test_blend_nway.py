@@ -11,8 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.agents.blending import BlendInput, BlendResult, NWayBlendResult, blend_signals, blend_strategy_signals, normalize_weights
-from src.agents.strategy_runner import StrategyRegistry, StrategyRunner
+from src.agents.blending import BlendInput, blend_signals, blend_strategy_signals, normalize_weights
+from src.agents.strategy_runner import StrategyRegistry
 from src.agents.rl_trading_v2 import map_v2_action_to_signal, normalize_q_confidence
 from src.db.models import PredictionSignal
 
@@ -524,9 +524,9 @@ if __name__ == "__main__":
 
 
 
-# ────────────────────────── RL 독립 실행 테스트 ──────────────────────────
+# ────────────────────────── RL 독립 실행 테스트 (NWay) ──────────────────────────
 
-class TestRLIndependentExecution(unittest.TestCase):
+class TestRLIndependentExecutionNWay(unittest.TestCase):
     """RL이 N-way 블렌딩에서 분리되어 독립적으로 실행되는지 검증한다."""
 
     def _make_signal(self, ticker, signal, confidence, strategy="A"):
