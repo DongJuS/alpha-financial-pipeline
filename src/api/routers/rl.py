@@ -136,7 +136,7 @@ async def list_policies(
 ) -> ListResponse:
     try:
         store = _get_store()
-        active_map = await store.list_active_policies()
+        await store.list_active_policies()
         tickers_list = [ticker] if ticker else await store.list_all_tickers()
     except Exception as e:
         logger.warning("RL 정책 레지스트리 로드 실패: %s", e)
