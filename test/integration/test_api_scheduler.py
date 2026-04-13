@@ -12,11 +12,9 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import src.api.routers.scheduler as scheduler_module
 from src.api.routers.scheduler import router as scheduler_router
 
 API_PREFIX = "/api/v1/scheduler"

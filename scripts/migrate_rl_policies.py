@@ -27,9 +27,7 @@ scripts/migrate_rl_policies.py — RL 정책 아티팩트 마이그레이션
 
 from __future__ import annotations
 
-import argparse
 import json
-import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,7 +38,6 @@ sys.path.insert(0, str(ROOT))
 
 from src.agents.rl_policy_registry import (
     PolicyEntry,
-    build_relative_path,
 )
 
 # 주의: PolicyRegistry 클래스가 제거됨 (DB 전환).
@@ -143,143 +140,10 @@ def run_migration(*, execute: bool = False, clean: bool = False) -> None:
 
     DEPRECATED: registry.json 기반 마이그레이션. DB 마이그레이션은
     scripts/db/migrate_rl_registry.py 를 사용하세요.
+    PolicyRegistry 클래스가 제거되어(DB 전환) 이 함수는 더 이상 동작하지 않습니다.
     """
     print("\n[DEPRECATED] 이 스크립트는 registry.json 기반입니다.")
     print("DB 마이그레이션은 scripts/db/migrate_rl_registry.py 를 사용하세요.\n")
-    mode = "EXECUTE" if execute else "DRY-RUN"
-    print(f"\n{'='*60}")
-    print(f"  RL 정책 마이그레이션 ({mode})")
-    print(f"{'='*60}\n")
-
-    # 1. 레거시 정책 수집
-    legacy = discover_legacy_policies()
-    intermediate = discover_intermediate_policies()
-    v1_active = load_v1_active_policies()
-
-    print(f"레거시 정책 (artifacts/rl/*.json): {len(legacy)}개")
-    print(f"중간 구조 정책 (artifacts/rl/models/<ticker>/*.json): {len(intermediate)}개")
-    print(f"V1 활성 정책: {list(v1_active.keys())}\n")
-
-    # 중복 제거: policy_id 기준으로 최신 파일 우선
-    all_policies: dict[str, tuple[Path, dict]] = {}
-
-    for path, data in legacy:
-        pid = data["policy_id"]
-        if pid not in all_policies:
-            all_policies[pid] = (path, data)
-
-    for path, data in intermediate:
-        pid = data["policy_id"]
-        # 중간 구조가 레거시보다 우선 (더 나중에 복사된 것)
-        all_policies[pid] = (path, data)
-
-    print(f"고유 정책 (중복 제거 후): {len(all_policies)}개\n")
-
-    # 2. 레지스트리 구성
-    registry = PolicyRegistry()
-    migrated = 0
-    skipped = 0
-
-    for pid, (source_path, data) in sorted(all_policies.items()):
-        ticker = data.get("ticker", "unknown")
-        algorithm = data.get("algorithm", "tabular_q_learning")
-
-        # 대상 경로 계산
-        relative_path = build_relative_path(algorithm, ticker, pid)
-        target_path = MODELS_DIR / relative_path
-
-        # 파일 복사/이동
-        if target_path.exists() and target_path != source_path:
-            print(f"  [SKIP] 이미 존재: {relative_path}")
-            skipped += 1
-        elif target_path == source_path:
-            print(f"  [KEEP] 이미 올바른 위치: {relative_path}")
-        else:
-            print(f"  [COPY] {source_path.relative_to(ROOT)} → {relative_path}")
-            if execute:
-                target_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source_path, target_path)
-                # artifact_path도 업데이트
-                data["artifact_path"] = str(target_path)
-                target_path.write_text(
-                    json.dumps(data, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-            migrated += 1
-
-        # 레지스트리에 등록
-        entry = policy_to_entry(data, relative_path)
-        registry.register_policy(entry)
-
-    # 3. V1 활성 정책 반영
-    print("\n활성 정책 매핑:")
-    for ticker, info in v1_active.items():
-        active_pid = info.get("policy_id")
-        if active_pid:
-            tp = registry.get_ticker(ticker)
-            entry = tp.get_policy(active_pid)
-            if entry:
-                tp.active_policy_id = active_pid
-                print(f"  {ticker} → {active_pid} (V1에서 이전)")
-            else:
-                print(f"  {ticker} → {active_pid} (레지스트리에 없음, 무시)")
-
-    # 4. 빈 알고리즘 디렉토리 생성
-    for algo_dir in ["tabular", "dqn", "ppo"]:
-        dir_path = MODELS_DIR / algo_dir
-        if not dir_path.exists():
-            print(f"\n  [MKDIR] {algo_dir}/")
-            if execute:
-                dir_path.mkdir(parents=True, exist_ok=True)
-
-    # 5. registry.json 저장
-    print("\nregistry.json 저장:")
-    print(f"  종목 수: {len(registry.tickers)}")
-    print(f"  정책 수: {registry.total_policy_count()}")
-    print(f"  활성 정책: {registry.list_active_policies()}")
-
-    if execute:
-        MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        payload = registry.model_dump(mode="json")
-        REGISTRY_PATH.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, default=str),
-            encoding="utf-8",
-        )
-        print(f"  → {REGISTRY_PATH.relative_to(ROOT)} 저장 완료")
-
-    # 6. 레거시 파일 정리 (선택)
-    if clean:
-        print("\n레거시 파일 정리:")
-        for path, _ in legacy:
-            print(f"  [DEL] {path.relative_to(ROOT)}")
-            if execute:
-                path.unlink()
-
-        # 중간 구조의 빈 디렉토리 정리
-        for ticker_dir in sorted(MODELS_DIR.iterdir()):
-            if not ticker_dir.is_dir():
-                continue
-            if ticker_dir.name in {"tabular", "dqn", "ppo"}:
-                continue
-            # 이미 tabular로 복사되었으므로 제거 가능
-            for f in ticker_dir.glob("*.json"):
-                print(f"  [DEL] {f.relative_to(ROOT)}")
-                if execute:
-                    f.unlink()
-            if execute and not any(ticker_dir.iterdir()):
-                ticker_dir.rmdir()
-                print(f"  [RMDIR] {ticker_dir.relative_to(ROOT)}")
-
-    # 요약
-    print(f"\n{'='*60}")
-    print(f"  마이그레이션 완료 요약 ({mode})")
-    print(f"{'='*60}")
-    print(f"  복사/이동: {migrated}개")
-    print(f"  스킵 (이미 존재): {skipped}개")
-    print(f"  레지스트리 등록: {registry.total_policy_count()}개")
-    if not execute:
-        print("\n  실제 실행하려면 --execute 플래그를 추가하세요.")
-    print()
 
 
 def main() -> None:

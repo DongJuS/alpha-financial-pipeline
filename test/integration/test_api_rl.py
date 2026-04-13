@@ -20,12 +20,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api.deps import get_current_settings, get_current_user
-from src.api.routers import rl as rl_module
 from src.api.routers.rl import router as rl_router
 
 API_PREFIX = "/api/v1/rl"
