@@ -3,6 +3,9 @@
 # load_dotenv() 패턴으로 E402 (module level import not at top) 다수 발생.
 # 프로젝트 구조상 의도적인 패턴이므로 무시.
 
+target-version = "py311"
+line-length = 100
+
 [lint]
 select = ["F", "E"]
 ignore = [
@@ -13,3 +16,5 @@ ignore = [
 [lint.per-file-ignores]
 # __init__.py의 re-export는 F401 무시
 "__init__.py" = ["F401"]
+# 테스트에서 mock fixture 반환값 등 unused variable은 의도적
+"test/**" = ["F841"]

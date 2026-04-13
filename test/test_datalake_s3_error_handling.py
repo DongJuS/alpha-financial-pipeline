@@ -11,7 +11,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -128,7 +127,6 @@ class TestDatalakeS3ErrorHandling:
         mock_s3.return_value = MagicMock()
 
         # asyncio.to_thread가 RuntimeError를 던지는 상황 시뮬레이션
-        import asyncio as real_asyncio
 
         async def _failing_to_thread(*args, **kwargs):
             raise RuntimeError("Thread pool exhausted")

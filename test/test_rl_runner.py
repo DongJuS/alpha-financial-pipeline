@@ -6,12 +6,11 @@ run(), _infer_for_ticker(), _infer_sb3(), _map_action_to_signal(), _log_skip()
 """
 from __future__ import annotations
 
-from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.agents.rl_runner import RLRunner, _format_q_values, _MIN_CLOSES_FOR_INFERENCE
+from src.agents.rl_runner import RLRunner, _format_q_values
 from src.agents.rl_trading import RLEvaluationMetrics, RLPolicyArtifact
 
 
@@ -152,7 +151,7 @@ class TestRLRunnerRun:
         with patch.object(RLRunner, "_log_skip", new_callable=AsyncMock):
             with patch.object(runner, "_infer_for_ticker", new_callable=AsyncMock) as mock_infer:
                 mock_infer.return_value = None
-                result = await runner.run(["005930", "000660"])
+                await runner.run(["005930", "000660"])
         # 005930 has policy, 000660 doesn't
         mock_infer.assert_called_once()
 

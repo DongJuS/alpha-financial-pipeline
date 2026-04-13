@@ -11,18 +11,14 @@ DB는 mock으로 대체.
 
 from __future__ import annotations
 
-import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
-import jwt
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api.deps import get_current_settings, get_current_user
-from src.api.routers import audit as audit_module
 from src.api.routers.audit import router as audit_router
 
 API_PREFIX = "/api/v1/audit"

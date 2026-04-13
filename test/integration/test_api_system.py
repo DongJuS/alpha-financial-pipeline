@@ -13,13 +13,11 @@ DB/Redis/S3는 mock으로 대체.
 
 from __future__ import annotations
 
-import asyncio
 from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
