@@ -1,0 +1,16 @@
+# RL 자동 재학습 비활성화 (prod 환경).
+# Hetzner CX22 (4GB RAM)에서 RL 학습 시 torch+SB3+Optuna가 ~3GB를 추가 소모하여 OOM.
+# 워크플로우: 로컬 MacBook에서 학습 → .zip 모델 파일 업로드 → 서버는 추론만 수행.
+# Docker Compose에서도 동일 설정: docker-compose.prod.yml의 worker.environment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: worker
+          env:
+            - name: ORCH_ENABLE_RL_AUTO_RETRAIN
+              value: "false"
