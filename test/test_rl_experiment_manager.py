@@ -19,10 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.agents.rl_experiment_manager import (
-    RLDatasetMeta,
-    RLExperimentConfig,
     RLExperimentManager,
-    RLExperimentRun,
 )
 from src.agents.rl_trading import (
     RLDataset,
@@ -661,7 +658,7 @@ class TestRLExperimentManagerBuildIndex(unittest.TestCase):
         self._create_sample_run("TEST", 8.5)
 
         manager = RLExperimentManager(self.artifacts_dir)
-        index = manager.build_index()
+        manager.build_index()
 
         index_path = self.artifacts_dir / "experiments" / "index.json"
         self.assertTrue(index_path.exists())

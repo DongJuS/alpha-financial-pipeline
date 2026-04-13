@@ -11,9 +11,7 @@ Phase 9 구현 항목:
 
 from __future__ import annotations
 
-import math
 import random
-from datetime import date, datetime, timezone
 
 import pytest
 
