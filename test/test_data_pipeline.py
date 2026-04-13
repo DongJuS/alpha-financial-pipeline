@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import sys
 import unittest
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
