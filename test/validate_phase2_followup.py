@@ -34,7 +34,7 @@ def syntax_check(filepath: Path) -> bool:
     try:
         ast.parse(filepath.read_text(encoding="utf-8"), filename=str(filepath))
         return True
-    except SyntaxError as e:
+    except SyntaxError:
         return False
 
 
