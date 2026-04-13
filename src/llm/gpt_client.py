@@ -9,7 +9,7 @@ import os
 import shutil
 from typing import Any, Optional
 
-from src.llm.cli_bridge import is_cli_available, run_cli_prompt_with_output_file
+from src.llm.cli_bridge import CLIAuthError, is_cli_available, run_cli_prompt_with_output_file
 from src.services.llm_usage_limiter import reserve_provider_call
 from src.utils.config import get_settings
 from src.utils.logging import get_logger
@@ -88,17 +88,8 @@ class GPTClient:
         self._auth_mode: Optional[str] = None
         self._effective_model = model
         self._quota_exhausted = self.__class__._global_quota_exhausted
-        if not is_placeholder_secret(self.api_key):
-            try:
-                from openai import AsyncOpenAI
 
-                self._client = AsyncOpenAI(api_key=self.api_key)
-                self._auth_mode = "api_key"
-                return
-            except Exception as e:
-                logger.warning("OpenAI SDK 초기화 실패: %s", e)
-                self._client = None
-
+        # CLI 먼저 시도 → SDK는 fallback용으로만 준비
         self._cli_command = _build_codex_cli_command(self.model)
         if self._cli_command and is_cli_available(self._cli_command):
             self._auth_mode = "codex_cli"
@@ -108,6 +99,26 @@ class GPTClient:
                 self.model,
                 self._effective_model,
             )
+            # API key가 있으면 SDK도 준비 (fallback용)
+            if not is_placeholder_secret(self.api_key):
+                try:
+                    from openai import AsyncOpenAI
+
+                    self._client = AsyncOpenAI(api_key=self.api_key)
+                except Exception as e:
+                    logger.warning("OpenAI SDK fallback 초기화 실패: %s", e)
+            return
+
+        # CLI 없으면 SDK 사용
+        if not is_placeholder_secret(self.api_key):
+            try:
+                from openai import AsyncOpenAI
+
+                self._client = AsyncOpenAI(api_key=self.api_key)
+                self._auth_mode = "api_key"
+            except Exception as e:
+                logger.warning("OpenAI SDK 초기화 실패: %s", e)
+                self._client = None
 
     @property
     def is_configured(self) -> bool:
@@ -144,12 +155,20 @@ class GPTClient:
                     prompt=prompt,
                     timeout_seconds=self.cli_timeout_seconds,
                 )
+            except CLIAuthError as e:
+                logger.warning("Codex CLI 인증 실패, SDK fallback 시도: %s", e)
+                if self._client is None:
+                    raise
+                # SDK fallback — fall through to SDK call below
             except Exception as e:
                 if self._is_quota_error(e):
                     self._quota_exhausted = True
                     self.__class__._global_quota_exhausted = True
                     logger.warning("OpenAI quota exhausted.")
                 raise
+
+        if self._client is None:
+            raise RuntimeError("GPT client is not configured.")
         try:
             resp = await self._client.chat.completions.create(
                 model=self.model,
