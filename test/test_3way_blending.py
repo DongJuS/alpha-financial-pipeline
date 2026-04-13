@@ -20,8 +20,8 @@ from datetime import date
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("JWT_SECRET", "test-secret")
 
-from src.agents.blending import BlendInput, NWayBlendResult, blend_signals
-from src.agents.orchestrator import DEFAULT_BLEND_WEIGHTS, OrchestratorAgent
+from src.agents.blending import BlendInput, blend_signals
+from src.agents.orchestrator import OrchestratorAgent
 from src.db.models import PredictionSignal
 
 
@@ -187,7 +187,7 @@ class TestOrchestratorThreeWayBlending(unittest.TestCase):
             "B": [_make_signal("B", "005930", "BUY", 0.7)],
             "RL": [_make_signal("RL", "005930", "BUY", 0.6)],
         }
-        blended_3way = self.orch._blend_nway_predictions(all_preds_3way)
+        self.orch._blend_nway_predictions(all_preds_3way)
 
         # RL 빈 시그널
         all_preds_2way = {

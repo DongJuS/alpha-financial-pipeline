@@ -6,7 +6,6 @@ test/test_marketplace_week1.py — 마켓플레이스 Week 1 데이터 기반 �
 
 import unittest
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.db.models import (
     DailyRanking,
