@@ -1,6 +1,6 @@
 import unittest
-from datetime import datetime, time
-from unittest.mock import AsyncMock, patch
+from datetime import datetime
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from src.utils.market_hours import is_market_open_now, market_session_status
