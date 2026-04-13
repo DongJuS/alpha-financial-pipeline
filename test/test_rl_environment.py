@@ -5,7 +5,6 @@ Gymnasium 호환 트레이딩 환경의 단위 테스트.
 """
 from __future__ import annotations
 
-import math
 import numpy as np
 import pytest
 

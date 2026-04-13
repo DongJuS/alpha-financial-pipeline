@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -17,7 +16,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.agents.rl_continuous_improver import (
     RLContinuousImprover,
-    RetrainOutcome,
 )
 from src.agents.rl_split_bandit import DEFAULT_RATIOS, RLSplitBandit, reward_from_walk_forward
 from src.agents.rl_trading import (
