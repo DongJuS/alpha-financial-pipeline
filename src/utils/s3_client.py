@@ -40,7 +40,19 @@ def _get_s3_client():
 
 
 async def ensure_bucket(bucket: str | None = None) -> None:
-    """버킷이 없으면 생성합니다."""
+    """버킷이 없으면 생성합니다.
+
+    이 함수는 두 가지 S3 백엔드를 모두 지원합니다:
+
+    1. **MinIO (로컬/K3s):** create_bucket()이 정상 동작하여 버킷을 자동 생성.
+    2. **Cloudflare R2 (클라우드):** R2는 S3 API로 버킷 생성을 지원하지 않음.
+       create_bucket() 호출 시 403(Forbidden) 또는 409(Conflict)를 반환.
+       이 경우 경고 로그만 남기고 서비스를 정상 기동시킵니다.
+       R2 버킷은 Cloudflare 콘솔에서 사전 생성해야 합니다.
+
+    배포 환경 전환(K3s ↔ Compose)은 S3_ENDPOINT_URL 환경변수만 변경하면 되며,
+    이 코드를 수정할 필요가 없습니다. (.env.example 참조)
+    """
     settings = get_settings()
     bucket = bucket or settings.s3_bucket_name
     client = _get_s3_client()
@@ -52,8 +64,27 @@ async def ensure_bucket(bucket: str | None = None) -> None:
         except ClientError as e:
             error_code = int(e.response["Error"]["Code"])
             if error_code == 404:
-                client.create_bucket(Bucket=bucket)
-                logger.info("S3 버킷 '%s' 생성 완료", bucket)
+                try:
+                    # MinIO: 정상적으로 버킷 생성됨
+                    client.create_bucket(Bucket=bucket)
+                    logger.info("S3 버킷 '%s' 생성 완료", bucket)
+                except ClientError as create_err:
+                    create_code = int(
+                        create_err.response["Error"]["Code"]
+                    )
+                    # R2: API로 버킷 생성 불가 → 403/409 반환.
+                    # 버킷은 Cloudflare 콘솔에서 사전 생성되어 있어야 한다.
+                    # 서비스 크래시를 방지하기 위해 경고 로그만 남기고 진행.
+                    if create_code in (403, 409):
+                        logger.warning(
+                            "S3 버킷 '%s' 자동 생성 실패 (code=%d). "
+                            "콘솔에서 사전 생성이 필요합니다 "
+                            "(예: Cloudflare R2)",
+                            bucket,
+                            create_code,
+                        )
+                    else:
+                        raise
             else:
                 raise
 
