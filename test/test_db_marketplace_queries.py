@@ -7,7 +7,7 @@ DB 없이 실행 가능하도록 src.utils.db_client의 함수를 mock합니다.
 from __future__ import annotations
 
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 

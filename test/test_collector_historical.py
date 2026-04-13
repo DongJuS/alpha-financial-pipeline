@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import date, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
@@ -164,7 +163,7 @@ class TestFetchHistoricalDaily:
             patch("src.db.queries.upsert_market_data", new_callable=AsyncMock, return_value=2),
             patch("src.agents.collector._base.get_redis", new_callable=AsyncMock, return_value=redis_mock),
         ):
-            points = await collector._fetch_historical_daily(
+            await collector._fetch_historical_daily(
                 "005930", "2026-01-01", "2026-01-10", "삼성전자", "KOSPI",
             )
 
