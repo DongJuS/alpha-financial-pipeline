@@ -16,7 +16,6 @@ from src.backtest.models import (
     BacktestConfig,
     BacktestMetrics,
     BacktestResult,
-    DailySnapshot,
     TradeRecord,
 )
 

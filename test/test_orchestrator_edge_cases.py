@@ -9,7 +9,7 @@ import pytest
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.agents.orchestrator import OrchestratorAgent, DEFAULT_BLEND_WEIGHTS
+from src.agents.orchestrator import OrchestratorAgent
 from src.db.models import PredictionSignal
 
 
