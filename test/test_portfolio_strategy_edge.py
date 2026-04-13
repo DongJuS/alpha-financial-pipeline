@@ -3,6 +3,7 @@ test/test_portfolio_strategy_edge.py — Portfolio Manager & Strategy Runner edg
 
 QA Round 2: PortfolioManagerAgent, StrategyARunner, StrategyBRunner 에지케이스 8건.
 """
+from __future__ import annotations
 
 from datetime import date
 import unittest
@@ -130,7 +131,7 @@ class PortfolioManagerRuleBasedExitEdgeTest(unittest.IsolatedAsyncioTestCase):
 class StrategyARunnerEdgeTest(unittest.IsolatedAsyncioTestCase):
     """StrategyARunner 에지케이스."""
 
-    def _make_runner(self) -> "StrategyARunner":
+    def _make_runner(self):
         from src.agents.strategy_a_runner import StrategyARunner
 
         runner = StrategyARunner.__new__(StrategyARunner)
@@ -171,7 +172,7 @@ class StrategyARunnerEdgeTest(unittest.IsolatedAsyncioTestCase):
 class StrategyBRunnerEdgeTest(unittest.IsolatedAsyncioTestCase):
     """StrategyBRunner 에지케이스."""
 
-    def _make_runner(self) -> "StrategyBRunner":
+    def _make_runner(self):
         from src.agents.strategy_b_runner import StrategyBRunner
 
         runner = StrategyBRunner.__new__(StrategyBRunner)
