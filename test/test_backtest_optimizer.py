@@ -5,7 +5,7 @@ test/test_backtest_optimizer.py — BlendOptimizer 단위 테스트
 from __future__ import annotations
 
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 

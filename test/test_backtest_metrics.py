@@ -245,8 +245,6 @@ class TestComputeBacktestMetrics:
         config = _make_config(initial_capital=10_000_000)
         n_days = 126
         total_return = 0.10
-        portfolio = 10_000_000.0 * (1 + total_return)
-
         snapshots = []
         daily_ret = (1 + total_return) ** (1.0 / n_days) - 1.0
         current = 10_000_000.0
