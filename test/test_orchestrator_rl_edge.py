@@ -7,7 +7,7 @@ Q-value tie-breaking, 정책 모드 ticker 격리를 검증한다.
 from __future__ import annotations
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from src.agents.orchestrator import OrchestratorAgent
 from src.agents.rl_environment import TradingEnv, TradingEnvConfig, ACTION_BUY
