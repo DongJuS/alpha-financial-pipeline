@@ -319,6 +319,128 @@ class TestEnsureBucketEdgeCases:
         mock_client.create_bucket.assert_not_called()
 
 
+class TestEnsureBucketR2:
+    """ensure_bucket: Cloudflare R2 환경 시뮬레이션.
+
+    R2는 버킷 자동 생성을 지원하지 않아 create_bucket 시 403/409를 반환.
+    ensure_bucket은 이를 경고 로그로 처리하고 예외 없이 완료해야 합니다.
+    """
+
+    @pytest.mark.asyncio
+    async def test_r2_create_bucket_403_suppressed(self):
+        """R2: head_bucket 404 → create_bucket 403 → 예외 없이 완료."""
+        from botocore.exceptions import ClientError
+
+        mock_client, mock_settings = _mock_s3_setup()
+        mock_settings.s3_endpoint_url = "https://abc123.r2.cloudflarestorage.com"
+        mock_settings.s3_region = "auto"
+
+        mock_client.head_bucket = MagicMock(
+            side_effect=ClientError(
+                {"Error": {"Code": "404", "Message": "Not Found"}},
+                "HeadBucket",
+            )
+        )
+        mock_client.create_bucket = MagicMock(
+            side_effect=ClientError(
+                {"Error": {"Code": "403", "Message": "Forbidden"}},
+                "CreateBucket",
+            )
+        )
+
+        with (
+            patch("src.utils.s3_client._get_s3_client", return_value=mock_client),
+            patch("src.utils.s3_client.get_settings", return_value=mock_settings),
+        ):
+            from src.utils.s3_client import ensure_bucket
+
+            # 403은 경고 로그만 남기고 예외 없이 완료
+            await ensure_bucket()
+
+    @pytest.mark.asyncio
+    async def test_r2_create_bucket_409_suppressed(self):
+        """R2: head_bucket 404 → create_bucket 409 (BucketAlreadyExists) → 예외 없이 완료."""
+        from botocore.exceptions import ClientError
+
+        mock_client, mock_settings = _mock_s3_setup()
+        mock_settings.s3_endpoint_url = "https://abc123.r2.cloudflarestorage.com"
+        mock_settings.s3_region = "auto"
+
+        mock_client.head_bucket = MagicMock(
+            side_effect=ClientError(
+                {"Error": {"Code": "404", "Message": "Not Found"}},
+                "HeadBucket",
+            )
+        )
+        mock_client.create_bucket = MagicMock(
+            side_effect=ClientError(
+                {"Error": {"Code": "409", "Message": "BucketAlreadyOwnedByYou"}},
+                "CreateBucket",
+            )
+        )
+
+        with (
+            patch("src.utils.s3_client._get_s3_client", return_value=mock_client),
+            patch("src.utils.s3_client.get_settings", return_value=mock_settings),
+        ):
+            from src.utils.s3_client import ensure_bucket
+
+            # 409은 경고 로그만 남기고 예외 없이 완료
+            await ensure_bucket()
+
+    @pytest.mark.asyncio
+    async def test_r2_create_bucket_unexpected_error_propagates(self):
+        """R2: head_bucket 404 → create_bucket 500 → 예외 전파."""
+        from botocore.exceptions import ClientError
+
+        mock_client, mock_settings = _mock_s3_setup()
+        mock_client.head_bucket = MagicMock(
+            side_effect=ClientError(
+                {"Error": {"Code": "404", "Message": "Not Found"}},
+                "HeadBucket",
+            )
+        )
+        mock_client.create_bucket = MagicMock(
+            side_effect=ClientError(
+                {"Error": {"Code": "500", "Message": "Internal Server Error"}},
+                "CreateBucket",
+            )
+        )
+
+        with (
+            patch("src.utils.s3_client._get_s3_client", return_value=mock_client),
+            patch("src.utils.s3_client.get_settings", return_value=mock_settings),
+        ):
+            from src.utils.s3_client import ensure_bucket
+
+            with pytest.raises(ClientError):
+                await ensure_bucket()
+
+    @pytest.mark.asyncio
+    async def test_minio_create_bucket_success(self):
+        """MinIO: head_bucket 404 → create_bucket 성공 (정상 플로우)."""
+        from botocore.exceptions import ClientError
+
+        mock_client, mock_settings = _mock_s3_setup()
+        mock_client.head_bucket = MagicMock(
+            side_effect=ClientError(
+                {"Error": {"Code": "404", "Message": "Not Found"}},
+                "HeadBucket",
+            )
+        )
+        mock_client.create_bucket = MagicMock()  # 성공
+
+        with (
+            patch("src.utils.s3_client._get_s3_client", return_value=mock_client),
+            patch("src.utils.s3_client.get_settings", return_value=mock_settings),
+        ):
+            from src.utils.s3_client import ensure_bucket
+
+            await ensure_bucket()
+
+        mock_client.create_bucket.assert_called_once_with(Bucket="test-bucket")
+
+
 class TestUploadBytesEdgeCases:
     """upload_bytes: 빈 데이터, 특수 키 경로."""
 

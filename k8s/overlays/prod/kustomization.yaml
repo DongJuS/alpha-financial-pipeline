@@ -8,6 +8,7 @@ patches:
   - path: patches/resource-limits.yaml
   - path: patches/replicas.yaml
   - path: patches/ingress.yaml
+  - path: patches/worker-env.yaml
 
 configMapGenerator:
   - name: app-config
@@ -17,3 +18,6 @@ configMapGenerator:
       - LOG_LEVEL=INFO
       - DYNAMIC_BLEND_WEIGHTS_ENABLED=true
       - MARKET_HOURS_ENFORCED=true
+      # Cloudflare R2 전환 시 아래 주석을 해제하고 MinIO URL 대체.
+      # base configmap의 http://minio:9000 은 로컬 K3s (Bitnami MinIO) 용.
+      # - S3_ENDPOINT_URL=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
