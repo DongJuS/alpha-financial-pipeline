@@ -7,12 +7,11 @@ from __future__ import annotations
 
 import pytest
 from datetime import date, datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from src.agents.rl_shadow_inference import (
     ShadowInferenceEngine,
     ShadowRecord,
-    ShadowPerformance,
     PaperPromotionCriteria,
     RealPromotionCriteria,
     PromotionCheckResult,

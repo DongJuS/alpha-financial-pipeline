@@ -13,7 +13,7 @@ PolicyEntry 는 DB row ↔ 코드 간 DTO 역할만 수행한다.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 

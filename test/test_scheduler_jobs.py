@@ -6,9 +6,7 @@ test_schedulers.py의 기존 테스트를 보강합니다.
 
 from __future__ import annotations
 
-import asyncio
 import json
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
