@@ -12,15 +12,13 @@ DB/Redis는 mock으로 대체.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api.deps import get_current_settings, get_current_user
-from src.api.routers import agents as agents_module
 from src.api.routers.agents import router as agents_router
 
 API_PREFIX = "/api/v1/agents"
