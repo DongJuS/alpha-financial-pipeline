@@ -16,6 +16,7 @@ logger = get_logger(__name__)
 _PROVIDER_LABELS = {
     "claude": "Claude",
     "codex": "Codex",
+    "gpt": "GPT",
     "gemini": "Gemini",
 }
 
@@ -48,7 +49,9 @@ def usage_window(*, timezone_name: str, now: datetime | None = None) -> tuple[st
     return current.date().isoformat(), ttl_seconds
 
 
-async def reserve_provider_call(provider: str, *, limit: int | None = None) -> tuple[int, int]:
+async def reserve_provider_call(
+    provider: str, *, limit: int | None = None, mode: str = "unknown"
+) -> tuple[int, int]:
     settings = get_settings()
     provider_key = provider.strip().lower()
     resolved_limit = limit if limit is not None else settings.llm_daily_provider_limit
@@ -76,5 +79,13 @@ async def reserve_provider_call(provider: str, *, limit: int | None = None) -> t
     if remaining in {5, 1, 0}:
         label = _PROVIDER_LABELS.get(provider_key, provider_key.upper())
         logger.warning("%s 일일 사용량 %d/%d", label, count, resolved_limit)
+
+    # mode별 사용량 추적 (별도 키, limit 체크 없이 카운트만 — 실패해도 무시)
+    try:
+        mode_key = f"llm:mode:{provider_key}:{mode}:daily:{date_key}"
+        await redis.incr(mode_key)
+        await redis.expire(mode_key, ttl_seconds)
+    except Exception:
+        pass
 
     return count, resolved_limit
