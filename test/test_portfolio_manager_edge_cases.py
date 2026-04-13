@@ -12,7 +12,6 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from src.agents.portfolio_manager import PortfolioManagerAgent
-from src.brokers.paper import PaperBrokerExecution
 from src.db.models import PredictionSignal
 
 

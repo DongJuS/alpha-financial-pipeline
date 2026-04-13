@@ -61,13 +61,13 @@ class TestStrategyBExceptionLogsAndReturnsEmpty(unittest.IsolatedAsyncioTestCase
                 "src.agents.strategy_b_runner.log_event",
                 new=AsyncMock(),
                 create=True,
-            ) as mock_log_event,
+            ),
         ):
             # log_event는 lazy import이므로 strategy_b_runner 내부에서 직접 패치
             with patch(
                 "src.utils.db_logger.log_event",
                 new=AsyncMock(),
-            ) as mock_db_log:
+            ):
                 result = await runner.run(["005930"])
 
         self.assertEqual(result, [])
