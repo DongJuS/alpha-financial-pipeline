@@ -6,19 +6,16 @@ ShadowInferenceEngine.get_policy_mode의 다양한 경로를 검증합니다.
 """
 from __future__ import annotations
 
-import numpy as np
 import pytest
 from datetime import date, datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from src.agents.rl_environment import (
     TradingEnv,
     TradingEnvConfig,
     ACTION_BUY,
-    ACTION_SELL,
     ACTION_HOLD,
 )
-from unittest.mock import AsyncMock
 
 from src.agents.rl_shadow_inference import ShadowInferenceEngine, ShadowRecord
 from src.agents.rl_policy_registry import PolicyEntry

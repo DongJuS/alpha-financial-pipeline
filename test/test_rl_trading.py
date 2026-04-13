@@ -6,7 +6,6 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.agents.orchestrator import OrchestratorAgent
 from src.agents.portfolio_manager import PortfolioManagerAgent
 from src.agents.rl_trading import (
     RLEvaluationMetrics,
@@ -17,7 +16,7 @@ from src.agents.rl_trading import (
     TabularQTrainer,
 )
 from src.brokers.paper import PaperBrokerExecution
-from src.db.models import MarketDataPoint, PredictionSignal
+from src.db.models import PredictionSignal
 
 
 def _uptrend_closes(length: int = 90) -> list[float]:
@@ -450,7 +449,7 @@ class RLTrainerEdgeCaseTest(unittest.TestCase):
             timestamps=[str(i) for i in range(len(closes))],
         )
         trainer_few = TabularQTrainer(episodes=10, epsilon=0.20)
-        artifact_few = trainer_few.train(dataset)
+        trainer_few.train(dataset)
 
         trainer_many = TabularQTrainer(episodes=100, epsilon=0.20)
         artifact_many = trainer_many.train(dataset)
