@@ -1,10 +1,12 @@
 """
 test/test_qa_fixes.py — QA 잔여 이슈 (C3, H1~H4, M1~M4) 수정 검증 테스트
 """
+from __future__ import annotations
+
 import os
 import types
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 # MacroCollector/KrxStockMasterCollector는 모듈 임포트 시 get_settings()를 호출하므로
 # 최소 필수 env var를 미리 설정
@@ -290,7 +292,7 @@ class TestGenKisDbSchema(unittest.TestCase):
     REQUIRED_FIELDS = {"instrument_id", "name", "market", "traded_at", "open", "high", "low", "close", "volume"}
     OPTIONAL_FIELDS = {"change_pct", "adj_close"}
 
-    def _make_gen_daily_point(self) -> "MarketDataPoint":
+    def _make_gen_daily_point(self):
         """GenCollector.collect_daily_bars에서 생성하는 MarketDataPoint 재현."""
         from datetime import date as date_type
         from src.db.models import MarketDataPoint
@@ -308,7 +310,7 @@ class TestGenKisDbSchema(unittest.TestCase):
             close=bar["close"], volume=bar["volume"], change_pct=bar["change_pct"],
         )
 
-    def _make_kis_daily_point(self) -> "MarketDataPoint":
+    def _make_kis_daily_point(self):
         """CollectorAgent._fetch_daily_bars에서 생성하는 MarketDataPoint 재현."""
         from datetime import date as date_type
         from src.db.models import MarketDataPoint
@@ -320,7 +322,7 @@ class TestGenKisDbSchema(unittest.TestCase):
             volume=1000000, change_pct=0.69,
         )
 
-    def _make_gen_tick_point(self) -> "MarketDataPoint":
+    def _make_gen_tick_point(self):
         """GenCollector.collect_realtime_ticks에서 생성하는 MarketDataPoint 재현."""
         from datetime import date as date_type
         from src.db.models import MarketDataPoint
@@ -338,7 +340,7 @@ class TestGenKisDbSchema(unittest.TestCase):
             change_pct=q["change_pct"],
         )
 
-    def _make_kis_tick_point(self) -> "MarketDataPoint":
+    def _make_kis_tick_point(self):
         """CollectorAgent KIS WebSocket에서 생성하는 MarketDataPoint 재현."""
         from datetime import date as date_type
         from src.db.models import MarketDataPoint
@@ -398,11 +400,8 @@ class TestGenKisRedisCacheSchema(unittest.TestCase):
 
     def _make_redis_payload(self, close: float, change_pct, source: str) -> dict:
         """_cache_latest_tick 내 payload 딕셔너리 재현."""
-        from datetime import date as date_type, datetime
-        from zoneinfo import ZoneInfo
+        from datetime import date as date_type
         from src.db.models import MarketDataPoint
-
-        KST = ZoneInfo("Asia/Seoul")
         point = MarketDataPoint(
             instrument_id="005930.KS", name="삼성전자", market="KOSPI",
             traded_at=date_type.today(),
@@ -520,5 +519,4 @@ class TestGenKisPubSubSchema(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    import asyncio
     unittest.main()

@@ -29,6 +29,30 @@
 
 ## ✅ 최근 완료
 
+### 클라우드 LLM 인증·비용 전략 구현 (2026-04-13)
+
+CLI 구독 인증 1순위 + API Key SDK 자동 fallback + 1분 주기 Health 감시.
+- `cli_bridge.py` — `CLIAuthError` 예외 + stderr 인증 키워드 감지 (9개 패턴)
+- `claude_client.py` — CLI auth 실패 → SDK lazy fallback (`_ensure_sdk_client()`)
+- `gpt_client.py` — CLI 구독 우선순위로 변경 (기존 API key 우선 → CLI 먼저) + auth 실패 시 SDK fallback
+- `llm_usage_limiter.py` — `reserve_provider_call(mode=)` CLI/SDK 사용 모드 Redis 추적
+- `unified_scheduler.py` — `check_llm_auth_health()` 1분 크론 잡 (Claude CLI/Codex/Gemini ADC 점검, 상태 변경 시 Telegram 알림)
+- `notifier.py` — `send_llm_auth_alert()` 인증 상태 변경 알림 메서드
+- `.env.example` — 클라우드 인증 섹션 확장 (CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, OPENAI_API_KEY fallback 설명)
+- `scripts/oci_instance_retry.sh` — Oracle Ampere A1 인스턴스 생성 5분 재시도 스크립트
+- 테스트 39개 추가, 전체 2424개 통과
+- 상세: `.agent/discussions/20260411-cloud-llm-auth-cost-optimization.md`
+
+### 클라우드 마이그레이션 갭 수정 (2026-04-13, PR #188)
+
+Docker Compose prod 배포 준비 + K3s 원복 가능 상태 보장.
+- `docker-compose.prod.yml` — MinIO profile 비활성화(R2 전환), tick-collector override, db-init-migrate 4단계, RL 학습 비활성화
+- `s3_client.py` — ensure_bucket() R2 graceful 처리 (403/409 경고 로그, MinIO 정상 동작 유지)
+- K3s prod overlay — worker-env.yaml (RL 비활성화) + R2 전환 가이드
+- `.env.example` — S3/R2 환경변수 섹션 추가
+- `k8s/README.md` — Docker Compose→K3s 원복 8단계 매뉴얼 + 트러블슈팅
+- 테스트 R2 시나리오 4건 추가, 전체 2381개 통과
+
 ### Optuna 하이퍼파라미터 자동 탐색 Phase 2 (2026-04-12, PR #186)
 
 SB3 알고리즘의 하이퍼파라미터를 Optuna TPE sampler로 자동 탐색.
@@ -120,19 +144,15 @@ Phase 0 완료 (PR #178~#180). 분봉 데이터 축적 시작.
 **Phase 1 (40영업일 후):** RL 분봉 피처 2개 (vwap_deviation, volume_skew)
 **Phase 2 (Phase 1 검증 후):** LLM 장중 패턴 컨텍스트
 
-### 클라우드 LLM 인증·비용 전략 (설계 완료)
-
-CLI 구독 1순위 + API Key 자동 fallback + 1분 주기 Health 감시. 구현 대상:
-1. `claude_client.py` / `gpt_client.py` — CLI→SDK 내부 fallback 추가
-2. `cli_bridge.py` — 인증 오류 전용 예외 분리
-3. `unified_scheduler.py` — 1분 주기 LLM auth health 크론 잡
-4. `notifier.py` — CLI 토큰 만료 알림
-상세: `.agent/discussions/20260411-cloud-llm-auth-cost-optimization.md`
-
 ### 클라우드 마이그레이션 실행 (날짜 미정)
 
-Hetzner CX22 + Cloudflare R2 결정 완료. Docker Compose 배포 + Cold migration + 로컬 2주 유지 롤백 전략 확정.
-상세: `.agent/discussions/20260411-cloud-migration-execution-plan.md`
+**서버 결정 변경 (2026-04-13):** Oracle Cloud Always Free 1순위 + Hetzner CAX21 fallback (2트랙).
+Oracle(4 OCPU ARM, 24GB RAM, 200GB, 서울 리전, 월 0원) 인스턴스 생성을 2주 시도 → 실패 시 Hetzner(€7.99/월).
+PAYG 전환 + Budget Alert $0으로 유휴 회수·실수 과금 방지. Oracle 성공 시 RL 학습도 서버에서 가능.
+**Phase 0 (코드 준비) 완료 (PR #188):** docker-compose.prod.yml 갭 수정, s3_client R2 대응, K3s 원복 매뉴얼.
+남은 것: Phase 1(서버 세팅) ~ Phase 4(안정화)는 실제 배포 시점에 실행.
+상세: `.agent/discussions/20260413-cloud-infra-oracle-vs-hetzner.md`
+상세 (실행 계획): `.agent/discussions/20260411-cloud-migration-execution-plan.md`
 
 ---
 
@@ -145,4 +165,4 @@ Hetzner CX22 + Cloudflare R2 결정 완료. Docker Compose 배포 + Cold migrati
 - DB 정리 크론 (7일 초과 틱 파티션 DROP) — 용량 > 5GB 시
 ---
 
-*Last updated: 2026-04-13*
+*Last updated: 2026-04-13 (LLM 인증 전략 구현 완료 + Oracle 인스턴스 스크립트)*

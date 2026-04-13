@@ -4,8 +4,8 @@ test/test_scheduler_cron.py -- 스케줄러 크론 표현식 / 장중-장외 판
 
 from __future__ import annotations
 
-from datetime import datetime, time
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime
+from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -33,6 +33,7 @@ class TestCronTriggerConfig:
             "index_warmup",
             "index_collection",
             "kis_token_health",
+            "llm_auth_health",
             "s3_tick_flush",
             "minute_aggregation",
             "rl_retrain",

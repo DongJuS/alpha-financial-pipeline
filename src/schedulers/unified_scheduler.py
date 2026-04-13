@@ -18,6 +18,9 @@ src/schedulers/unified_scheduler.py — 통합 스케줄러
     index_collection      30초 인터벌  IndexCollector (장중)
     kis_token_health    매시 정각 (09~15시, 평일)  KIS OAuth 토큰 유효성 검증
 
+    [상시]
+    llm_auth_health       1분 인터벌  LLM provider 인증 상태 점검
+
     [장 후]
     s3_tick_flush       15:40 KST  DB→S3 틱 데이터 일괄 flush (hour 파티셔닝)
     minute_aggregation  15:50 KST  tick_data→ohlcv_minute 1분봉 배치 집계
@@ -62,6 +65,8 @@ _LOCK_TTL: dict[str, int] = {
     "blend_weight_adjust": 120,  # 2분
     # 월간
     "minute_partition_mgmt": 600,  # 10분 (S3 아카이브 포함)
+    # 상시
+    "llm_auth_health": 30,  # 30초
 }
 
 
@@ -93,6 +98,127 @@ def _locked_job(job_id: str, coro_fn):  # type: ignore[no-untyped-def]
             await coro_fn()
 
     return with_retry(_locked, job_id)
+
+
+async def check_llm_auth_health() -> dict[str, str]:
+    """LLM provider 인증 상태를 점검하고 상태 변경 시 알림을 보낸다.
+
+    체크 대상:
+    1. Claude CLI: cli_bridge.is_cli_available() + 환경변수/API key
+    2. Codex CLI: ~/.codex/auth.json 존재 + access_token 유효
+    3. Gemini ADC: gemini_oauth_available() 성공 여부
+
+    Returns:
+        현재 provider별 인증 상태 dict (예: {"claude": "cli_ok", ...})
+    """
+    import json as _json
+    import os
+
+    from src.utils.redis_client import get_redis as _get_redis
+    from src.utils.secret_validation import is_placeholder_secret
+
+    redis = await _get_redis()
+    health_key = "llm:auth:health"
+    prev_raw = await redis.get(health_key)
+    prev_status: dict[str, str] = {}
+    if prev_raw:
+        try:
+            prev_status = _json.loads(prev_raw)
+        except Exception:
+            pass
+
+    current_status: dict[str, str] = {}
+
+    # 1. Claude CLI 체크
+    try:
+        from src.llm.cli_bridge import build_cli_command, is_cli_available
+        from src.utils.config import get_settings as _get_settings
+
+        _s = _get_settings()
+        cli_cmd = build_cli_command(_s.anthropic_cli_command, model="claude-3-5-sonnet-latest")
+        has_cli = bool(cli_cmd) and is_cli_available(cli_cmd)
+        has_oauth = bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"))
+        has_api_key = bool(_s.anthropic_api_key) and not is_placeholder_secret(
+            _s.anthropic_api_key
+        )
+
+        if has_cli:
+            current_status["claude"] = "cli_ok"
+        elif has_oauth:
+            current_status["claude"] = "oauth_token_ok"
+        elif has_api_key:
+            current_status["claude"] = "api_key_only"
+        else:
+            current_status["claude"] = "unavailable"
+    except Exception as exc:
+        current_status["claude"] = f"error:{exc}"
+
+    # 2. Codex CLI 체크
+    try:
+        from src.llm.gpt_client import load_codex_auth_status
+        from src.utils.config import get_settings as _get_settings
+
+        _s = _get_settings()
+        auth = load_codex_auth_status()
+        has_codex = bool(auth["has_access_token"] and auth["has_refresh_token"])
+        has_api_key = bool(_s.openai_api_key) and not is_placeholder_secret(
+            _s.openai_api_key
+        )
+
+        if has_codex:
+            current_status["codex"] = "cli_ok"
+        elif has_api_key:
+            current_status["codex"] = "api_key_only"
+        else:
+            current_status["codex"] = "unavailable"
+    except Exception as exc:
+        current_status["codex"] = f"error:{exc}"
+
+    # 3. Gemini ADC 체크
+    try:
+        from src.llm.gemini_client import gemini_oauth_available
+
+        if gemini_oauth_available():
+            current_status["gemini"] = "oauth_ok"
+        else:
+            current_status["gemini"] = "unavailable"
+    except Exception as exc:
+        current_status["gemini"] = f"error:{exc}"
+
+    # Redis에 현재 상태 저장 (TTL 5분 — 2번 연속 실패하면 자동 만료)
+    await redis.set(health_key, _json.dumps(current_status), ex=300)
+
+    # 상태 변경 감지 → 알림
+    changed_providers: list[str] = []
+    for provider in ("claude", "codex", "gemini"):
+        prev = prev_status.get(provider, "unknown")
+        curr = current_status.get(provider, "unknown")
+        if prev != curr:
+            changed_providers.append(provider)
+            logger.warning(
+                "LLM auth 상태 변경: %s %s → %s",
+                provider,
+                prev,
+                curr,
+            )
+
+    if changed_providers:
+        try:
+            from src.agents.notifier import NotifierAgent
+
+            notifier = NotifierAgent()
+            lines = ["LLM 인증 상태 변경"]
+            for p in changed_providers:
+                prev = prev_status.get(p, "unknown")
+                curr = current_status.get(p, "unknown")
+                lines.append(f"- {p}: {prev} -> {curr}")
+            await notifier.send("llm_auth_health", "\n".join(lines))
+        except Exception as exc:
+            logger.warning("LLM auth health 알림 전송 실패: %s", exc)
+    else:
+        logger.debug("LLM auth health: 변경 없음 %s", current_status)
+
+    return current_status
 
 
 async def get_unified_scheduler() -> AsyncIOScheduler:
@@ -446,6 +572,17 @@ async def start_unified_scheduler() -> None:
         id="kis_token_health",
         name="KIS token health check (hourly 09-15 KST)",
         misfire_grace_time=60,
+        replace_existing=True,
+    )
+
+    # ── 잡 등록: 상시 ─────────────────────────────────────────────────────
+    scheduler.add_job(
+        _locked_job("llm_auth_health", check_llm_auth_health),
+        "interval",
+        minutes=1,
+        id="llm_auth_health",
+        name="LLM auth health check (every 1m)",
+        misfire_grace_time=30,
         replace_existing=True,
     )
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from datetime import datetime, time
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
@@ -132,10 +132,7 @@ class TestRealtimeTaskAttribute:
 
     def test_realtime_task_type_annotation(self, collector):
         """_realtime_task 타입 어노테이션이 asyncio.Task | None."""
-        from src.agents.collector._base import _CollectorBase
-
-        annotations = _CollectorBase.__init__.__code__.co_varnames
-        # 속성이 __init__에서 할당되는지만 확인 (co_varnames에 포함)
+        # 속성이 __init__에서 할당되는지만 확인
         # 직접 타입 검사보다 런타임 동작 검증이 더 신뢰성 있음
         assert collector._realtime_task is None
         collector._realtime_task = MagicMock(spec=asyncio.Task)
@@ -370,8 +367,8 @@ class TestSchedulerTickJobRegistration:
         ):
             await mod.start_unified_scheduler()
 
-        assert len(registered_ids) == 13, (
-            f"Expected 13 registered jobs, got {len(registered_ids)}: {registered_ids}"
+        assert len(registered_ids) == 14, (
+            f"Expected 14 registered jobs, got {len(registered_ids)}: {registered_ids}"
         )
 
 

@@ -19,7 +19,7 @@ PostgreSQL (DB), Redis (캐시/메시징), S3 (데이터 레이크), K3s (배포
 
 ---
 
-## 현재 상태 (2026-04-12)
+## 현재 상태 (2026-04-13)
 
 핵심 매매 기능 + 실시간 틱 수집 + 틱 저장소 + AI 모델 통합까지 완성.
 K3s DB에 일봉 시딩 완료 (3종목 2,394건, 2023-01~2026-04).
@@ -45,7 +45,7 @@ K3s DB에 일봉 시딩 완료 (3종목 2,394건, 2023-01~2026-04).
 - 로컬에서 틱 데이터 축적 시작 (클라우드 전환 전, 비용 절감)
 - RL 분봉 피처 확장 (분봉 데이터 40영업일 축적 후)
 - RL 실시간 추론 파이프라인 (분봉 환경 + 장중 5분 간격)
-- 클라우드 전환: Hetzner CX22 + Cloudflare R2 (월 ~5,000원)
+- 클라우드 전환: Oracle Always Free 1순위 + Hetzner CAX21 fallback + Cloudflare R2
 
 ---
 
@@ -90,15 +90,17 @@ Phase 2 (Phase 1 검증 후): LLM 장중 패턴 컨텍스트 추가
 
 ### 클라우드 전환 (날짜 미정)
 
-Hetzner CX22 + Cloudflare R2 조합(월 ~5,000원)으로 결정.
-비용 발생 시점을 최대한 늦추는 원칙. Docker Compose 배포 + Cold migration + 로컬 2주 유지 롤백 전략 확정.
+**서버 결정 변경 (2026-04-13):** Oracle Cloud Always Free 1순위 + Hetzner CAX21 fallback (2트랙).
+Oracle(4 OCPU ARM, 24GB RAM, 200GB, 서울 리전, 월 0원) 인스턴스 생성을 2주 시도 → 실패 시 Hetzner(€7.99/월 ~11,000원).
+GCP·NCP는 동일 스펙 7~10배 비용으로 기각. 학생 크레딧(NCP/Azure/AWS)은 2~6개월 소진되어 지속 불가.
+PAYG 전환 + Budget Alert $0으로 유휴 회수·과금 방지. Oracle 성공 시 RL 학습도 서버에서 가능 (24GB).
+Docker Compose 배포 + Cold migration + 로컬 2주 유지 롤백 전략은 서버 무관하게 동일.
+- 상세 (서버 비교·결정): `.agent/discussions/20260413-cloud-infra-oracle-vs-hetzner.md`
 - 상세 (실행 계획): `.agent/discussions/20260411-cloud-migration-execution-plan.md`
 
-**LLM 인증·비용 전략 결정 (2026-04-11):** CLI 구독 인증 1순위 + API Key 자동 fallback.
-Claude `setup-token`(1년 유효) + Codex `device-auth` + Gemini ADC로 구독료만 사용.
-토큰 만료 시 동일 provider SDK로 자동 전환 + 1분 주기 Health 체크 + Telegram 알림.
-모델 다운그레이드 불필요 (Opus 유지).
-- 상세 (인프라·비용): `.agent/discussions/20260411-roadmap-priority-cost-optimization.md`
+**✅ LLM 인증·비용 전략 구현 완료 (2026-04-13):** CLI 구독 인증 1순위 + API Key 자동 fallback.
+CLIAuthError 예외 분리 + Claude/GPT CLI→SDK 내부 fallback + 1분 주기 Health 크론 + Telegram 알림.
+Oracle 인스턴스 생성 재시도 스크립트(`scripts/oci_instance_retry.sh`) 추가.
 - 상세 (LLM 인증): `.agent/discussions/20260411-cloud-llm-auth-cost-optimization.md`
 
 ---
