@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
 from src.gen.generator import MarketDataGenerator
-from src.gen.models import GenOHLCV, GenQuote, GenTicker, GenTick, GenIndex, GenMacro
+from src.gen.models import GenQuote, GenTicker, GenTick
 
 KST = ZoneInfo("Asia/Seoul")
 
