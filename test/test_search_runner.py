@@ -7,13 +7,12 @@ SearchRunner의 StrategyRunner 프로토콜 준수, ResearchOutput → Predictio
 캐싱 동작, 에러 핸들링을 검증합니다.
 """
 
-import asyncio
 import sys
 import unittest
 from datetime import date
 from pathlib import Path
 from typing import Optional
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -22,7 +21,7 @@ from src.agents.research_portfolio_manager import (
     ResearchPortfolioManager,
     research_output_to_signal,
 )
-from src.agents.search_agent import ResearchOutput, SearchAgent
+from src.agents.search_agent import ResearchOutput
 from src.db.models import PredictionSignal
 
 
@@ -329,16 +328,6 @@ class TestResearchPortfolioManager(unittest.IsolatedAsyncioTestCase):
     @patch("src.agents.research_portfolio_manager.get_redis")
     async def test_caching_cache_hit(self, mock_get_redis):
         """캐시 히트 → SearchAgent 호출 안 함."""
-        cached_signal = PredictionSignal(
-            agent_id="research_portfolio_manager",
-            llm_model="cached",
-            strategy="S",
-            ticker="005930",
-            signal="BUY",
-            confidence=0.9,
-            trading_date=date.today(),
-        )
-
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(
             return_value='{"agent_id": "research_portfolio_manager", "llm_model": "cached", "strategy": "S", "ticker": "005930", "signal": "BUY", "confidence": 0.9, "trading_date": "2026-03-15"}'

@@ -11,11 +11,9 @@ unified_scheduler.py에 등록된 10개 잡을 검증합니다:
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from apscheduler.triggers.cron import CronTrigger
 
 # Settings 초기화에 필요한 환경변수 설정 (테스트 전용)
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
@@ -445,7 +443,6 @@ class TestTickRealtimeStartJob:
         assert len(tickers) == 2
 
         # create_task로 태스크 생성
-        loop = asyncio.get_event_loop()
         coro = mock_collector.collect_realtime_ticks(tickers=tickers, duration_seconds=23400)
         # create_task가 호출되었음을 검증하기 위해 패치
         with patch("asyncio.create_task") as mock_create_task:
@@ -462,7 +459,6 @@ class TestTickRealtimeStartJob:
     async def test_start_skips_if_already_running(self):
         """이미 실행 중인 태스크가 있으면 새 태스크를 생성하지 않음."""
         import asyncio
-        import logging
 
         mock_collector = MagicMock()
         mock_existing_task = MagicMock(spec=asyncio.Task)
@@ -482,8 +478,6 @@ class TestTickRealtimeStartJob:
     @pytest.mark.asyncio
     async def test_start_skips_if_no_tickers(self):
         """ws_tick_tickers가 비어있으면 태스크를 생성하지 않음."""
-        import logging
-
         mock_collector = MagicMock()
         mock_collector._realtime_task = None
         mock_collector.collect_realtime_ticks = AsyncMock()

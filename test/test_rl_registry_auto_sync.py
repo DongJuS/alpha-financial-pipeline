@@ -168,9 +168,6 @@ async def test_rl_bootstrap_db_fallback_on_failure():
     DB 장애가 발생해도 StoreV2에 등록된 티커로 부트스트랩이 진행되어야 한다.
     """
     existing_tickers = ["005930.KS", "259960.KS"]
-    active_artifact_entry = _make_entry(
-        "rl_259960.KS_active", "259960.KS", approved=True, is_active=True,
-    )
 
     with (
         patch.object(
