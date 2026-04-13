@@ -11,6 +11,31 @@ import shutil
 import tempfile
 
 
+class CLIAuthError(RuntimeError):
+    """CLI 인증 실패 (토큰 만료, 미로그인 등)를 구분하는 예외."""
+
+    pass
+
+
+_AUTH_KEYWORDS: tuple[str, ...] = (
+    "not logged in",
+    "login required",
+    "authentication",
+    "unauthorized",
+    "auth",
+    "token expired",
+    "session expired",
+    "setup-token",
+    "claude_code_oauth_token",
+)
+
+
+def _is_auth_error(stderr: str) -> bool:
+    """stderr 텍스트에 인증 관련 키워드가 포함되어 있는지 확인합니다."""
+    lower = stderr.lower()
+    return any(kw in lower for kw in _AUTH_KEYWORDS)
+
+
 def _claude_known_paths() -> list[str]:
     """claude CLI가 설치될 수 있는 알려진 경로 목록을 반환합니다."""
     import os
@@ -94,9 +119,10 @@ async def run_cli_prompt(command: list[str], prompt: str, timeout_seconds: int =
 
     if process.returncode != 0:
         err = stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(
-            f"CLI command failed (exit={process.returncode}): {' '.join(command)}; stderr={err}"
-        )
+        msg = f"CLI command failed (exit={process.returncode}): {' '.join(command)}; stderr={err}"
+        if _is_auth_error(err):
+            raise CLIAuthError(msg)
+        raise RuntimeError(msg)
 
     return stdout.decode("utf-8", errors="replace").strip()
 
@@ -148,8 +174,9 @@ async def run_cli_prompt_with_output_file(
     if process.returncode != 0:
         err = stderr.decode("utf-8", errors="replace").strip()
         out = stdout.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(
-            f"CLI command failed (exit={process.returncode}): {' '.join(command)}; stdout={out}; stderr={err}"
-        )
+        msg = f"CLI command failed (exit={process.returncode}): {' '.join(command)}; stdout={out}; stderr={err}"
+        if _is_auth_error(err):
+            raise CLIAuthError(msg)
+        raise RuntimeError(msg)
 
     return content
