@@ -33,6 +33,7 @@ class TestCronTriggerConfig:
             "index_warmup",
             "index_collection",
             "kis_token_health",
+            "llm_auth_health",
             "s3_tick_flush",
             "minute_aggregation",
             "rl_retrain",
