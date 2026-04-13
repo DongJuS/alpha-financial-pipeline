@@ -6,8 +6,7 @@ test/test_utils_s3_client.py -- src/utils/s3_client.py 단위 테스트
 
 from __future__ import annotations
 
-import io
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 

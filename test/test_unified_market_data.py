@@ -1,6 +1,5 @@
 """test/test_unified_market_data.py -- UnifiedMarketData 빌더 테스트."""
 
-import pytest
 from datetime import date, datetime
 from unittest.mock import AsyncMock, patch
 
@@ -331,11 +330,6 @@ class TestBuildUnifiedData:
             mock_fetch,
             create=True,
         ):
-            # 지연 import를 우회하기 위해 모듈 레벨에서 패치
-            import src.services.unified_market_data as umd
-
-            original_build = umd.build_unified_data
-
             async def _patched_build(
                 instrument_id, traded_at, daily_row=None
             ):
