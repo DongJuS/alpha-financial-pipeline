@@ -114,7 +114,7 @@ async def verify() -> None:
 
 
 async def main_async(args: argparse.Namespace) -> None:
-    count = await migrate(dry_run=args.dry_run)
+    await migrate(dry_run=args.dry_run)
     if not args.dry_run:
         await verify()
 
