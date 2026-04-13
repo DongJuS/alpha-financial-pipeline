@@ -8,14 +8,12 @@ SB3 의존성은 mock으로 격리.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.agents.rl_hyperopt import (
     DEFAULT_HYPEROPT_DIR,
-    SEARCH_SPACES,
     RLHyperOptimizer,
     get_search_space,
     suggest_params,
