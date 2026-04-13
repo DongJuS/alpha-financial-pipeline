@@ -13,15 +13,13 @@ S3/MinIO는 mock으로 대체.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api.deps import get_current_settings, get_current_user
-from src.api.routers import datalake as datalake_module
 from src.api.routers.datalake import router as datalake_router
 
 API_PREFIX = "/api/v1/datalake"
