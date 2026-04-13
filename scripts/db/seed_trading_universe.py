@@ -238,7 +238,7 @@ async def main_async(args: argparse.Namespace) -> None:
         logger.error("시딩할 종목이 없습니다.")
         sys.exit(1)
 
-    count = await seed(
+    await seed(
         args.scope,
         entries,
         clear=args.clear,
