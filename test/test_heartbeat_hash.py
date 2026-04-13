@@ -1,9 +1,8 @@
 """test/test_heartbeat_hash.py — Heartbeat Hash 확장 + docker_healthcheck 단위 테스트"""
 
-import asyncio
 import time
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 
 class TestSetHeartbeatHash(unittest.IsolatedAsyncioTestCase):
