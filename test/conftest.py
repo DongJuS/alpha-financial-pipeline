@@ -197,7 +197,7 @@ def mock_db_pool():
             mock_db_pool.fetch_results = [{"id": 1, "name": "test"}]
             # ... 테스트 코드 ...
     """
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import AsyncMock
 
     pool = AsyncMock()
     conn = AsyncMock()
@@ -224,7 +224,6 @@ def mock_db_client(mock_db_pool, monkeypatch):
     이 픽스처를 사용하면 queries.py 함수들이 실제 DB 대신
     mock_db_pool을 통해 실행됩니다.
     """
-    from unittest.mock import AsyncMock
 
     async def _mock_get_pool():
         return mock_db_pool
@@ -276,7 +275,6 @@ def mock_redis_client(mock_redis, monkeypatch):
     이 픽스처를 사용하면 redis_client 모듈의 함수들이
     실제 Redis 대신 mock을 사용합니다.
     """
-    from unittest.mock import AsyncMock
 
     async def _mock_get_redis():
         return mock_redis

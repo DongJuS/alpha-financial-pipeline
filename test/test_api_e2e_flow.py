@@ -7,13 +7,10 @@ test/test_api_e2e_flow.py — E2E 시나리오 테스트
 
 from __future__ import annotations
 
-import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
-import jwt
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -22,8 +19,6 @@ from src.api.routers import auth, feedback, scheduler
 from src.api.routers import audit as audit_router_module
 from src.api.routers import backtest as backtest_router_module
 import src.api.deps as auth_deps
-import src.api.routers.feedback as feedback_module
-from src.agents.rl_continuous_improver import RetrainOutcome
 from src.utils.auth import hash_password
 
 
@@ -83,7 +78,7 @@ class TestLoginThenFeedbackFlow:
         client = TestClient(app, raise_server_exceptions=False)
 
         # Step 1: 로그인
-        token = self._login(client)
+        self._login(client)
 
         # Step 2: 정확도 조회 (DB 없이 빈 데이터 반환 기대)
         resp = client.get("/api/v1/feedback/accuracy")
@@ -101,7 +96,7 @@ class TestLoginThenFeedbackFlow:
         client = TestClient(app, raise_server_exceptions=False)
 
         # Step 1: 로그인
-        token = self._login(client)
+        self._login(client)
 
         # Step 2: LLM 컨텍스트 조회
         resp = client.get("/api/v1/feedback/llm-context/strategy_a")
@@ -119,7 +114,7 @@ class TestLoginThenFeedbackFlow:
         client = TestClient(app, raise_server_exceptions=False)
 
         # Step 1: 로그인
-        token = self._login(client)
+        self._login(client)
 
         # Step 2: 백테스트 실행
         resp = client.post(
@@ -412,7 +407,7 @@ class TestLoginThenSchedulerAndFeedback:
             json={"email": USER_EMAIL, "password": USER_PASSWORD},
         )
         assert resp.status_code == 200
-        token = resp.json()["token"]
+        resp.json()["token"]  # verify token is present
 
         # Step 2: 스케줄러 상태 확인
         resp = client.get("/api/v1/scheduler/status")

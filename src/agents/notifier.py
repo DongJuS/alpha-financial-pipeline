@@ -156,6 +156,38 @@ class NotifierAgent:
 
         return await self.send(event_type="promotion_ready", message=text)
 
+    async def send_llm_auth_alert(
+        self,
+        provider: str,
+        status: str,
+        detail: str = "",
+    ) -> bool:
+        """LLM CLI 토큰 만료 또는 인증 상태 변경 알림.
+
+        Args:
+            provider: LLM provider 이름 (claude, codex, gemini)
+            status: 현재 상태 (cli_ok, api_key_only, unavailable 등)
+            detail: 추가 설명
+        """
+        emoji = {
+            "cli_ok": "✅",
+            "oauth_ok": "✅",
+            "oauth_token_ok": "✅",
+            "api_key_only": "⚠️",
+            "unavailable": "🔴",
+        }.get(status, "🔴" if "error" in status else "❓")
+
+        text = (
+            f"{emoji} LLM 인증 상태 변경\n"
+            f"- Provider: {provider}\n"
+            f"- 상태: {status}\n"
+            f"- 시각(KST): {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        if detail:
+            text += f"\n- 상세: {detail}"
+
+        return await self.send(event_type="llm_auth_alert", message=text)
+
     async def send_paper_daily_report(
         self,
         report_date: date | None = None,

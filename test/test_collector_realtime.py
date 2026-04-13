@@ -223,8 +223,6 @@ class TestBackfillGap:
 
     async def test_successful_backfill(self, collector):
         """정상 backfill 시 복구된 틱 수 반환."""
-        import httpx as _httpx
-
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.return_value = {

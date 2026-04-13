@@ -6,21 +6,19 @@ test/test_search_runner_integration.py — SearchRunner Integration Tests
 SearchRunner의 StrategyRunner 프로토콜 준수, 통합 등록, 가중치 설정을 검증합니다.
 """
 
-import asyncio
 import json
 import sys
 import unittest
 from pathlib import Path
 from typing import Optional
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.agents.research_portfolio_manager import ResearchPortfolioManager
-from src.agents.search_agent import ResearchOutput, SearchAgent
+from src.agents.search_agent import ResearchOutput
 from src.agents.search_runner import SearchRunner
-from src.agents.strategy_runner import StrategyRunner
 from src.db.models import PredictionSignal
 from src.utils.config import get_settings
 

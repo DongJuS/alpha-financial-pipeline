@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from src.agents.ranking_calculator import RankingCalculator
 from src.db.models import DailyRanking

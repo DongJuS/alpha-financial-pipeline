@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 from src.agents.strategy_b_consensus import StrategyBConsensus
 from src.llm.router import LLMRouter
