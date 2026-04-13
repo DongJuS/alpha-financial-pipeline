@@ -62,6 +62,7 @@ Cluster Secret 은 SOPS + age 로 관리한다 (`k8s/secrets/*.enc.yaml`).
 13. **테스트에서 시스템 바이너리 경로를 하드코딩하지 않는다.** `/usr/bin/echo` 대신 `echo` 또는 `shutil.which("echo")`를 사용한다.
 14. **파일 경로는 `__file__` 기준 상대 경로를 사용한다.** 절대 경로 하드코딩 금지. 예: `Path(__file__).parent / "fixtures" / "sample.json"`
 15. **테스트는 `pip install -r requirements.txt` 후 `pytest`로 실행한다.** Docker 환경이 없는 경우에도 동일하게 패키지를 설치한 뒤 직접 테스트를 돌린다.
+16. **`~/.claude/skills/`와 `~/.claude/commands/` 파일을 절대 삭제하지 않는다.** 스킬 수정은 가능하지만, 삭제·이동·이름 변경은 사용자가 명시적으로 요청한 경우에만 한다. Worktree 정리, 파일 재구성 등 어떤 이유로도 스킬 파일을 삭제하지 않는다.
 
 ---
 
