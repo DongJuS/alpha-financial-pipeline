@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
-from src.llm.cli_bridge import build_cli_command, is_cli_available, run_cli_prompt
+from src.llm.cli_bridge import CLIAuthError, build_cli_command, is_cli_available, run_cli_prompt
 from src.services.llm_usage_limiter import reserve_provider_call
 from src.utils.config import get_settings
 from src.utils.logging import get_logger
@@ -65,7 +65,23 @@ class ClaudeClient:
 
     @property
     def is_configured(self) -> bool:
-        return bool(self._cli_command) or self._client is not None
+        return bool(self._cli_command) or self._client is not None or not is_placeholder_secret(self.api_key)
+
+    def _ensure_sdk_client(self) -> Optional[Any]:
+        """SDK 클라이언트를 lazy 초기화. API key가 없으면 None 반환."""
+        if self._client is not None:
+            return self._client
+        if is_placeholder_secret(self.api_key):
+            return None
+        try:
+            from anthropic import AsyncAnthropic
+
+            self._client = AsyncAnthropic(api_key=self.api_key)
+            logger.info("Claude SDK fallback 클라이언트 초기화 완료")
+            return self._client
+        except Exception as e:
+            logger.warning("Claude SDK 초기화 실패: %s", e)
+            return None
 
     async def ask(self, prompt: str, max_tokens: int = 600, temperature: float = 0.2) -> str:
         if not self.is_configured:
@@ -74,11 +90,25 @@ class ClaudeClient:
         await reserve_provider_call("claude")
 
         if self._cli_command:
-            return await run_cli_prompt(
-                command=self._cli_command,
-                prompt=prompt,
-                timeout_seconds=self.cli_timeout_seconds,
-            )
+            try:
+                return await run_cli_prompt(
+                    command=self._cli_command,
+                    prompt=prompt,
+                    timeout_seconds=self.cli_timeout_seconds,
+                )
+            except CLIAuthError as e:
+                logger.warning("Claude CLI 인증 실패, SDK fallback 시도: %s", e)
+                client = self._ensure_sdk_client()
+                if client is None:
+                    raise  # SDK도 없으면 원래 에러 전파
+                resp = await client.messages.create(
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                text_parts = [getattr(c, "text", "") for c in getattr(resp, "content", [])]
+                return "".join(text_parts).strip()
 
         resp = await self._client.messages.create(
             model=self.model,
