@@ -1,15 +1,40 @@
 # ================================================================
-# docker-compose.prod.yml — 프로덕션 오버라이드
+# docker-compose.prod.yml — 프로덕션 오버라이드 (Hetzner CX22 + Cloudflare R2)
 #
 # 사용법:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# ── 배포 아키텍처 ──
+# 이 프로젝트는 두 가지 배포 경로를 유지합니다:
+#   - Docker Compose (이 파일) → 클라우드 (Hetzner) 배포용
+#   - K3s (k8s/ 디렉토리)      → 로컬 개발 및 향후 클라우드 K3s 전환용
+# 두 경로 모두 같은 Docker 이미지와 같은 환경변수 체계를 사용하므로,
+# 전환 시 오케스트레이션 레이어만 변경하면 됩니다 (앱 코드 변경 없음).
+#
+# ── S3 스토리지 ──
+# 클라우드: Cloudflare R2 사용 (S3_ENDPOINT_URL을 .env에서 R2로 설정)
+# 로컬/K3s: MinIO 사용 (base docker-compose.yml에 정의됨)
+# MinIO는 profile로 비활성화되어 있으나, --profile minio-local로 폴백 가능.
+# 앱 코드(s3_client.py)는 R2/MinIO 모두 지원 (환경변수만 다름).
+#
+# ── RL 학습/추론 분리 ──
+# Hetzner CX22 (4GB RAM)에서 RL 학습은 메모리 부족 (torch+SB3+Optuna ~3GB).
+# 서버는 추론만, 학습은 로컬 MacBook에서 수행 → .zip 모델 업로드 → 서버 추론.
+# ORCH_ENABLE_RL_AUTO_RETRAIN=false로 서버 학습을 비활성화.
+#
+# ── !override 태그 (Docker Compose v2.24.6+) ──
+# base docker-compose.yml의 depends_on에 minio 의존성이 있으나,
+# 클라우드에서는 MinIO가 없으므로 depends_on을 완전히 교체해야 합니다.
+# !override 태그는 deep merge 대신 값을 완전히 교체합니다.
 #
 # 주요 차이점 (vs dev):
 #   - prod 타겟 빌드 (multi-stage)
 #   - 소스 볼륨 마운트 제거 (이미지에 코드 포함)
 #   - resource limits 설정
 #   - restart: always
-#   - 불필요 서비스 비활성화 (gen, gen-collector)
+#   - MinIO 비활성화 (R2 전환, profile로 폴백 가능)
+#   - DB migration 4단계 순차 실행 (db-init-migrate)
+#   - RL 자동 재학습 비활성화 (추론만)
 # ================================================================
 
 services:
@@ -33,16 +58,56 @@ services:
           memory: 256M
           cpus: "0.25"
 
+  # ── MinIO 비활성화 (R2 전환) ──
+  # 클라우드에서는 Cloudflare R2를 S3 스토리지로 사용하므로 MinIO를 띄우지 않음.
+  # R2는 S3v4 서명을 지원하여 boto3 코드 변경 없이 환경변수(S3_ENDPOINT_URL)만
+  # 변경하면 됨. R2 버킷은 Cloudflare 콘솔에서 사전 생성 필요.
+  #
+  # MinIO로 폴백하려면: docker compose -f ... --profile minio-local up
+  # (로컬 테스트 또는 R2 장애 시 Hetzner에 MinIO를 직접 설치하는 시나리오)
   minio:
-    restart: always
+    profiles:
+      - minio-local
+
+  minio-init:
+    profiles:
+      - minio-local
+
+  # ── DB migration 4단계 순차 실행 ──
+  # K3s에서는 init container(k8s/base/migration-job.yaml)가 이 역할을 수행.
+  # Docker Compose에서는 이 서비스가 동일한 4단계를 실행.
+  # 두 경로 모두 같은 스크립트(scripts/db/)를 사용하므로 동기화 유지됨.
+  #
+  # 실행 순서:
+  # 1. instruments v2 스키마 마이그레이션
+  # 2. ohlcv_minute 테이블 + 월별 파티션 생성
+  # 3. KRX 종목 마스터 시딩 (2,773건)
+  # 4. trading universe 시딩 (paper 스코프)
+  db-init-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER required}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD required}
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "0.5"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alpha_user}:${POSTGRES_PASSWORD}@postgres:5432/alpha_db
+    command:
+      - /bin/bash
+      - -c
+      - |
+        set -e
+        echo "=== [1/4] Schema migration (migrate_to_v2_instruments) ==="
+        python scripts/db/migrate_to_v2_instruments.py
+        echo "=== [2/4] Create ohlcv_minute table + partitions ==="
+        python scripts/db/migrate_ohlcv_minute.py
+        echo "=== [3/4] Seed instruments registry ==="
+        python scripts/db/seed_all_instruments.py --market KR --instruments-only
+        echo "=== [4/4] Seed trading universe ==="
+        python scripts/db/seed_trading_universe.py
+        echo "=== Migration complete ==="
+    restart: "no"
 
   api:
     build:
@@ -51,6 +116,14 @@ services:
       target: prod
     restart: always
     volumes: []  # dev 볼륨 마운트 제거
+    # base의 depends_on을 완전히 교체 (minio 의존성 제거, R2 전환)
+    depends_on: !override
+      db-init:
+        condition: service_completed_successfully
+      db-init-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     environment:
       NODE_ENV: production
     deploy:
@@ -66,18 +139,59 @@ services:
       target: prod
     restart: always
     volumes: []
+    # base의 depends_on을 완전히 교체 (minio 의존성 제거, R2 전환)
+    depends_on: !override
+      db-init:
+        condition: service_completed_successfully
+      db-init-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       ORCH_MODE: blend
       ORCH_RUN_ONCE: "false"
+      # RL 자동 재학습 비활성화.
+      # Hetzner CX22 (4GB RAM)에서 RL 학습 시 torch+SB3+Optuna가 ~3GB를 추가 소모하여 OOM.
+      # 워크플로우: 로컬 MacBook에서 학습 → .zip 모델 파일 업로드 → 서버는 추론만 수행.
+      # K3s에서도 동일 설정: k8s/overlays/prod/patches/worker-env.yaml
+      ORCH_ENABLE_RL_AUTO_RETRAIN: "false"
     deploy:
       resources:
         limits:
           memory: 1G
           cpus: "1.0"
 
+  # ── tick-collector prod override ──
+  # base docker-compose.yml에 정의되어 있지만 prod override가 없으면
+  # dev 환경변수(하드코딩된 alpha_pass, localhost minio)가 그대로 적용되어
+  # 클라우드 서버에서 DB/S3 연결 실패.
+  # K3s 대응: k8s/base/tick-collector.yaml (envFrom으로 configMap/secret 참조)
+  tick-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+    restart: always
+    volumes: []
+    # db-init-migrate 완료 후 기동
+    depends_on: !override
+      db-init:
+        condition: service_completed_successfully
+      db-init-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
   # gen/gen-collector는 프로덕션에서 비활성화 (테스트 전용).
-  # 활성화 시: docker compose -f ... --profile gen up
+  # 활성화 시: docker compose -f ... --profile gen --profile minio-local up
   # gen 데이터는 alpha_gen_db (별도 DB) 에만 쓰이며, 실 alpha_db 와 격리된다.
   gen:
     profiles:
@@ -86,6 +200,14 @@ services:
   gen-collector:
     profiles:
       - gen
+    # base의 depends_on을 완전히 교체 (minio 의존성 제거)
+    depends_on: !override
+      db-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      gen:
+        condition: service_healthy
     environment:
       # prod 는 POSTGRES_PASSWORD 를 외부 주입받는다 (env_file/secret).
       # dev override 의 하드코딩된 alpha_pass 를 덮어쓴다.
