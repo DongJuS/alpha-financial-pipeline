@@ -6,10 +6,9 @@ test/test_macro_collector.py — MacroCollector 매크로 지표 수집 테스�
 
 from __future__ import annotations
 
-import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo

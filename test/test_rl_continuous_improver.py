@@ -269,7 +269,6 @@ class RLContinuousImproverTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(outcome.active_policy_after)
 
 
-import inspect
 import pytest
 from src.agents.rl_continuous_improver import _WalkForwardTrainerAdapter
 
