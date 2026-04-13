@@ -12,7 +12,6 @@ from src.agents.rl_trading import RLDataset, RLEvaluationMetrics
 from src.agents.rl_walk_forward import (
     WalkForwardEvaluator,
     WalkForwardResult,
-    FoldResult,
 )
 
 
