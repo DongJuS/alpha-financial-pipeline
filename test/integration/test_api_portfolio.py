@@ -26,12 +26,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api.deps import get_admin_user, get_current_settings, get_current_user
-from src.api.routers import portfolio as portfolio_module
 from src.api.routers.portfolio import router as portfolio_router
 
 API_PREFIX = "/api/v1/portfolio"
