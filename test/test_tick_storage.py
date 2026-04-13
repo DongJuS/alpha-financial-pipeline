@@ -11,7 +11,6 @@ NOTE: insert_tick_batch, get_ohlcv_bars, _backfill_gap 은 다른 에이전트�
 
 from __future__ import annotations
 
-import asyncio
 import json
 import sys
 from datetime import date, datetime, timedelta
@@ -840,7 +839,7 @@ class TestInsertTickBatchEdgeCasesV2:
 
     async def test_zero_volume_accepted(self, _env):
         """volume=0인 틱도 정상 INSERT."""
-        with patch("src.db.queries.executemany", new_callable=AsyncMock) as mock_exec:
+        with patch("src.db.queries.executemany", new_callable=AsyncMock):
             from src.db.queries import insert_tick_batch
             tick = _make_tick(volume=0)
             result = await insert_tick_batch([tick])

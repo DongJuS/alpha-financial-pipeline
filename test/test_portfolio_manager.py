@@ -377,7 +377,7 @@ class PortfolioManagerEdgeCaseTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_process_signal_shadow_signal_skipped(self) -> None:
         """is_shadow=True 시그널은 무시되어야 함."""
-        agent = PortfolioManagerAgent()
+        PortfolioManagerAgent()
         signal = PredictionSignal(
             agent_id="rl_shadow",
             llm_model="manual",
