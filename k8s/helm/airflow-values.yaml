@@ -16,7 +16,7 @@ images:
 dags:
   gitSync:
     enabled: true
-    repo: https://github.com/DongJuS/agents-investing.git
+    repo: https://github.com/DongJuS/alpha-financial-pipeline.git
     branch: feature/airflow-workflow-spike
     subPath: dags
     wait: 30
