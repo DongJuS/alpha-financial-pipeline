@@ -13,6 +13,17 @@
 
 ---
 
+## 🌐 현재 운영 환경 (2026-04-17)
+
+- **배포 서버:** Oracle Cloud ARM64 — `ubuntu@152.67.223.37` (4 OCPU, 24GB RAM, 200GB). 로그인: `ssh ubuntu@152.67.223.37`.
+- **오케스트레이션:** Docker Compose (`~/alpha-financial-pipeline`). 기동: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`.
+- **스토리지:** Cloudflare R2 버킷 `alpha-datalake` (S3v4). 폴백 시 `--profile minio-local`.
+- **LLM 인증:** CLI/OAuth 마운트 (`~/.claude`, `~/.codex`, `~/.config/gcloud`) + `CLAUDE_CODE_OAUTH_TOKEN`. `OPENAI_API_KEY`는 더미(미사용).
+- **K3s 경로:** 로컬 개발·롤백 용으로만 유지 (`k8s/README.md`).
+- **상세 운영 가이드:** `docs/oracle-cloud-setup.md`, `docs/cloud-migration-phases.md`.
+
+---
+
 ## Git Workflow
 
 Always verify you are on the correct git branch before committing or creating a PR. Run `git branch` to confirm before any commit operation.
