@@ -144,14 +144,14 @@ Phase 0 완료 (PR #178~#180). 분봉 데이터 축적 시작.
 **Phase 1 (40영업일 후):** RL 분봉 피처 2개 (vwap_deviation, volume_skew)
 **Phase 2 (Phase 1 검증 후):** LLM 장중 패턴 컨텍스트
 
-### 클라우드 마이그레이션 실행 (날짜 미정)
+### 클라우드 마이그레이션 실행 (인스턴스 생성 대기 중)
 
-**서버 결정 변경 (2026-04-13):** Oracle Cloud Always Free 1순위 + Hetzner CAX21 fallback (2트랙).
-Oracle(4 OCPU ARM, 24GB RAM, 200GB, 서울 리전, 월 0원) 인스턴스 생성을 2주 시도 → 실패 시 Hetzner(€7.99/월).
-PAYG 전환 + Budget Alert $0으로 유휴 회수·실수 과금 방지. Oracle 성공 시 RL 학습도 서버에서 가능.
-**Phase 0 (코드 준비) 완료 (PR #188):** docker-compose.prod.yml 갭 수정, s3_client R2 대응, K3s 원복 매뉴얼.
-남은 것: Phase 1(서버 세팅) ~ Phase 4(안정화)는 실제 배포 시점에 실행.
-상세: `.agent/discussions/20260413-cloud-infra-oracle-vs-hetzner.md`
+**서버:** Oracle Cloud Always Free (춘천 리전, 4 OCPU ARM, 24GB RAM, 200GB) 1순위 + Hetzner fallback.
+**현재 상태 (2026-04-15):** PAYG 전환 완료, OCI CLI 설정 완료, VCN 생성 완료. 인스턴스 생성 크론 5분 간격 자동 재시도 중.
+Budget Alert $0 미설정 — 설정 필요.
+로그 확인: `tail -5 /tmp/oci_retry.log`. 성공 시 `/tmp/oci_instance_created.txt`에 OCID 기록.
+상세: `docs/oracle-cloud-setup.md`
+상세 (서버 비교): `.agent/discussions/20260413-cloud-infra-oracle-vs-hetzner.md`
 상세 (실행 계획): `.agent/discussions/20260411-cloud-migration-execution-plan.md`
 
 ---
@@ -160,9 +160,9 @@ PAYG 전환 + Budget Alert $0으로 유휴 회수·실수 과금 방지. Oracle 
 
 - 뉴스/리서치 자동 검색 (SearchAgent) — 보류
 - Decision Transformer — 분봉 6개월+ 축적 후 재검토
-- 코드 린트 자동화 — 틈날 때
+- ~~코드 린트 자동화~~ — 완료 (pre-commit hook + CI test/ 추가)
 - 오래된 데이터 자동 아카이브 — 데이터가 더 쌓이면
 - DB 정리 크론 (7일 초과 틱 파티션 DROP) — 용량 > 5GB 시
 ---
 
-*Last updated: 2026-04-13 (LLM 인증 전략 구현 완료 + Oracle 인스턴스 스크립트)*
+*Last updated: 2026-04-15 (Oracle 인스턴스 크론 등록 + Ruff pre-commit hook)*
