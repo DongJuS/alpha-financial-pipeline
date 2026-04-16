@@ -74,11 +74,14 @@ services:
       - minio-local
 
   # base의 db-init은 alpha_pass 하드코딩 → prod에선 .env POSTGRES_PASSWORD로 override
+  # env_file 추가: 일부 init 스크립트가 get_settings() 를 호출하므로 JWT_SECRET 등 필요
   db-init:
     build:
       context: .
       dockerfile: Dockerfile
       target: prod
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-alpha_user}:${POSTGRES_PASSWORD}@postgres:5432/alpha_db
 
@@ -97,6 +100,10 @@ services:
       context: .
       dockerfile: Dockerfile
       target: prod
+    # 마이그레이션 스크립트(migrate_ohlcv_minute, seed_*)들이 get_settings() 를 호출하므로
+    # JWT_SECRET 등 .env 의 모든 키가 필요. env_file 없으면 pydantic ValidationError.
+    env_file:
+      - .env
     depends_on:
       db-init:
         condition: service_completed_successfully
