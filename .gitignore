@@ -1,6 +1,11 @@
 .env
 .env.*
 !.env.example
+.secret
+
+# 인프라 메타데이터 (Public IP, OCID 등) — git 노출 금지
+cloud_env.md
+*.local.md
 
 .DS_Store
 k8s/base/.secrets/
