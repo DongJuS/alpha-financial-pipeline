@@ -13,14 +13,14 @@
 #
 # 성공 시 인스턴스 OCID를 파일에 기록하고 이후 실행을 자동 스킵합니다.
 #
-set -euo pipefail
+set -uo pipefail
 
 # ── 설정 (자신의 환경에 맞게 수정) ──────────────────────────────────
 COMPARTMENT_ID="${OCI_COMPARTMENT_ID:-ocid1.compartment.oc1..CHANGE_ME}"
 AVAILABILITY_DOMAIN="${OCI_AVAILABILITY_DOMAIN:-CHANGE_ME:AP-SEOUL-1-AD-1}"
 SUBNET_ID="${OCI_SUBNET_ID:-ocid1.subnet.oc1.ap-seoul-1..CHANGE_ME}"
 IMAGE_ID="${OCI_IMAGE_ID:-ocid1.image.oc1.ap-seoul-1..CHANGE_ME}"  # Ubuntu 22.04 ARM
-SSH_KEY_FILE="${OCI_SSH_KEY_FILE:-$HOME/.ssh/id_rsa.pub}"
+SSH_KEY_FILE="${OCI_SSH_KEY_FILE:-$HOME/.ssh/id_ed25519.pub}"
 SHAPE="VM.Standard.A1.Flex"
 OCPUS=4
 MEMORY_GB=24
@@ -49,15 +49,20 @@ RESULT=$(oci compute instance launch \
     --boot-volume-size-in-gbs "$BOOT_VOLUME_GB" \
     --display-name "$DISPLAY_NAME" \
     --metadata "{\"ssh_authorized_keys\": \"$(cat "$SSH_KEY_FILE")\"}" \
-    --wait-for-state RUNNING \
-    --max-wait-seconds 600 \
-    2>&1) || {
+    2>&1)
+EXIT_CODE=$?
+
+if [[ $EXIT_CODE -ne 0 ]] || echo "$RESULT" | grep -qi "error\|exception\|capacity"; then
     echo "[$(date)] 실패 (용량 부족 등): $RESULT"
     exit 0  # 크론에서 재시도하도록 exit 0
-}
+fi
 
 # ── 성공 시 OCID 저장 ──────────────────────────────────────────────
-INSTANCE_ID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['id'])" 2>/dev/null || echo "unknown")
+INSTANCE_ID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['id'])" 2>/dev/null)
+if [[ -z "$INSTANCE_ID" ]]; then
+    echo "[$(date)] 실패 (OCID 추출 불가): $RESULT"
+    exit 0
+fi
 echo "$INSTANCE_ID" > "$MARKER_FILE"
 echo "[$(date)] 인스턴스 생성 성공: $INSTANCE_ID"
 
