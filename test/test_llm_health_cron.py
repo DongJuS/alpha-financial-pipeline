@@ -5,7 +5,7 @@ test/test_llm_health_cron.py — LLM auth health check 크론 + usage mode 추�
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
