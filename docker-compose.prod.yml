@@ -73,6 +73,15 @@ services:
     profiles:
       - minio-local
 
+  # base의 db-init은 alpha_pass 하드코딩 → prod에선 .env POSTGRES_PASSWORD로 override
+  db-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alpha_user}:${POSTGRES_PASSWORD}@postgres:5432/alpha_db
+
   # ── DB migration 4단계 순차 실행 ──
   # K3s에서는 init container(k8s/base/migration-job.yaml)가 이 역할을 수행.
   # Docker Compose에서는 이 서비스가 동일한 4단계를 실행.
@@ -115,7 +124,11 @@ services:
       dockerfile: Dockerfile
       target: prod
     restart: always
-    volumes: []  # dev 볼륨 마운트 제거
+    # dev 소스 마운트는 제거하되, LLM CLI/OAuth 인증 디렉토리는 prod에서도 마운트
+    volumes:
+      - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
+      - ${HOME}/.claude:/root/.claude:rw
+      - ${HOME}/.codex:/root/.codex:rw
     # base의 depends_on을 완전히 교체 (minio 의존성 제거, R2 전환)
     depends_on: !override
       db-init:
@@ -124,8 +137,16 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+    # base의 environment가 env_file을 덮어쓰므로 R2/DB/Redis URL을 명시적으로 재정의
     environment:
       NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alpha_user}:${POSTGRES_PASSWORD}@postgres:5432/alpha_db
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      S3_REGION: ${S3_REGION:-auto}
     deploy:
       resources:
         limits:
@@ -138,7 +159,11 @@ services:
       dockerfile: Dockerfile
       target: prod
     restart: always
-    volumes: []
+    # dev 소스 마운트는 제거하되, LLM CLI/OAuth 인증 디렉토리는 prod에서도 마운트
+    volumes:
+      - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
+      - ${HOME}/.claude:/root/.claude:rw
+      - ${HOME}/.codex:/root/.codex:rw
     # base의 depends_on을 완전히 교체 (minio 의존성 제거, R2 전환)
     depends_on: !override
       db-init:
@@ -147,8 +172,16 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+    # base의 environment가 env_file을 덮어쓰므로 R2/DB/Redis URL을 명시적으로 재정의
     environment:
       NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alpha_user}:${POSTGRES_PASSWORD}@postgres:5432/alpha_db
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      S3_REGION: ${S3_REGION:-auto}
       ORCH_MODE: blend
       ORCH_RUN_ONCE: "false"
       # RL 자동 재학습 비활성화.
@@ -182,8 +215,16 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+    # base의 environment가 env_file을 덮어쓰므로 R2/DB/Redis URL을 명시적으로 재정의
     environment:
       NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alpha_user}:${POSTGRES_PASSWORD}@postgres:5432/alpha_db
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      S3_REGION: ${S3_REGION:-auto}
     deploy:
       resources:
         limits:
