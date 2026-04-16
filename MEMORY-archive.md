@@ -231,6 +231,18 @@ SENTIMENT_TO_SIGNAL = {
 
 ---
 
+## 2026-04-13 — 클라우드 LLM 인증·비용 전략 구현 (PR #189)
+
+CLI 구독 1순위 + API Key SDK 자동 fallback 아키텍처 구현. `CLIAuthError` 예외로 인증 실패를 구분하고, Claude/GPT 클라이언트가 CLI 실패 시 내부적으로 SDK로 전환. 1분 주기 health 크론잡이 3 프로바이더(Claude CLI, Codex auth.json, Gemini ADC) 감시 → 상태 변경 시만 Telegram 알림. Redis에 CLI/SDK 사용 모드 추적. `.env.example`에 fallback API key 환경변수 문서화. Oracle Always Free 인스턴스 생성 재시도 스크립트 추가. 테스트 39개 추가, 전체 2424개 통과.
+
+---
+
+## 2026-04-13 — 클라우드 마이그레이션 갭 수정 (PR #188)
+
+Docker Compose prod 배포 준비 + K3s 원복 가능 상태 보장. docker-compose.prod.yml MinIO profile 비활성화(R2 전환), s3_client.py ensure_bucket() R2 graceful 처리(403/409 경고 로그), K3s prod overlay worker-env.yaml(RL 비활성화) + R2 전환 가이드, `.env.example` S3/R2 환경변수 섹션 추가, `k8s/README.md` Docker Compose→K3s 원복 8단계 매뉴얼. 테스트 R2 시나리오 4건 추가.
+
+---
+
 ## 2026-04-12 — KIS OAuth 토큰 장중 health 체크 (PR #170)
 
 장중(09~15시) 매시 정각 KIS OAuth 토큰 유효성 자동 검증 크론잡 추가. unified_scheduler 11번째 잡. 토큰 없음 → 재발급, TTL 1h 미만 → 갱신, 실패 시 NotifierAgent→Telegram 알림. 분산 락 TTL 30초. KIS_IS_PAPER_TRADING 설정에 따라 paper/real 스코프 자동 결정. 배포 전 K3s pod에서 `issue_kis_token(scope='paper')` 토큰 발급 테스트로 연결 정상 확인.
