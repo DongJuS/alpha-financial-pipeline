@@ -144,15 +144,16 @@ Phase 0 완료 (PR #178~#180). 분봉 데이터 축적 시작.
 **Phase 1 (40영업일 후):** RL 분봉 피처 2개 (vwap_deviation, volume_skew)
 **Phase 2 (Phase 1 검증 후):** LLM 장중 패턴 컨텍스트
 
-### 클라우드 마이그레이션 실행 (인스턴스 생성 대기 중)
+### ✅ 클라우드 마이그레이션 완료 (2026-04-17, PR #190~#192)
 
-**서버:** Oracle Cloud Always Free (춘천 리전, 4 OCPU ARM, 24GB RAM, 200GB) 1순위 + Hetzner fallback.
-**현재 상태 (2026-04-15):** PAYG 전환 완료, OCI CLI 설정 완료, VCN 생성 완료. 인스턴스 생성 크론 5분 간격 자동 재시도 중.
-Budget Alert $0 미설정 — 설정 필요.
-로그 확인: `tail -5 /tmp/oci_retry.log`. 성공 시 `/tmp/oci_instance_created.txt`에 OCID 기록.
-상세: `docs/oracle-cloud-setup.md`
-상세 (서버 비교): `.agent/discussions/20260413-cloud-infra-oracle-vs-hetzner.md`
-상세 (실행 계획): `.agent/discussions/20260411-cloud-migration-execution-plan.md`
+**서버:** Oracle Cloud ARM64 (152.67.223.37, ubuntu, 4 OCPU/24GB, 200GB).
+**배포:** `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` (prod override).
+**스토리지:** Cloudflare R2 (`alpha-datalake` 버킷, S3v4). MinIO는 `--profile minio-local`로 폴백.
+**LLM 인증:** CLI/OAuth 마운트 (`~/.claude`, `~/.codex`, `~/.config/gcloud`) + `CLAUDE_CODE_OAUTH_TOKEN` 환경변수. OpenAI는 더미 key(미사용).
+**DB 시드:** instruments 2,770건(KOSPI 949 + KOSDAQ 1,821), trading_universe 3건.
+**검증 결과:** smoke ✅ / health ✅ / R2 list ✅ (Gate B 통과).
+**남은 작업:** Budget Alert $0 설정(콘솔), S3 Lifecycle(tick_data 30d→IA/90d→Glacier IR).
+상세: `docs/oracle-cloud-setup.md` + `docs/cloud-migration-phases.md`
 
 ---
 
@@ -165,4 +166,4 @@ Budget Alert $0 미설정 — 설정 필요.
 - DB 정리 크론 (7일 초과 틱 파티션 DROP) — 용량 > 5GB 시
 ---
 
-*Last updated: 2026-04-15 (Oracle 인스턴스 크론 등록 + Ruff pre-commit hook)*
+*Last updated: 2026-04-17 (클라우드 마이그레이션 완료 — Oracle ARM64 + Cloudflare R2)*

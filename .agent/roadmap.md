@@ -88,20 +88,15 @@ Phase 2 (Phase 1 검증 후): LLM 장중 패턴 컨텍스트 추가
 **왜 필요한가:** 분봉 통합(1시간봉) 구현 완료했으나, 실제 예측 품질이 올라갔는지 미검증.
 일봉만 사용한 예측 vs 일봉+분봉 예측의 시그널 품질을 백테스트 또는 모의투자 로그로 비교해야 투자 판단의 근거가 된다.
 
-### 클라우드 전환 (날짜 미정)
+### ✅ 클라우드 전환 완료 (2026-04-17)
 
-**서버 결정 변경 (2026-04-13):** Oracle Cloud Always Free 1순위 + Hetzner CAX21 fallback (2트랙).
-Oracle(4 OCPU ARM, 24GB RAM, 200GB, 서울 리전, 월 0원) 인스턴스 생성을 2주 시도 → 실패 시 Hetzner(€7.99/월 ~11,000원).
-GCP·NCP는 동일 스펙 7~10배 비용으로 기각. 학생 크레딧(NCP/Azure/AWS)은 2~6개월 소진되어 지속 불가.
-PAYG 전환 + Budget Alert $0으로 유휴 회수·과금 방지. Oracle 성공 시 RL 학습도 서버에서 가능 (24GB).
-Docker Compose 배포 + Cold migration + 로컬 2주 유지 롤백 전략은 서버 무관하게 동일.
+**결과:** Oracle Cloud ARM64 인스턴스(152.67.223.37, 4 OCPU/24GB/200GB, 월 0원) 선택, Hetzner fallback은 미사용.
+Docker Compose prod override + Cloudflare R2 + LLM CLI/OAuth 마운트로 배포. smoke/health/R2 Gate B 통과.
+로컬 K3s는 원복 가능 상태로 1~2주 유지(`k8s/README.md` 원복 매뉴얼).
 - 상세 (서버 비교·결정): `.agent/discussions/20260413-cloud-infra-oracle-vs-hetzner.md`
 - 상세 (실행 계획): `.agent/discussions/20260411-cloud-migration-execution-plan.md`
-
-**✅ LLM 인증·비용 전략 구현 완료 (2026-04-13):** CLI 구독 인증 1순위 + API Key 자동 fallback.
-CLIAuthError 예외 분리 + Claude/GPT CLI→SDK 내부 fallback + 1분 주기 Health 크론 + Telegram 알림.
-Oracle 인스턴스 생성 재시도 스크립트(`scripts/oci_instance_retry.sh`) 추가.
 - 상세 (LLM 인증): `.agent/discussions/20260411-cloud-llm-auth-cost-optimization.md`
+- 운영 가이드: `docs/oracle-cloud-setup.md` + `docs/cloud-migration-phases.md`
 
 ---
 
