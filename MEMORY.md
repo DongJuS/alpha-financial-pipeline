@@ -27,11 +27,12 @@
 2. **agent_id는 `agent_registry.agent_id`와 정확히 일치해야 한다.** 불일치 시 하트비트/상태 매칭 실패.
 3. **비활성화는 soft delete (`is_active=FALSE`)**로 처리. 하드 삭제 금지.
 
-### LLM 프로바이더 정책
-1. **LLM API 키를 추가하거나 요구하지 말 것.** CLI/OAuth가 유일한 인증 방식.
-2. Claude: `ANTHROPIC_CLI_COMMAND` 환경변수 또는 `/usr/bin/claude` 바이너리에 의존.
-3. Gemini: `~/.config/gcloud/application_default_credentials.json` ADC 파일에 의존.
-4. GPT: 사용 안 함 (API key 없음이 정상).
+### LLM 프로바이더 정책 (2026-04-13 갱신)
+1. **인증 우선순위: CLI 구독 1순위 → API Key SDK 자동 fallback.** CLI 인증 실패(`CLIAuthError`) 시 내부적으로 SDK로 전환.
+2. Claude: `ANTHROPIC_CLI_COMMAND` CLI 우선 → `ANTHROPIC_API_KEY` SDK fallback (`_ensure_sdk_client()` lazy 초기화).
+3. GPT: Codex CLI 우선 → `OPENAI_API_KEY` SDK fallback. `gpt_client.py` `__init__`에서 CLI 먼저 시도.
+4. Gemini: `~/.config/gcloud/application_default_credentials.json` ADC 파일에 의존.
+5. **1분 주기 health 크론잡**이 3 프로바이더 인증 상태 감시 → 상태 변경 시만 Telegram 알림.
 
 ### DB 배치 처리
 1. **새로운 bulk upsert 함수를 만들 때 반드시 `executemany()`를 사용할 것.** `for + await execute()` 패턴 금지.
@@ -55,9 +56,9 @@
 ## 🔍 미해결 이슈
 
 ### LLM 프로바이더 Docker 내 실패
-- **상태**: 미해결
-- Predictor 1~5 전체 실패. Claude CLI / Gemini OAuth가 Docker 내에서 동작하지 않음.
-- `docker compose logs worker` 확인 필요.
+- **상태**: 부분 해결 (2026-04-13)
+- Claude/GPT: CLI 실패 시 API Key SDK 자동 fallback 구현 완료. Docker 내 `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` 환경변수 설정 시 정상 동작.
+- Gemini: ADC 파일 마운트 필요 (미해결). Docker 환경에서 `~/.config/gcloud/` 볼륨 마운트 또는 `GOOGLE_APPLICATION_CREDENTIALS` 설정 필요.
 
 ### SearchAgent 모델 호환성
 - **상태**: 미해결
@@ -90,8 +91,8 @@ Orchestrator
 - [ ] 프로덕션 환경 배포 및 모니터링
 - [ ] 성능 튜닝 (블렌딩 가중치 최적화)
 - [ ] QA 잔여 이슈 처리 (C3, H1~H4, M1~M4)
-- [ ] LLM 프로바이더 Docker 내 실패 해결
+- [ ] LLM 프로바이더 Docker 내 실패 해결 (Gemini ADC 마운트만 잔여)
 
 ---
 
-*Last updated: 2026-03-28*
+*Last updated: 2026-04-13*
