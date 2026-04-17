@@ -294,6 +294,18 @@ async def main_async() -> int:
     except Exception as e:
         logger.error("통합 스케줄러 시작 실패 (Orchestrator는 계속 진행): %s", e)
 
+    # Redis alerts pub/sub → Telegram 릴레이 리스너 기동
+    # (코드 내 publish(TOPIC_ALERTS, ...) 경로가 실제로 Telegram까지 닿게 함)
+    notifier_listener_task: asyncio.Task | None = None
+    try:
+        from src.agents.notifier import NotifierAgent
+
+        _notifier_listener = NotifierAgent()
+        notifier_listener_task = asyncio.create_task(_notifier_listener.listen_alerts())
+        logger.info("NotifierAgent alerts 리스너 기동")
+    except Exception as e:
+        logger.error("NotifierAgent alerts 리스너 기동 실패 (계속 진행): %s", e)
+
     # Orchestrator 생성
     from src.agents.orchestrator import OrchestratorAgent
 
@@ -465,6 +477,14 @@ async def main_async() -> int:
     finally:
         stop_event.set()
         await keepalive_task
+        if notifier_listener_task is not None:
+            notifier_listener_task.cancel()
+            try:
+                await notifier_listener_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.warning("NotifierAgent alerts 리스너 종료 중 예외: %s", e)
 
     return 0
 
