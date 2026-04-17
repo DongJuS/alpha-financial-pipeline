@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from zoneinfo import ZoneInfo
 
+from apscheduler.events import EVENT_JOB_ERROR, JobExecutionEvent
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -219,6 +220,59 @@ async def check_llm_auth_health() -> dict[str, str]:
         logger.debug("LLM auth health: 변경 없음 %s", current_status)
 
     return current_status
+
+
+def _extract_job_error_payload(
+    event: JobExecutionEvent,
+    scheduler: AsyncIOScheduler,
+) -> dict[str, str]:
+    """JobExecutionEvent에서 알림에 필요한 필드를 추출한다. (테스트 가능하도록 분리)"""
+    job_id = event.job_id or "unknown"
+    job = scheduler.get_job(job_id) if event.job_id else None
+    job_name = job.name if job else job_id
+    exc = event.exception
+    exc_msg = f"{type(exc).__name__}: {exc}" if exc else "unknown error"
+
+    tb_excerpt = ""
+    if event.traceback:
+        tb_lines = str(event.traceback).strip().split("\n")[-10:]
+        tb_excerpt = "\n".join(tb_lines)
+
+    return {
+        "job_id": job_id,
+        "job_name": job_name,
+        "exception": exc_msg,
+        "traceback_excerpt": tb_excerpt,
+    }
+
+
+def _make_job_error_listener(scheduler: AsyncIOScheduler):
+    """EVENT_JOB_ERROR 콜백을 생성한다. (module-level: 테스트 가능)"""
+    import asyncio
+
+    def _on_job_error(event: JobExecutionEvent) -> None:
+        payload = _extract_job_error_payload(event, scheduler)
+        logger.error(
+            "스케줄러 잡 실패: job_id=%s name=%s exc=%s",
+            payload["job_id"], payload["job_name"], payload["exception"],
+        )
+        try:
+            from src.agents.notifier import NotifierAgent
+
+            async def _notify() -> None:
+                try:
+                    await NotifierAgent().send_scheduler_error_alert(**payload)
+                except Exception as notify_exc:
+                    logger.warning("스케줄러 에러 알림 발송 실패: %s", notify_exc)
+
+            try:
+                asyncio.get_running_loop().create_task(_notify())
+            except RuntimeError:
+                logger.debug("이벤트 루프 없음 — 스케줄러 에러 알림 스킵")
+        except Exception as exc:
+            logger.warning("스케줄러 에러 알림 구성 실패: %s", exc)
+
+    return _on_job_error
 
 
 async def get_unified_scheduler() -> AsyncIOScheduler:
@@ -731,6 +785,9 @@ async def start_unified_scheduler() -> None:
         misfire_grace_time=3600,
         replace_existing=True,
     )
+
+    # 잡 실패 이벤트 → Telegram 알림 훅
+    scheduler.add_listener(_make_job_error_listener(scheduler), EVENT_JOB_ERROR)
 
     scheduler.start()
     job_count = len(scheduler.get_jobs())
