@@ -156,6 +156,25 @@ class NotifierAgent:
 
         return await self.send(event_type="promotion_ready", message=text)
 
+    async def send_scheduler_error_alert(
+        self,
+        job_id: str,
+        job_name: str,
+        exception: str,
+        traceback_excerpt: str = "",
+    ) -> bool:
+        """APScheduler 잡 실행 실패 시 Telegram 알림."""
+        text = (
+            f"🔴 스케줄러 잡 실패\n"
+            f"- Job ID: {job_id}\n"
+            f"- 이름: {job_name}\n"
+            f"- 예외: {exception}\n"
+            f"- 시각(KST): {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        if traceback_excerpt:
+            text += f"\n- 스택(요약):\n{traceback_excerpt}"
+        return await self.send(event_type="scheduler_job_error", message=text)
+
     async def send_llm_auth_alert(
         self,
         provider: str,
