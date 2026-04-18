@@ -24,8 +24,8 @@ TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-}"
 
 # ── 데이터 수집 ──────────────────────────────────────────────────
 DOCKER_DF=$(docker system df 2>/dev/null || echo "docker system df 실행 실패")
-VOLUMES_SIZE=$(sudo du -sh /var/lib/docker/volumes/ 2>/dev/null | cut -f1 || echo "N/A")
-VOLUMES_BYTES=$(sudo du -sb /var/lib/docker/volumes/ 2>/dev/null | cut -f1 || echo "0")
+VOLUMES_SIZE=$(du -sh /var/lib/docker/volumes/ 2>/dev/null | cut -f1 || echo "N/A")
+VOLUMES_BYTES=$(du -sb /var/lib/docker/volumes/ 2>/dev/null | cut -f1 || echo "0")
 DISK_USAGE=$(df -h / 2>/dev/null | tail -1 || echo "N/A")
 DISK_PERCENT=$(df / 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%' || echo "0")
 
