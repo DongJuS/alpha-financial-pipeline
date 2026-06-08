@@ -184,3 +184,29 @@ class _CollectorBase:
 
         await redis.set(cache_key, approval_key, ex=TTL_KIS_APPROVAL_KEY)
         return approval_key
+
+    async def _invalidate_ws_approval_key(self) -> None:
+        """Redis에 캐시된 approval_key를 삭제합니다."""
+        scope = self._account_scope()
+        redis = await get_redis()
+        cache_key = kis_approval_key(scope)
+        await redis.delete(cache_key)
+        logger.info("KIS approval_key 캐시 삭제 완료 (scope=%s)", scope)
+
+    async def _notify_kis_approval_invalid(
+        self,
+        old_key: str,
+        *,
+        retry_exhausted: bool = False,
+    ) -> None:
+        """KIS approval_key 무효화 시 Telegram 알림을 발송합니다."""
+        try:
+            from src.agents.notifier import NotifierAgent
+
+            notifier = NotifierAgent()
+            await notifier.send_kis_approval_alert(
+                old_key=old_key,
+                retry_exhausted=retry_exhausted,
+            )
+        except Exception as e:
+            logger.warning("KIS approval 알림 발송 실패: %s", e)
