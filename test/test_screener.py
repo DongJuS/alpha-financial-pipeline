@@ -1,6 +1,7 @@
 """test/test_screener.py — 스크리너 단위 테스트"""
 
 import unittest
+from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 from src.agents.screener import _score_ticker, screen_tickers
@@ -39,6 +40,31 @@ class ScoreTickerTest(unittest.TestCase):
         bars[0]["change_pct"] = None
         passes, _ = _score_ticker(bars, 2.0, 3.0)
         self.assertFalse(passes)
+
+    def test_decimal_inputs_no_typeerror(self) -> None:
+        """asyncpg NUMERIC -> Decimal 입력이 와도 float 와 산술 시 크래시가 없어야 한다.
+
+        실시간 틱 전환 후 change_pct(NUMERIC) 가 Decimal 로 들어와
+        `Decimal / float` TypeError 로 매 사이클 크래시하던 회귀를 가드한다.
+        """
+        bars = [{"volume": Decimal("5000"), "change_pct": Decimal("4.0000")}]
+        bars.extend({"volume": Decimal("1000"), "change_pct": Decimal("0.5000")} for _ in range(20))
+        passes, score = _score_ticker(bars, vol_threshold=2.0, pct_threshold=3.0)
+        self.assertTrue(passes)  # abs(4.0) >= 3.0
+        self.assertIsInstance(score, float)
+
+    def test_decimal_negative_and_zero_change_pct(self) -> None:
+        """음수 Decimal 은 abs 로, Decimal('0')/None 은 0.0 으로 안전 처리돼야 한다."""
+        neg = self._make_bars(today_vol=500, today_chg=0.0)
+        neg[0]["change_pct"] = Decimal("-4.0")
+        passes_neg, _ = _score_ticker(neg, 2.0, 3.0)
+        self.assertTrue(passes_neg)  # abs(-4.0) >= 3.0
+
+        zero = self._make_bars(today_vol=500, today_chg=0.0)
+        zero[0]["change_pct"] = Decimal("0")
+        passes_zero, score_zero = _score_ticker(zero, 2.0, 3.0)
+        self.assertFalse(passes_zero)
+        self.assertIsInstance(score_zero, float)
 
 
 class ScreenTickersTest(unittest.IsolatedAsyncioTestCase):
