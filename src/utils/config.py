@@ -110,7 +110,7 @@ class Settings(BaseSettings):
 
     # ── Strategy Modes (전략별 독립 포트폴리오) ─────────────────────────────
     strategy_modes: str = Field(
-        default='{"A": "paper", "B": "paper", "RL": "virtual", "S": "virtual", "L": "virtual"}',
+        default='{"A": "virtual", "B": "virtual", "RL": "virtual", "S": "virtual", "L": "virtual"}',
         alias="STRATEGY_MODES",
     )
     strategy_capital_allocation: str = Field(
