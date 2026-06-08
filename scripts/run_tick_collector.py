@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
+from src.utils.config import get_settings
 from src.utils.logging import get_logger, setup_logging
 from src.utils.redis_client import set_heartbeat
 
@@ -79,6 +80,45 @@ async def _heartbeat_keepalive(stop_event: asyncio.Event) -> None:
             break
         except asyncio.TimeoutError:
             pass
+
+
+# ── Telegram 알림 ───────────────────────────────────────────────────────────
+
+
+async def _send_telegram(message: str) -> None:
+    """Telegram 알림을 전송합니다. 실패해도 수집을 중단하지 않습니다."""
+    try:
+        import httpx
+        settings = get_settings()
+        token = settings.telegram_bot_token
+        chat_id = settings.telegram_chat_id
+        if not token or not chat_id:
+            return
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(url, json={"chat_id": chat_id, "text": message})
+    except Exception as e:
+        logger.warning("Telegram 알림 전송 실패 (무시): %s", e)
+
+
+async def _check_tick_count_and_notify(delay_sec: int = 300) -> None:
+    """delay_sec 후 오늘 적재된 틱 건수를 DB에서 조회하여 Telegram으로 보고합니다."""
+    await asyncio.sleep(delay_sec)
+    try:
+        from src.utils.db_client import fetchrow
+        today = datetime.now(_KST).strftime("%Y%m%d")
+        row = await fetchrow(
+            f"SELECT COUNT(*) AS cnt FROM tick_data_{today}",
+        )
+        count = int(row["cnt"]) if row else 0
+        scope = "real" if not get_settings().kis_is_paper_trading else "paper"
+        if count > 0:
+            msg = f"[Tick Collector] {today} 적재 확인: {count:,}건 ({scope} mode)"
+        else:
+            msg = f"[Tick Collector] {today} 적재 0건 — 데이터 수신 확인 필요 ({scope} mode)"
+        await _send_telegram(msg)
+    except Exception as e:
+        logger.warning("틱 건수 조회/알림 실패 (무시): %s", e)
 
 
 # ── Market Hours Check ───────────────────────────────────────────────────────
@@ -180,6 +220,7 @@ async def main_async() -> int:
     logger.info("Heartbeat keepalive 시작: agent=%s, interval=%ds", _TICK_AGENT_ID, _KEEPALIVE_INTERVAL)
 
     # ── 메인 수집 루프 ──────────────────────────────────────────────
+    notified_today: str | None = None
     try:
         while not stop_event.is_set():
             # 장 시간 체크
@@ -212,6 +253,17 @@ async def main_async() -> int:
                     break
                 except asyncio.TimeoutError:
                     continue
+
+            # 하루 1회 장 시작 Telegram 알림
+            today_str = datetime.now(_KST).strftime("%Y-%m-%d")
+            if notified_today != today_str:
+                notified_today = today_str
+                scope = "real" if not get_settings().kis_is_paper_trading else "paper"
+                await _send_telegram(
+                    f"[Tick Collector] {today_str} 장 시작 — "
+                    f"{len(resolved)}종목 수집 진입 ({scope} mode)"
+                )
+                asyncio.create_task(_check_tick_count_and_notify(300))
 
             logger.info("틱 수집 시작: %d종목, reconnect_max=%d", len(resolved), reconnect_max)
 

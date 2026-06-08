@@ -102,22 +102,44 @@ class OrchestratorAgent:
 
     # ── Per-strategy Portfolio Management ──────────────────────────────────
 
+    def _get_strategy_mode(self, strategy_id: str) -> str:
+        """strategy_modes 설정에서 전략의 account_scope를 반환합니다."""
+        settings = get_settings()
+        try:
+            modes = json.loads(settings.strategy_modes)
+        except (json.JSONDecodeError, TypeError):
+            modes = {}
+        return str(modes.get(strategy_id, "virtual"))
+
     def _get_portfolio_for_strategy(
         self,
         strategy_id: str,
     ) -> PortfolioManagerAgent:
-        """전략별 PM 인스턴스를 지연 생성합니다."""
+        """전략별 PM 인스턴스를 지연 생성합니다.
+
+        strategy_modes 설정에 따라 virtual scope이면
+        VirtualBroker를 PM에 주입합니다.
+        """
         if strategy_id not in self._strategy_portfolios:
             from src.agents.portfolio_manager import PortfolioManagerAgent
 
+            scope = self._get_strategy_mode(strategy_id)
+            virtual_broker = None
+            if scope == "virtual":
+                virtual_broker = self._get_virtual_broker_for_strategy(
+                    strategy_id
+                )
+
             pm = PortfolioManagerAgent(
-                agent_id=f"portfolio_manager_{strategy_id}"
+                agent_id=f"portfolio_manager_{strategy_id}",
+                virtual_broker=virtual_broker,
             )
             self._strategy_portfolios[strategy_id] = pm
             logger.info(
-                "Created per-strategy PM for %s: %s",
+                "Created per-strategy PM for %s: %s (scope=%s)",
                 strategy_id,
                 pm.agent_id,
+                scope,
             )
         return self._strategy_portfolios[strategy_id]
 
@@ -279,10 +301,15 @@ class OrchestratorAgent:
                     )
 
                 for strategy_name, predictions in all_predictions.items():
+                    strategy_scope = self._get_strategy_mode(
+                        strategy_name
+                    )
                     logger.info(
-                        "Processing %d predictions for strategy %s",
+                        "Processing %d predictions for strategy %s "
+                        "(scope=%s)",
                         len(predictions),
                         strategy_name,
+                        strategy_scope,
                     )
 
                     if not predictions:
@@ -299,6 +326,7 @@ class OrchestratorAgent:
                     orders = await portfolio_mgr.process_predictions(
                         predictions,
                         signal_source_override=signal_source,
+                        account_scope_override=strategy_scope,
                     )
                     all_orders.extend(orders)
                     logger.info(

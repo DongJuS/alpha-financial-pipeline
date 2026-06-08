@@ -18,7 +18,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
-from src.brokers import build_paper_broker, build_real_broker
+from src.brokers import build_paper_broker, build_real_broker, build_virtual_broker
+from src.brokers.virtual_broker import VirtualBroker, VirtualBrokerExecution
 from src.constants import PAPER_TRADING_INITIAL_CAPITAL
 from src.db.models import AgentHeartbeatRecord, PaperOrderRequest, PredictionSignal
 from src.db.queries import (
@@ -48,10 +49,15 @@ logger = get_logger(__name__)
 
 
 class PortfolioManagerAgent:
-    def __init__(self, agent_id: str = "portfolio_manager_agent") -> None:
+    def __init__(
+        self,
+        agent_id: str = "portfolio_manager_agent",
+        virtual_broker: VirtualBroker | None = None,
+    ) -> None:
         self.agent_id = agent_id
         self.paper_broker = build_paper_broker()
         self.real_broker = build_real_broker()
+        self.virtual_broker = virtual_broker
 
     @staticmethod
     def _primary_account_scope_from_config(cfg: dict) -> str:
@@ -70,7 +76,16 @@ class PortfolioManagerAgent:
         return [scope for scope in ordered_scopes if enabled.get(scope, False)]
 
     @staticmethod
-    def _broker_for_scope(account_scope: str, paper_broker, real_broker):
+    def _broker_for_scope(
+        account_scope: str,
+        paper_broker,
+        real_broker,
+        virtual_broker: VirtualBroker | None = None,
+    ):
+        if account_scope == "virtual":
+            if virtual_broker is not None:
+                return virtual_broker
+            return build_virtual_broker()
         return paper_broker if account_scope == "paper" else real_broker
 
     async def _daily_realized_pnl_pct(self, account_scope: str) -> float:
@@ -185,6 +200,27 @@ class PortfolioManagerAgent:
         latest_close = int(candles[0]["close"]) if candles else 0
         return name, latest_close
 
+    async def _execute_via_broker(
+        self,
+        broker,
+        order: PaperOrderRequest,
+    ) -> VirtualBrokerExecution | object:
+        """브로커 타입에 따라 올바른 시그니처로 주문을 실행합니다.
+
+        VirtualBroker는 개별 파라미터를 받고,
+        PaperBroker/KISBroker는 PaperOrderRequest 객체를 받습니다.
+        """
+        if isinstance(broker, VirtualBroker):
+            return await broker.execute_order(
+                ticker=order.ticker,
+                side=order.signal,
+                quantity=order.quantity,
+                price=order.price,
+                name=order.name,
+                signal_source=order.signal_source or "VIRTUAL",
+            )
+        return await broker.execute_order(order)
+
     async def process_signal(
         self,
         signal: PredictionSignal,
@@ -198,14 +234,21 @@ class PortfolioManagerAgent:
         signal_source = signal_source_override or signal.strategy
         cfg = risk_config or {}
         account_scope = normalize_account_scope(
-            account_scope_override or self._primary_account_scope_from_config(cfg)
+            account_scope_override
+            or self._primary_account_scope_from_config(cfg)
         )
-        name, price = await self._resolve_name_and_price(signal.ticker, signal.target_price)
+        name, price = await self._resolve_name_and_price(
+            signal.ticker, signal.target_price
+        )
         if price <= 0:
-            logger.warning("가격 정보 없음으로 주문 스킵: %s", signal.ticker)
+            logger.warning(
+                "가격 정보 없음으로 주문 스킵: %s", signal.ticker
+            )
             return None
 
-        position = await get_position(signal.ticker, account_scope=account_scope)
+        position = await get_position(
+            signal.ticker, account_scope=account_scope
+        )
         if signal.signal == "BUY":
             order_qty = 1
             max_position_pct = int(cfg.get("max_position_pct", 20))
@@ -213,22 +256,42 @@ class PortfolioManagerAgent:
             paper_seed_capital_raw = cfg.get("paper_seed_capital")
             if is_paper and paper_seed_capital_raw is None:
                 account = await get_trading_account(account_scope)
-                paper_seed_capital = int(account.get("seed_capital") or PAPER_TRADING_INITIAL_CAPITAL) if account else PAPER_TRADING_INITIAL_CAPITAL
+                paper_seed_capital = (
+                    int(
+                        account.get("seed_capital")
+                        or PAPER_TRADING_INITIAL_CAPITAL
+                    )
+                    if account
+                    else PAPER_TRADING_INITIAL_CAPITAL
+                )
             else:
-                paper_seed_capital = int(paper_seed_capital_raw or PAPER_TRADING_INITIAL_CAPITAL)
-            total_value = await portfolio_total_value(account_scope=account_scope)
+                paper_seed_capital = int(
+                    paper_seed_capital_raw
+                    or PAPER_TRADING_INITIAL_CAPITAL
+                )
+            total_value = await portfolio_total_value(
+                account_scope=account_scope
+            )
             current_value = (
-                int(position["quantity"]) * int(position["current_price"]) if position else 0
+                int(position["quantity"])
+                * int(position["current_price"])
+                if position
+                else 0
             )
             next_value = current_value + (order_qty * price)
             if is_paper:
-                denominator = max(total_value, paper_seed_capital, 1)
+                denominator = max(
+                    total_value, paper_seed_capital, 1
+                )
             else:
-                denominator = max(total_value + (order_qty * price), 1)
+                denominator = max(
+                    total_value + (order_qty * price), 1
+                )
             next_weight_pct = (next_value / denominator) * 100
             if next_weight_pct > max_position_pct:
                 logger.warning(
-                    "BUY 스킵: max_position_pct 초과 (ticker=%s, next=%.2f%%, limit=%s%%)",
+                    "BUY 스킵: max_position_pct 초과 "
+                    "(ticker=%s, next=%.2f%%, limit=%s%%)",
                     signal.ticker,
                     next_weight_pct,
                     max_position_pct,
@@ -245,10 +308,22 @@ class PortfolioManagerAgent:
                 agent_id=self.agent_id,
                 account_scope=account_scope,
             )
-            broker = self._broker_for_scope(account_scope, self.paper_broker, self.real_broker)
-            execution = await broker.execute_order(order)
+            broker = self._broker_for_scope(
+                account_scope,
+                self.paper_broker,
+                self.real_broker,
+                self.virtual_broker,
+            )
+            execution = await self._execute_via_broker(
+                broker, order
+            )
             if execution.status == "REJECTED":
-                logger.warning("%s 주문 거절: %s (%s)", account_scope, signal.ticker, execution.rejection_reason)
+                logger.warning(
+                    "%s 주문 거절: %s (%s)",
+                    account_scope,
+                    signal.ticker,
+                    execution.rejection_reason,
+                )
                 return None
             return {
                 "ticker": order.ticker,
@@ -274,10 +349,20 @@ class PortfolioManagerAgent:
             agent_id=self.agent_id,
             account_scope=account_scope,
         )
-        broker = self._broker_for_scope(account_scope, self.paper_broker, self.real_broker)
-        execution = await broker.execute_order(order)
+        broker = self._broker_for_scope(
+            account_scope,
+            self.paper_broker,
+            self.real_broker,
+            self.virtual_broker,
+        )
+        execution = await self._execute_via_broker(broker, order)
         if execution.status == "REJECTED":
-            logger.warning("%s 주문 거절: %s (%s)", account_scope, signal.ticker, execution.rejection_reason)
+            logger.warning(
+                "%s 주문 거절: %s (%s)",
+                account_scope,
+                signal.ticker,
+                execution.rejection_reason,
+            )
             return None
         return {
             "ticker": order.ticker,
@@ -341,9 +426,15 @@ class PortfolioManagerAgent:
         self,
         predictions: list[PredictionSignal],
         signal_source_override: Optional[str] = None,
+        account_scope_override: Optional[str] = None,
     ) -> list[dict]:
         cfg = await get_portfolio_config()
-        enabled_scopes = self._enabled_account_scopes_from_config(cfg)
+        if account_scope_override:
+            enabled_scopes = [
+                normalize_account_scope(account_scope_override)
+            ]
+        else:
+            enabled_scopes = self._enabled_account_scopes_from_config(cfg)
         daily_loss_limit_pct = int(cfg.get("daily_loss_limit_pct", 3))
 
         if not enabled_scopes:

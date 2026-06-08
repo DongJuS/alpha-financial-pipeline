@@ -25,9 +25,47 @@
 
 ---
 
----
-
 ## ✅ 최근 완료
+
+### OpenClaw 게이트웨이 토큰 회전 cron 복구 (2026-06-08)
+**증상:** `rotate_gateway_token.sh` cron(매일 04:00)이 2026-06-04부터 "openclaw.json not found"로 매일 실패.
+**원인:** 경로가 아니라 **UID/권한** 문제 — cron 주체 `ubuntu`(UID 1001)가 컨테이너 `node`(UID 1000) 소유 + mode 700인 `~/openclaw-data/`에 진입 불가 → `[[ -f ]]` false. (토큰 정본=openclaw.json `gateway.auth.token`, 컨테이너 env `OPENCLAW_GATEWAY_TOKEN`은 비어있음 확인.)
+**해결:** 호스트에서 파일을 직접 건드리지 않고 `docker exec -u node`로 컨테이너 안에서 json 읽기/쓰기 → 700 보안 모델 유지. DRY_RUN + 접근/쓰기/재시작 3단계 검증 추가. 자격증명 로드·토큰 통보를 함수로 분리(Infisical 교체 지점 ①②).
+- 신규 `scripts/oci/rotate_openclaw_gateway_token.sh`(upstream openclaw 클론에 untracked 방치돼 있던 구 스크립트를 버전관리 편입), crontab 경로 교체.
+- DRY_RUN 라이브 검증 통과(접근 OK). 실제 1회 회전은 미실행(Control UI 세션 무효화 부작용 → 04:00 cron 또는 별도 동의 시).
+**Infisical 이행 로드맵(후속):** 서버 런타임 secret(Telegram/게이트웨이 토큰/Gemini OAuth)을 Infisical로. k8s SOPS+age는 유지(2-도메인 공존). 평문 Telegram Bot Token 회전 권고.
+
+### Personal Hub 독립 Compose 골격 추가 (2026-04-30)
+기존 트레이딩 런타임과 분리된 `personal-hub/` 프로젝트를 신규 추가.
+- `docker-compose.yml` — `postgres`, `redis`, `db-init`만 가진 독립 Compose
+- `sql/001_init_personal_hub.sql` — `person_profile_core`, `bot_registry`, `ingest_events`, 5개 도메인 테이블, `derived_artifacts`, `correction_events`
+- 조회용 view 2종 추가: `recall_records`, `structured_record_overview`
+- 방향: 허브/API/Telegram bot은 나중에 붙이고, 현재는 DB routing이 쉬운 스키마를 먼저 고정
+상세: `personal-hub/README.md`
+
+### Oracle 서버 운영 실태 점검 (2026-04-29)
+**실제 운영 구조 확인:** Oracle 서버 `<OCI_PUBLIC_IP>`에서 `docker compose ls` 기준 3개 프로젝트가 동작 중.
+- `alpha-financial-pipeline` — 6개 서비스 (postgres, redis, api, worker, tick-collector, ui)
+- `infisical` — 3개 서비스
+- `openclaw` — 1개 서비스
+**자동 복구 방식:** alpha 컨테이너는 `restart: always`, openclaw는 `unless-stopped`. 별도 compose systemd 유닛은 없고, `docker.service` 재기동 시 컨테이너 restart policy에 의존.
+**보조 운영 자동화:** systemd는 `cloudflared-tunnel-investing.service`, `cloudflared-tunnel-openclaw.service` 2개만 관리. crontab은 `disk_monitor.sh`(매일 09:00 KST Telegram 알림) + OpenClaw 잡 3개를 실행.
+**런타임 모드 확인:** `tick-collector`는 `KIS_IS_PAPER_TRADING=false`, `worker`/`api`는 `true`.
+**중요 발견:** 현재 프로덕션 compose merge 결과가 완전한 immutable prod 배포가 아님.
+- `api`/`worker`/`tick-collector`가 모두 서버 워킹트리 `~/alpha-financial-pipeline -> /app` bind mount 사용
+- `api`는 `uvicorn ... --reload`, `ui`는 `npm run dev`로 실행
+- 즉, 실제 운영은 "prod env + resource limit + dev bind mount/command" 혼합 상태
+
+상세: 서버 SSH 실사 (`docker compose ls`, `docker ps`, `systemctl`, `crontab`, `docker compose config`)
+
+### 서버 코호스팅 준비 + KIS 방어 코드 (2026-04-18)
+
+**IP 전환:** ephemeral <OCI_PUBLIC_IP_OLD> → reserved <OCI_PUBLIC_IP>. 리사이징 시도("Out of host capacity") 실패 후 동거 결정.
+**리소스 증가:** 트레이딩 ~3.25GB → ~7.75GB (postgres 1.5G, worker 3G, api 2G).
+**디스크 모니터링:** `scripts/oci/disk_monitor.sh` — Docker 볼륨 50GB 초과 시 Telegram 알림. 매일 09:00 KST 크론.
+**KIS approval 방어:** invalid approval 감지 → 캐시 삭제 → 1회 재발급 → Telegram 알림. 테스트 11개.
+**OpenClaw 준비:** ~/openclaw/ 디렉토리 생성 완료.
+- 상세: `.agent/discussions/20260418-server-cohosting-plan.md`
 
 ### 클라우드 LLM 인증·비용 전략 구현 (2026-04-13)
 
@@ -120,14 +158,7 @@ ohlcv_minute 인프라 + S3 아카이브 + UnifiedMarketData 빌더 완성.
 1. `collector.run()` 복원 → `collect_daily_bars()` 위임. 08:30 KST 일봉 수집 정상화.
 2. 별도 `tick-collector` 서비스 신규 추가 — 장애 격리(틱↔매매 독립), 독립 재시작. K3s 배포 필요.
 
-### RL 모델 DQN 업그레이드 + Optuna (Phase 1~2 완료)
-
-**✅ Phase 1 — SB3 통합 Trainer + Ensemble (2026-04-12):** 완료.
-**✅ Phase 2 — Optuna 자동 탐색 (2026-04-12, PR #186):** 완료. 위 "최근 완료" 참조.
-
-상세: `.agent/discussions/20260412-rl-dqn-upgrade-optuna.md`
-
-### RL 실시간 추론 파이프라인 (선행 조건: 위 Phase 1~2 + 분봉 40영업일)
+### RL 실시간 추론 파이프라인 (선행 조건: RL DQN Phase 1~2 완료 + 분봉 40영업일)
 
 장중 매 5분 분봉 기반 RL 추론. PPO primary. 기존 인프라(WebSocket→Redis→분봉 집계) 활용.
 변경: `unified_scheduler.py` 장중 스케줄 + `rl_runner.py` 분봉 obs + 유상태 position.
@@ -146,7 +177,7 @@ Phase 0 완료 (PR #178~#180). 분봉 데이터 축적 시작.
 
 ### ✅ 클라우드 마이그레이션 완료 (2026-04-17, PR #190~#192)
 
-**서버:** Oracle Cloud ARM64 (<OCI_PUBLIC_IP_OLD>, ubuntu, 4 OCPU/24GB, 200GB).
+**서버:** Oracle Cloud ARM64 (<OCI_PUBLIC_IP>, reserved IP, ubuntu, 4 OCPU/24GB, 200GB).
 **배포:** `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` (prod override).
 **스토리지:** Cloudflare R2 (`alpha-datalake` 버킷, S3v4). MinIO는 `--profile minio-local`로 폴백.
 **LLM 인증:** CLI/OAuth 마운트 (`~/.claude`, `~/.codex`, `~/.config/gcloud`) + `CLAUDE_CODE_OAUTH_TOKEN` 환경변수. OpenAI는 더미 key(미사용).
@@ -166,4 +197,4 @@ Phase 0 완료 (PR #178~#180). 분봉 데이터 축적 시작.
 - DB 정리 크론 (7일 초과 틱 파티션 DROP) — 용량 > 5GB 시
 ---
 
-*Last updated: 2026-04-17 (클라우드 마이그레이션 완료 — Oracle ARM64 + Cloudflare R2)*
+*Last updated: 2026-06-08 (OpenClaw 게이트웨이 토큰 회전 cron 복구)*
