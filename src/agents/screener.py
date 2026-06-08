@@ -32,9 +32,12 @@ def _score_ticker(
     today = bars[0]
     past = bars[1:]
 
-    avg_volume = sum(b["volume"] for b in past) / len(past) if past else 0
-    volume_ratio = today["volume"] / avg_volume if avg_volume > 0 else 0.0
-    change_pct = abs(today.get("change_pct") or 0.0)
+    # asyncpg 는 NUMERIC 컬럼(change_pct 등)을 decimal.Decimal 로 돌려주는데,
+    # float 임계값과 섞어 나누면 TypeError 가 난다(실시간 틱 전환 후 발생).
+    # score 는 종목 순위 비교용이라 정밀도 손실이 무의미하므로 float 로 통일한다.
+    avg_volume = sum(float(b["volume"]) for b in past) / len(past) if past else 0.0
+    volume_ratio = float(today["volume"]) / avg_volume if avg_volume > 0 else 0.0
+    change_pct = abs(float(today.get("change_pct") or 0.0))
 
     passes = volume_ratio >= vol_threshold or change_pct >= pct_threshold
     score = (volume_ratio / vol_threshold) + (change_pct / pct_threshold)
