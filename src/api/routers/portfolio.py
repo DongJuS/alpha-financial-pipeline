@@ -57,6 +57,8 @@ class PerformanceResponse(BaseModel):
     win_rate: float
     total_trades: int
     kospi_benchmark_pct: Optional[float] = None
+    avg_profit_loss_ratio: Optional[float] = None
+    alpha: Optional[float] = None
 
 
 class PerformanceSeriesItem(BaseModel):
@@ -399,14 +401,19 @@ async def get_performance(
         if first_close > 0:
             benchmark_pct = round(((last_close / first_close) - 1.0) * 100, 2)
 
+    return_pct = metrics["return_pct"]
+    alpha = round(return_pct - benchmark_pct, 2) if benchmark_pct is not None else None
+
     return PerformanceResponse(
         period=period,
-        return_pct=metrics["return_pct"],
+        return_pct=return_pct,
         max_drawdown_pct=metrics["max_drawdown_pct"],
         sharpe_ratio=metrics["sharpe_ratio"],
         win_rate=metrics["win_rate"],
         total_trades=metrics["total_trades"],
         kospi_benchmark_pct=benchmark_pct,
+        avg_profit_loss_ratio=metrics["avg_profit_loss_ratio"],
+        alpha=alpha,
     )
 
 

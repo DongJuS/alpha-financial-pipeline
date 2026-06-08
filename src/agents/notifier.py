@@ -175,6 +175,30 @@ class NotifierAgent:
             text += f"\n- 스택(요약):\n{traceback_excerpt}"
         return await self.send(event_type="scheduler_job_error", message=text)
 
+    async def send_kis_approval_alert(
+        self,
+        old_key: str,
+        *,
+        retry_exhausted: bool = False,
+    ) -> bool:
+        """KIS WebSocket approval_key 무효화 감지 시 Telegram 알림."""
+        masked = old_key[:8] + "..." if len(old_key) > 8 else old_key
+        if retry_exhausted:
+            text = (
+                f"KIS approval_key 재발급 실패\n"
+                f"- 무효 키: {masked}\n"
+                f"- 상태: 재발급 후에도 invalid — 수동 확인 필요\n"
+                f"- 시각(KST): {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+        else:
+            text = (
+                f"KIS approval_key 무효화 감지\n"
+                f"- 무효 키: {masked}\n"
+                f"- 조치: 캐시 삭제 + 자동 재발급 시도\n"
+                f"- 시각(KST): {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+        return await self.send(event_type="kis_approval_invalid", message=text)
+
     async def send_llm_auth_alert(
         self,
         provider: str,
