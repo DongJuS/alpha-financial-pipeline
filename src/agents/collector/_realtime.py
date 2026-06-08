@@ -235,6 +235,19 @@ class _RealtimeMixin:
                 return value
         return None
 
+    @staticmethod
+    def _is_invalid_approval(raw: str) -> bool:
+        """KIS WS 제어메시지가 'invalid approval' 오류인지 판별."""
+        if not raw.startswith("{"):
+            return False
+        try:
+            msg = json.loads(raw)
+            body = msg.get("body") or {}
+            msg1 = body.get("msg1") or ""
+            return "invalid approval" in msg1.lower()
+        except Exception:
+            return False
+
     def _parse_ws_tick_packet(self, raw: str, subscribed: set[str]) -> Optional[dict]:
         """
         KIS 실시간 체결 패킷을 파싱합니다.
@@ -307,6 +320,7 @@ class _RealtimeMixin:
             started = asyncio.get_running_loop().time()
         reconnects = 0
         received = 0
+        approval_retried = False  # invalid approval 재발급은 1회만
 
         while True:
             try:
@@ -371,6 +385,21 @@ class _RealtimeMixin:
 
                         if not isinstance(raw, str):
                             continue
+
+                        # invalid approval 감지 → 캐시 삭제 + 1회 재발급 + Telegram 알림
+                        if self._is_invalid_approval(raw):
+                            if not approval_retried:
+                                approval_retried = True
+                                logger.warning("KIS invalid approval 감지 — 캐시 삭제 후 재발급 시도")
+                                await self._invalidate_ws_approval_key()
+                                await self._notify_kis_approval_invalid(approval_key)
+                                break  # inner loop → outer while에서 새 approval_key로 재연결
+                            else:
+                                logger.error("KIS invalid approval 재발급 후에도 실패 — 재시도 중단")
+                                await self._notify_kis_approval_invalid(
+                                    approval_key, retry_exhausted=True,
+                                )
+                                return -1
 
                         packet = self._parse_ws_tick_packet(raw, subscribed_set)
                         if not packet:

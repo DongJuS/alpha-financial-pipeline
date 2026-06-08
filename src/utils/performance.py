@@ -26,6 +26,8 @@ def compute_trade_performance(rows: list[dict]) -> dict:
     equity_curve: list[float] = [1.0]
     win_sells = 0
     sell_count = 0
+    win_pnls: list[float] = []
+    loss_pnls: list[float] = []
 
     for row in rows:
         ticker = str(row["ticker"])
@@ -62,6 +64,9 @@ def compute_trade_performance(rows: list[dict]) -> dict:
         sell_count += 1
         if trade_pnl > 0:
             win_sells += 1
+            win_pnls.append(trade_pnl)
+        elif trade_pnl < 0:
+            loss_pnls.append(abs(trade_pnl))
         if cost_basis > 0:
             trade_return = trade_pnl / cost_basis
             sell_returns.append(trade_return)
@@ -92,6 +97,13 @@ def compute_trade_performance(rows: list[dict]) -> dict:
         if std_dev > 0:
             sharpe_ratio = (mean_ret / std_dev) * (len(sell_returns) ** 0.5)
 
+    avg_profit_loss_ratio: float | None = None
+    if win_pnls and loss_pnls:
+        avg_win = sum(win_pnls) / len(win_pnls)
+        avg_loss = sum(loss_pnls) / len(loss_pnls)
+        if avg_loss > 0:
+            avg_profit_loss_ratio = round(avg_win / avg_loss, 2)
+
     return {
         "return_pct": round(return_pct, 2),
         "max_drawdown_pct": round(max_drawdown_pct, 2),
@@ -101,6 +113,7 @@ def compute_trade_performance(rows: list[dict]) -> dict:
         "realized_pnl": int(round(realized_pnl)),
         "invested_capital": int(round(invested_capital)),
         "sell_count": sell_count,
+        "avg_profit_loss_ratio": avg_profit_loss_ratio,
     }
 
 

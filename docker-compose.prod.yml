@@ -1,12 +1,12 @@
 # ================================================================
-# docker-compose.prod.yml — 프로덕션 오버라이드 (Hetzner CX22 + Cloudflare R2)
+# docker-compose.prod.yml — 프로덕션 오버라이드 (Oracle Cloud ARM64 + Cloudflare R2)
 #
 # 사용법:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
 # ── 배포 아키텍처 ──
 # 이 프로젝트는 두 가지 배포 경로를 유지합니다:
-#   - Docker Compose (이 파일) → 클라우드 (Hetzner) 배포용
+#   - Docker Compose (이 파일) → 클라우드 (Oracle Cloud ARM64) 배포용
 #   - K3s (k8s/ 디렉토리)      → 로컬 개발 및 향후 클라우드 K3s 전환용
 # 두 경로 모두 같은 Docker 이미지와 같은 환경변수 체계를 사용하므로,
 # 전환 시 오케스트레이션 레이어만 변경하면 됩니다 (앱 코드 변경 없음).
@@ -18,8 +18,9 @@
 # 앱 코드(s3_client.py)는 R2/MinIO 모두 지원 (환경변수만 다름).
 #
 # ── RL 학습/추론 분리 ──
-# Hetzner CX22 (4GB RAM)에서 RL 학습은 메모리 부족 (torch+SB3+Optuna ~3GB).
-# 서버는 추론만, 학습은 로컬 MacBook에서 수행 → .zip 모델 업로드 → 서버 추론.
+# Oracle Cloud ARM64 (24GB RAM, 트레이딩 서비스 ~8GB 할당).
+# worker에 3GB 제한 → torch+SB3+Optuna ~3GB 수용 가능하나,
+# 안정성 확보를 위해 학습은 로컬에서 수행, 서버는 추론만.
 # ORCH_ENABLE_RL_AUTO_RETRAIN=false로 서버 학습을 비활성화.
 #
 # ── !override 태그 (Docker Compose v2.24.6+) ──
@@ -47,7 +48,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1536M
           cpus: "0.5"
 
   redis:
@@ -55,7 +56,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
           cpus: "0.25"
 
   # ── MinIO 비활성화 (R2 전환) ──
@@ -154,10 +155,11 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME}
       S3_REGION: ${S3_REGION:-auto}
+      KIS_IS_PAPER_TRADING: "true"
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 2G
           cpus: "1.0"
 
   worker:
@@ -192,14 +194,15 @@ services:
       ORCH_MODE: blend
       ORCH_RUN_ONCE: "false"
       # RL 자동 재학습 비활성화.
-      # Hetzner CX22 (4GB RAM)에서 RL 학습 시 torch+SB3+Optuna가 ~3GB를 추가 소모하여 OOM.
-      # 워크플로우: 로컬 MacBook에서 학습 → .zip 모델 파일 업로드 → 서버는 추론만 수행.
+      # Oracle Cloud ARM64 (worker 3GB 제한): torch+SB3+Optuna ~3GB 수용 가능하나
+      # 안정성을 위해 학습은 로컬에서 수행, 서버는 추론만.
       # K3s에서도 동일 설정: k8s/overlays/prod/patches/worker-env.yaml
       ORCH_ENABLE_RL_AUTO_RETRAIN: "false"
+      KIS_IS_PAPER_TRADING: "true"
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 3G
           cpus: "1.0"
 
   # ── tick-collector prod override ──
@@ -232,10 +235,11 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME}
       S3_REGION: ${S3_REGION:-auto}
+      KIS_IS_PAPER_TRADING: "false"
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
           cpus: "0.25"
 
   # gen/gen-collector는 프로덕션에서 비활성화 (테스트 전용).
