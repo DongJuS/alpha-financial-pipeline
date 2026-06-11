@@ -59,7 +59,7 @@ def _artifact(model_path: str) -> RLPolicyArtifact:
 class DreamerTrainTest(unittest.TestCase):
     def test_train_combined_returns_artifact_payload(self) -> None:
         trainer = DreamerV3Trainer(cfg=_small_cfg())
-        result = trainer.train(_dataset(80, with_features=True))
+        result = trainer._train_core(_dataset(80, with_features=True))
         self.assertIn("state_dict", result)
         self.assertIn("world", result["state_dict"])
         self.assertIn("ac", result["state_dict"])
@@ -71,14 +71,14 @@ class DreamerTrainTest(unittest.TestCase):
 
     def test_train_daily_only_smaller_obs(self) -> None:
         trainer = DreamerV3Trainer(cfg=_small_cfg())
-        result = trainer.train(_dataset(80, with_features=False))
+        result = trainer._train_core(_dataset(80, with_features=False))
         self.assertEqual(result["obs_dim"], 6)  # 가격특징5 + 포지션1
 
 
 class DreamerPolicyInferenceTest(unittest.TestCase):
     def test_checkpoint_save_load_and_act(self) -> None:
         trainer = DreamerV3Trainer(cfg=_small_cfg())
-        result = trainer.train(_dataset(80, with_features=True))
+        result = trainer._train_core(_dataset(80, with_features=True))
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "dreamer.pt")
             save_dreamer_checkpoint(path, result)
@@ -99,6 +99,48 @@ class DreamerPolicyInferenceTest(unittest.TestCase):
         art = _artifact("")
         with self.assertRaises(ValueError):
             DreamerRLPolicy(art)
+
+
+class DreamerTrainerContractTest(unittest.TestCase):
+    """RLContinuousImprover 계약(train_with_metadata/evaluate) 적합성."""
+
+    def test_train_with_metadata_returns_artifact_and_split(self) -> None:
+        from src.agents.rl_trading import RLEvaluationMetrics, RLSplitMetadata
+
+        trainer = DreamerV3Trainer(cfg=_small_cfg())
+        artifact, split = trainer.train_with_metadata(_dataset(80, True), train_ratio=0.7)
+        try:
+            self.assertEqual(artifact.algorithm, "dreamer_v3")
+            self.assertIsNone(artifact.q_table)
+            self.assertTrue(artifact.model_path and os.path.exists(artifact.model_path))
+            self.assertIsInstance(artifact.evaluation, RLEvaluationMetrics)
+            self.assertIsInstance(split, RLSplitMetadata)
+            self.assertEqual(split.train_size + split.test_size, 80)
+
+            # 팩토리로 정책 생성 → 추론
+            policy = policy_from_artifact(artifact)
+            self.assertIsInstance(policy, DreamerRLPolicy)
+            ds = _dataset(60, True)
+            decision = policy.act(ds.closes, position=0, features=ds.features)
+            self.assertIn(decision.action, ("BUY", "SELL", "HOLD", "CLOSE"))
+            # 주: evaluate()는 walk-forward 의 daily 경로 전용(obs_dim 일치).
+            # combined 모델의 평가는 _train_core 의 홀드아웃에서 수행됨.
+        finally:
+            if artifact.model_path and os.path.exists(artifact.model_path):
+                os.remove(artifact.model_path)
+
+    def test_evaluate_adapter_arg_order(self) -> None:
+        trainer = DreamerV3Trainer(cfg=_small_cfg())
+        artifact, _ = trainer.train_with_metadata(_dataset(80, False), train_ratio=0.7)
+        try:
+            closes = _dataset(40, False).closes
+            # 두 인자 순서 모두 동작
+            m1 = trainer.evaluate(artifact.model_path, closes)
+            m2 = trainer.evaluate(closes, artifact.model_path)
+            self.assertEqual(m1.holdout_steps, m2.holdout_steps)
+        finally:
+            if artifact.model_path and os.path.exists(artifact.model_path):
+                os.remove(artifact.model_path)
 
 
 if __name__ == "__main__":
