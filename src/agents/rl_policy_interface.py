@@ -95,6 +95,11 @@ def policy_from_artifact(artifact: RLPolicyArtifact, trainer=None) -> RLPolicy:
     현재 지원: tabular_q_learning. SB3/DreamerV3 어댑터는 후속 Feature 에서 등록된다.
     """
     algo = (artifact.algorithm or "").lower()
+    if "dreamer" in algo:
+        # torch 의존 — 지연 import (인터페이스 모듈을 torch 로부터 분리)
+        from src.agents.rl_dreamer import DreamerRLPolicy
+
+        return DreamerRLPolicy(artifact)
     if "tabular" in algo or artifact.q_table is not None:
         return TabularRLPolicy(artifact, trainer=trainer)
     raise ValueError(
