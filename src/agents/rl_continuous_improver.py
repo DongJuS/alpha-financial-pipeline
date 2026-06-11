@@ -151,6 +151,7 @@ class RLContinuousImprover:
         *,
         profile_ids: Sequence[str] | None = None,
         dataset_days: int = 180,
+        data_scope: str = "daily",
         on_progress: Callable[[int], None] | None = None,
         use_hyperopt: bool | None = None,
         hyperopt_n_trials: int | None = None,
@@ -168,7 +169,10 @@ class RLContinuousImprover:
         active_before = await self._active_policy_id(canonical_ticker)
 
         try:
-            dataset = await self._build_dataset(raw_ticker, canonical_ticker, dataset_days, profile_list[0])
+            dataset = await self._build_dataset(
+                raw_ticker, canonical_ticker, dataset_days, profile_list[0],
+                data_scope=data_scope,
+            )
         except Exception as exc:
             logger.warning("RL 데이터셋 구성 실패 [%s]: %s", ticker, exc)
             return RetrainOutcome(
@@ -309,13 +313,22 @@ class RLContinuousImprover:
         canonical_ticker: str,
         dataset_days: int,
         profile_id: str,
+        data_scope: str = "daily",
     ) -> RLDataset:
         builder = self._dataset_builder or self._builder_for_profile(profile_id)
-        dataset = await builder.build_dataset(raw_ticker, days=dataset_days)
+        dataset = await builder.build_dataset(
+            raw_ticker, days=dataset_days, data_scope=data_scope
+        )
         return RLDataset(
             ticker=canonical_ticker,
             closes=list(dataset.closes),
             timestamps=list(dataset.timestamps),
+            features=(
+                [list(f) for f in dataset.features]
+                if dataset.features is not None
+                else None
+            ),
+            feature_keys=dataset.feature_keys,
         )
 
     async def _train_candidate(
