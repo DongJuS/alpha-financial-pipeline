@@ -35,6 +35,10 @@ class RLDataset:
     ticker: str
     closes: list[float]
     timestamps: list[str]
+    # combined(일봉+분봉) 모드에서 closes 와 1:1 정렬되는 per-step 일중 특징 벡터.
+    # daily 모드에서는 None (하위 호환). 마지막 차원은 has_intraday 마스크.
+    features: list[list[float]] | None = None
+    feature_keys: tuple[str, ...] | None = None
 
 
 @dataclass
@@ -128,16 +132,25 @@ class RLDatasetBuilder:
         interval: RLInterval | None = None,
         seconds: int | None = None,
         limit: int | None = None,
+        data_scope: str = "daily",
     ) -> RLDataset:
         ticker = normalize(ticker)
-        rows = await fetch_recent_market_data(
-            ticker,
-            days=days,
-            limit=limit,
-        )
+        combined = data_scope == "combined"
+        if combined:
+            # 일봉 백본 + 그날 분봉 유래 일중 특징 컬럼 (마스킹 방식)
+            from src.db.queries import fetch_daily_with_intraday
+
+            rows = await fetch_daily_with_intraday(ticker, days=days)
+        else:
+            rows = await fetch_recent_market_data(
+                ticker,
+                days=days,
+                limit=limit,
+            )
         ordered_rows = sorted(rows, key=lambda row: row["traded_at"])
-        closes = [float(row["close"]) for row in ordered_rows if row.get("close")]
-        timestamps = [str(row["traded_at"]) for row in ordered_rows if row.get("close")]
+        valid_rows = [row for row in ordered_rows if row.get("close")]
+        closes = [float(row["close"]) for row in valid_rows]
+        timestamps = [str(row["traded_at"]) for row in valid_rows]
 
         # DB 데이터 부족 시 FinanceDataReader 폴백 + DB 자동 저장
         if len(closes) < self.min_history_points:
@@ -222,7 +235,30 @@ class RLDatasetBuilder:
                 f"RL 학습 이력 부족: ticker={ticker}, "
                 f"history={len(closes)}, required={self.min_history_points}"
             )
-        return RLDataset(ticker=ticker, closes=closes, timestamps=timestamps)
+
+        features: list[list[float]] | None = None
+        feature_keys: tuple[str, ...] | None = None
+        if combined:
+            from src.agents.rl_intraday_features import (
+                INTRADAY_OBS_KEYS,
+                intraday_obs_vector,
+            )
+
+            feature_keys = INTRADAY_OBS_KEYS
+            if len(valid_rows) == len(closes):
+                # DB 경로: 행마다 일중 특징/마스크가 붙어 있음
+                features = [intraday_obs_vector(row) for row in valid_rows]
+            else:
+                # FDR 폴백으로 closes 가 교체됨 → 일중 특징 전부 마스킹(중립)
+                features = [[0.0] * len(INTRADAY_OBS_KEYS) for _ in closes]
+
+        return RLDataset(
+            ticker=ticker,
+            closes=closes,
+            timestamps=timestamps,
+            features=features,
+            feature_keys=feature_keys,
+        )
 
 
 class RLPolicyStore:
