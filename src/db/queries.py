@@ -5,7 +5,7 @@ src/db/queries.py — 코어 에이전트용 DB 쿼리 유틸
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 from src.db.models import (
@@ -304,6 +304,38 @@ async def fetch_ohlcv_range(ticker: str, start: date, end: date) -> list[dict]:
         end,
     )
     return [dict(r) for r in rows]
+
+
+async def fetch_daily_with_intraday(ticker: str, days: int = 180) -> list[dict]:
+    """일봉(ohlcv_daily)에 그날의 분봉(ohlcv_minute) 유래 일중 특징을 join 해 반환한다.
+
+    RL 'combined' 데이터셋 빌더용. 일봉이 백본(가격 그래프)이고, 각 거래일에
+    그날의 분봉 집계 특징(intraday_range_pct 등)과 has_intraday 플래그가 붙는다.
+    분봉이 없는 과거 거래일은 중립값 + has_intraday=0.0 으로 채운다(합성 없음).
+
+    ticker는 instrument_id(005930.KS) 또는 raw_code(005930) 모두 허용한다.
+    반환 행은 fetch_recent_market_data() 형식 + 일중 특징 컬럼이다.
+    """
+    from src.agents.rl_intraday_features import join_daily_with_intraday
+
+    daily_rows = await fetch_recent_market_data(ticker, days=days)
+    if not daily_rows:
+        return []
+
+    instrument_id = daily_rows[0].get("instrument_id") or ticker
+    traded_dates = [r["traded_at"] for r in daily_rows if r.get("traded_at")]
+    if not traded_dates:
+        return join_daily_with_intraday(daily_rows, [])
+
+    oldest, newest = min(traded_dates), max(traded_dates)
+    start = datetime(oldest.year, oldest.month, oldest.day, tzinfo=timezone.utc)
+    end = datetime(newest.year, newest.month, newest.day, tzinfo=timezone.utc) + timedelta(days=1)
+
+    try:
+        minute_rows = await fetch_minute_bars(instrument_id, start, end)
+    except Exception:
+        minute_rows = []
+    return join_daily_with_intraday(daily_rows, minute_rows)
 
 
 async def latest_close_price(ticker: str) -> Optional[float]:
