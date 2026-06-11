@@ -17,7 +17,9 @@ DreamerV3-스타일(컴팩트) 구현 — 핵심 구조를 충실히 따르되 C
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
@@ -32,7 +34,15 @@ from src.agents.rl_environment import (
     action_to_str,
     env_config_from_dataset,
 )
+from src.agents.rl_trading import (
+    RLEvaluationMetrics,
+    RLPolicyArtifact,
+    RLSplitMetadata,
+)
 from src.utils.logging import get_logger
+
+# DreamerV3 모델 체크포인트 저장 디렉토리
+_DREAMER_MODEL_DIR = "artifacts/rl/models/dreamer"
 
 logger = get_logger(__name__)
 
@@ -175,7 +185,121 @@ class DreamerV3Trainer:
             cfg = env_config_from_dataset(dataset, lookback=self.cfg.lookback)
         return TradingEnv(cfg)
 
-    def train(self, dataset: Any, train_ratio: float = 0.7) -> dict:
+    # -- trainer 계약 (RLContinuousImprover 호환) ---------------------------
+
+    def train_with_metadata(
+        self,
+        dataset: Any,
+        *,
+        train_ratio: float = 0.7,
+        on_progress: Any = None,
+    ) -> tuple[RLPolicyArtifact, RLSplitMetadata]:
+        """SB3/tabular 트레이너와 동일한 계약: (artifact, split_metadata) 반환."""
+        if len(dataset.closes) <= self.cfg.lookback + 10:
+            raise ValueError(
+                f"RL 학습 길이가 너무 짧습니다: ticker={dataset.ticker}, "
+                f"len={len(dataset.closes)}"
+            )
+        core = self._train_core(dataset, train_ratio)
+        if on_progress is not None:
+            on_progress(80)
+
+        policy_id = (
+            f"rl_{dataset.ticker}_"
+            f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+        )
+        model_path = self._save_model(core, policy_id)
+        ev = core["evaluation"]
+        artifact = RLPolicyArtifact(
+            policy_id=policy_id,
+            ticker=dataset.ticker,
+            created_at=datetime.now(timezone.utc).isoformat(),
+            algorithm=self.algorithm,
+            state_version="dreamer_v3",
+            lookback=self.cfg.lookback,
+            episodes=self.cfg.train_iters,
+            learning_rate=self.cfg.lr,
+            discount_factor=self.cfg.gamma,
+            epsilon=self.cfg.explore_eps,
+            trade_penalty_bps=2,
+            evaluation=RLEvaluationMetrics(**ev),
+            q_table=None,
+            model_path=model_path,
+        )
+        split_meta = self._split_metadata(dataset, train_ratio)
+        if on_progress is not None:
+            on_progress(100)
+        return artifact, split_meta
+
+    def train(self, dataset: Any, train_ratio: float = 0.7, on_progress: Any = None) -> RLPolicyArtifact:
+        return self.train_with_metadata(
+            dataset, train_ratio=train_ratio, on_progress=on_progress
+        )[0]
+
+    def evaluate(
+        self,
+        model_path_or_prices: Any,
+        closes_or_none: list[float] | None = None,
+    ) -> RLEvaluationMetrics:
+        """학습된 모델을 가격 시퀀스로 평가. 두 호출 패턴 지원(SB3 호환).
+
+        - evaluate(model_path, closes)  — SB3 스타일
+        - evaluate(closes, model_path)  — walk-forward 어댑터 스타일
+        """
+        if isinstance(model_path_or_prices, str):
+            model_path, closes = model_path_or_prices, closes_or_none
+        else:
+            closes, model_path = model_path_or_prices, closes_or_none
+        ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
+        self.load_state(ckpt["state_dict"], int(ckpt["obs_dim"]))
+        # walk-forward 는 raw closes(특징 없음) 전달 → 일봉 전용 평가
+        lookback = min(self.cfg.lookback, max(2, len(closes) - 2))
+        env = TradingEnv(
+            TradingEnvConfig(closes=[float(c) for c in closes], lookback=lookback)
+        )
+        obs, _ = env.reset()
+        terminated = False
+        steps = 0
+        while not terminated and steps < len(env.closes):
+            obs, _r, terminated, _t, _i = env.step(self._greedy_action(obs))
+            steps += 1
+        summ = env.get_episode_summary()
+        approved = summ["excess_return_pct"] > 0.0 and summ["max_drawdown_pct"] > -40.0
+        return RLEvaluationMetrics(
+            total_return_pct=summ["total_return_pct"],
+            baseline_return_pct=summ["baseline_return_pct"],
+            excess_return_pct=summ["excess_return_pct"],
+            max_drawdown_pct=summ["max_drawdown_pct"],
+            trades=summ["total_trades"],
+            win_rate=summ["win_rate"],
+            holdout_steps=summ["steps"],
+            approved=bool(approved),
+        )
+
+    def _save_model(self, core: dict, policy_id: str) -> str:
+        os.makedirs(_DREAMER_MODEL_DIR, exist_ok=True)
+        path = os.path.join(_DREAMER_MODEL_DIR, f"{policy_id}.pt")
+        save_dreamer_checkpoint(path, core)
+        return path
+
+    def _split_metadata(self, dataset: Any, train_ratio: float) -> RLSplitMetadata:
+        n = len(dataset.closes)
+        split_idx = max(self.cfg.lookback + 5, int(n * train_ratio))
+        split_idx = min(split_idx, n - 3)
+        ts = list(getattr(dataset, "timestamps", None) or [str(i) for i in range(n)])
+        return RLSplitMetadata(
+            train_ratio=train_ratio,
+            train_size=split_idx,
+            test_size=n - split_idx,
+            train_start=str(ts[0]),
+            train_end=str(ts[min(split_idx - 1, n - 1)]),
+            test_start=str(ts[min(split_idx, n - 1)]),
+            test_end=str(ts[-1]),
+        )
+
+    # -- 내부 학습 코어 ------------------------------------------------------
+
+    def _train_core(self, dataset: Any, train_ratio: float = 0.7) -> dict:
         """월드모델+AC 학습 후 학습 결과/평가 dict 반환.
 
         반환: {state_dict, obs_dim, evaluation(dict), config}
