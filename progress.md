@@ -27,6 +27,13 @@
 
 ## ✅ 최근 완료
 
+### RL 일봉+분봉 join + DreamerV3 월드모델 도입 (2026-06-12)
+**목적:** 일봉은 풍부(~5개월)하나 분봉은 ~6주뿐인 상황에서, RL이 일중 정보를 쓰도록 일봉 백본에 분봉 유래 일중 특징을 join(마스킹). tabular Q는 상태폭증으로 부적합 → DreamerV3(model-based) 도입.
+**왜 마스킹:** 분봉 없는 과거일은 중립값+`has_intraday=0` (가격 그래프는 일봉 연속 유지, 가짜 분봉 합성 안 함). 합성은 노이즈 주입 위험 → 회피.
+- F1 `rl_intraday_features`+`fetch_daily_with_intraday`(일봉⟕분봉 일중특징5+mask). F2 `RLDataset.features`+`build_dataset(data_scope=combined)`. F3 공통 `RLPolicy` 인터페이스(act). F4 `TradingEnv` 일중특징 관측. F5 `rl_dreamer`(RSSM 월드모델+상상 액터크리틱, torch). F6 improver 라우팅+walk-forward 어댑터+`dreamer_v3.json`(default_enabled=false=opt-in, 야간 학습 무영향). F7 실데이터 smoke.
+- **실데이터 검증(005930):** join 27/114 거래일 분봉 매칭(운영 DB와 일치), DreamerV3 학습 3.3초 완주(return20.3/baseline40.1/excess-19.7, approved False — 얇은 데이터+짧은 학습 탓, 파이프라인 정상). 전체 테스트 2502개 통과.
+- **남은 일:** RLRunner 라이브 추론을 공통 인터페이스로 전환(현재 tabular 직접호출), 일봉 720일 백필(성능 선행조건).
+
 ### OpenClaw 게이트웨이 토큰 회전 cron 복구 (2026-06-08)
 **증상:** `rotate_gateway_token.sh` cron(매일 04:00)이 2026-06-04부터 "openclaw.json not found"로 매일 실패.
 **원인:** 경로가 아니라 **UID/권한** 문제 — cron 주체 `ubuntu`(UID 1001)가 컨테이너 `node`(UID 1000) 소유 + mode 700인 `~/openclaw-data/`에 진입 불가 → `[[ -f ]]` false. (토큰 정본=openclaw.json `gateway.auth.token`, 컨테이너 env `OPENCLAW_GATEWAY_TOKEN`은 비어있음 확인.)
