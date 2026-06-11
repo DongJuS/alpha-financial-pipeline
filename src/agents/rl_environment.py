@@ -148,7 +148,10 @@ class TradingEnv:
 
         # 거래량 비율 사전 계산
         vol_sma = self._rolling_mean(self.volumes, 20)
-        self._vol_ratio = np.where(vol_sma > 0, self.volumes / vol_sma, 1.0)
+        # volumes 가 전부 0(예: RLDataset 경로)일 때 0/0 경고를 피하려 where 로 안전 분할
+        self._vol_ratio = np.divide(
+            self.volumes, vol_sma, out=np.ones_like(self.volumes), where=vol_sma > 0
+        )
 
         # 환경 상태
         self._step_idx = 0
