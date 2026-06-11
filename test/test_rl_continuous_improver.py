@@ -19,7 +19,7 @@ from src.agents.rl_walk_forward import WalkForwardResult
 
 
 class StubDatasetBuilder:
-    async def build_dataset(self, ticker: str, days: int = 180) -> RLDataset:
+    async def build_dataset(self, ticker: str, days: int = 180, **kwargs) -> RLDataset:
         closes = [100.0 + idx for idx in range(120)]
         timestamps = [f"2026-01-{(idx % 28) + 1:02d}" for idx in range(120)]
         return RLDataset(ticker=ticker, closes=closes, timestamps=timestamps)

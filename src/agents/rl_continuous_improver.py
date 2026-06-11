@@ -44,9 +44,26 @@ from src.utils.ticker import normalize_with_db, to_raw
 logger = get_logger(__name__)
 
 def _default_profile_ids() -> tuple[str, ...]:
-    from src.agents.rl_experiment_manager import get_available_profiles
+    from src.agents.rl_experiment_manager import (
+        RLExperimentManager,
+        get_available_profiles,
+    )
+
     profiles = get_available_profiles()
-    return tuple(profiles) if profiles else ("tabular_q_v2_momentum",)
+    if not profiles:
+        return ("tabular_q_v2_momentum",)
+
+    # default_enabled=false 프로파일(예: 실험적 dreamer_v3)은 야간 자동 학습에서 제외.
+    # 명시적 profile_ids 로는 여전히 선택 가능(opt-in).
+    mgr = RLExperimentManager()
+    enabled: list[str] = []
+    for pid in profiles:
+        try:
+            if mgr.load_profile(pid).get("default_enabled", True):
+                enabled.append(pid)
+        except Exception:
+            enabled.append(pid)  # 로드 실패 시 보수적으로 포함
+    return tuple(enabled) if enabled else ("tabular_q_v2_momentum",)
 
 
 @dataclass
@@ -121,6 +138,30 @@ class _WalkForwardSB3Adapter:
         return self._trainer.evaluate(model_path, closes)
 
 
+class _WalkForwardDreamerAdapter:
+    """WalkForwardEvaluator와 DreamerV3 trainer를 연결합니다.
+
+    각 fold 는 closes 만으로 재학습(일봉 전용)되며 model_path 를 반환한다.
+    (메인 학습은 combined 일중 특징을 쓰지만, walk-forward 는 가격 시퀀스 강건성 검증.)
+    """
+
+    def __init__(self, ticker: str, trainer: Any) -> None:
+        self._ticker = ticker
+        self._trainer = trainer
+
+    def train(self, closes: list[float]) -> str:
+        dataset = RLDataset(
+            ticker=self._ticker,
+            closes=closes,
+            timestamps=[str(idx) for idx in range(len(closes))],
+        )
+        artifact = self._trainer.train(dataset)
+        return artifact.model_path
+
+    def evaluate(self, model_path: str, closes: list[float]) -> Any:
+        return self._trainer.evaluate(model_path, closes)
+
+
 class RLContinuousImprover:
     """RL 정책의 지속적 개선을 담당합니다."""
 
@@ -151,6 +192,7 @@ class RLContinuousImprover:
         *,
         profile_ids: Sequence[str] | None = None,
         dataset_days: int = 180,
+        data_scope: str = "daily",
         on_progress: Callable[[int], None] | None = None,
         use_hyperopt: bool | None = None,
         hyperopt_n_trials: int | None = None,
@@ -168,7 +210,10 @@ class RLContinuousImprover:
         active_before = await self._active_policy_id(canonical_ticker)
 
         try:
-            dataset = await self._build_dataset(raw_ticker, canonical_ticker, dataset_days, profile_list[0])
+            dataset = await self._build_dataset(
+                raw_ticker, canonical_ticker, dataset_days, profile_list[0],
+                data_scope=data_scope,
+            )
         except Exception as exc:
             logger.warning("RL 데이터셋 구성 실패 [%s]: %s", ticker, exc)
             return RetrainOutcome(
@@ -309,13 +354,22 @@ class RLContinuousImprover:
         canonical_ticker: str,
         dataset_days: int,
         profile_id: str,
+        data_scope: str = "daily",
     ) -> RLDataset:
         builder = self._dataset_builder or self._builder_for_profile(profile_id)
-        dataset = await builder.build_dataset(raw_ticker, days=dataset_days)
+        dataset = await builder.build_dataset(
+            raw_ticker, days=dataset_days, data_scope=data_scope
+        )
         return RLDataset(
             ticker=canonical_ticker,
             closes=list(dataset.closes),
             timestamps=list(dataset.timestamps),
+            features=(
+                [list(f) for f in dataset.features]
+                if dataset.features is not None
+                else None
+            ),
+            feature_keys=dataset.feature_keys,
         )
 
     async def _train_candidate(
@@ -458,6 +512,16 @@ class RLContinuousImprover:
         params = dict(profile.get("trainer_params", {}))
         algorithm = str(profile.get("algorithm", "")).lower()
 
+        # DreamerV3 (model-based) — combined(일봉+분봉) 일중 특징 소비
+        if algorithm in ("dreamer", "dreamer_v3"):
+            from src.agents.rl_dreamer import DreamerConfig, DreamerV3Trainer
+
+            sig = inspect.signature(DreamerConfig.__init__)
+            filtered = {
+                key: value for key, value in params.items() if key in sig.parameters
+            }
+            return DreamerV3Trainer(cfg=DreamerConfig(**filtered))
+
         # SB3 algorithms
         if algorithm in ("dqn", "a2c", "ppo"):
             from src.agents.rl_trading_sb3 import SB3Trainer
@@ -489,8 +553,11 @@ class RLContinuousImprover:
         dataset: RLDataset,
         trainer: Any,
     ) -> WalkForwardResult:
-        if hasattr(trainer, 'algorithm') and trainer.algorithm in ("dqn", "a2c", "ppo"):
+        algo = getattr(trainer, "algorithm", "")
+        if algo in ("dqn", "a2c", "ppo"):
             adapter = _WalkForwardSB3Adapter(dataset.ticker, trainer)
+        elif algo in ("dreamer", "dreamer_v3"):
+            adapter = _WalkForwardDreamerAdapter(dataset.ticker, trainer)
         else:
             adapter = _WalkForwardTrainerAdapter(dataset.ticker, trainer)
         return self._walk_forward.evaluate(dataset.closes, adapter)
