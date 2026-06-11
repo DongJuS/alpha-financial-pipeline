@@ -45,6 +45,11 @@ class TradingEnvConfig:
     volumes: list[float] = field(default_factory=list)
     timestamps: list[str] = field(default_factory=list)
 
+    # combined(일봉+분봉) 일중 특징 — closes 와 1:1 정렬된 per-step 벡터(+has_intraday).
+    # 있으면 관측 벡터 뒤에 그대로 이어붙인다. None 이면 기존 일봉 전용 동작.
+    intraday_features: list[list[float]] | None = None
+    intraday_feature_keys: tuple[str, ...] | None = None
+
     # Feature 관련
     lookback: int = 20  # observation에 포함할 과거 바 수
     feature_columns: list[str] = field(
@@ -111,6 +116,22 @@ class TradingEnv:
                 f"데이터 부족: closes={len(self.closes)}, 최소 필요={config.lookback + 2}"
             )
 
+        # 일중 특징 (combined 데이터셋) — closes 와 정렬된 per-step 벡터
+        self.intraday_features: np.ndarray | None = None
+        if config.intraday_features is not None:
+            arr = np.array(config.intraday_features, dtype=np.float64)
+            if arr.ndim != 2 or arr.shape[0] != len(self.closes):
+                raise ValueError(
+                    f"intraday_features shape {arr.shape} 가 "
+                    f"closes 길이 {len(self.closes)} 와 불일치"
+                )
+            self.intraday_features = arr
+        self._n_intraday = (
+            int(self.intraday_features.shape[1])
+            if self.intraday_features is not None
+            else 0
+        )
+
         # 수익률 사전 계산
         self.returns = np.zeros(len(self.closes))
         self.returns[1:] = np.diff(self.closes) / self.closes[:-1]
@@ -139,7 +160,8 @@ class TradingEnv:
         self._trade_log: list[dict] = []
 
         # Gymnasium spaces
-        n_features = len(config.feature_columns) + 1  # +1 for position
+        # 관측 = 가격 특징 + 포지션(1) + 일중 특징(n_intraday)
+        n_features = len(config.feature_columns) + 1 + self._n_intraday
         if HAS_GYMNASIUM:
             self.observation_space = spaces.Box(
                 low=-np.inf, high=np.inf, shape=(n_features,), dtype=np.float32
@@ -297,6 +319,10 @@ class TradingEnv:
         # 포지션 추가
         features.append(float(self._position))
 
+        # 일중 특징 (있으면) — 현재 스텝의 per-step 벡터를 이어붙임
+        if self.intraday_features is not None:
+            features.extend(float(x) for x in self.intraday_features[idx])
+
         return np.array(features, dtype=np.float32)
 
     def _get_info(self) -> dict[str, Any]:
@@ -402,6 +428,35 @@ class TradingEnv:
             "steps": self._step_idx - self.config.lookback,
             "final_portfolio_value": round(self._portfolio_value, 6),
         }
+
+
+# ── RLDataset → 환경 설정 브리지 ──────────────────────────────────────────
+
+
+def env_config_from_dataset(
+    dataset: Any,
+    *,
+    lookback: int = 20,
+    **overrides: Any,
+) -> TradingEnvConfig:
+    """RLDataset(combined 가능)에서 TradingEnvConfig 를 만든다.
+
+    dataset.features 가 있으면(일봉+분봉 combined) 일중 특징을 관측 벡터에 포함한다.
+    RLDataset 을 import 하지 않고 duck typing 으로 받아 순환 import 를 피한다.
+    """
+    closes = [float(c) for c in dataset.closes]
+    timestamps = list(getattr(dataset, "timestamps", []) or [])
+    feats = getattr(dataset, "features", None)
+    keys = getattr(dataset, "feature_keys", None)
+    intraday = [[float(x) for x in row] for row in feats] if feats else None
+    return TradingEnvConfig(
+        closes=closes,
+        timestamps=timestamps,
+        lookback=lookback,
+        intraday_features=intraday,
+        intraday_feature_keys=tuple(keys) if keys else None,
+        **overrides,
+    )
 
 
 # ── Gymnasium 등록 (선택적) ────────────────────────────────────────────────
