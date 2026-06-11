@@ -1,0 +1,43 @@
+{
+  "profile_id": "dreamer_v3",
+  "description": "DreamerV3-스타일 월드모델 RL — 일봉+분봉 combined 일중 특징을 연속 관측으로 소비. 실험적/opt-in(default_enabled=false). 명시적 profile_ids 또는 data_scope=combined 로만 선택.",
+  "algorithm": "dreamer_v3",
+  "state_version": "dreamer_v3",
+  "default_enabled": false,
+  "trainer_params": {
+    "deter_dim": 64,
+    "stoch_dim": 32,
+    "hidden_dim": 128,
+    "horizon": 8,
+    "seq_len": 32,
+    "batch_size": 16,
+    "train_iters": 120,
+    "collect_episodes": 8,
+    "lr": 6e-4,
+    "gamma": 0.99,
+    "lam": 0.95,
+    "kl_scale": 1.0,
+    "kl_free": 1.0,
+    "entropy_scale": 3e-3,
+    "explore_eps": 0.3,
+    "lookback": 20,
+    "grad_clip": 100.0,
+    "seed": 42
+  },
+  "dataset": {
+    "default_train_ratio": 0.7,
+    "adaptive_ratios": [0.6, 0.7, 0.8],
+    "bandit_epsilon": 0.2,
+    "min_history_points": 40,
+    "data_scope": "combined"
+  },
+  "evaluation": {
+    "min_approval_return_pct": 0.0,
+    "max_drawdown_limit_pct": -40.0
+  },
+  "hyperopt": {
+    "enabled": false,
+    "n_trials": 30,
+    "timeout_seconds": null
+  }
+}
