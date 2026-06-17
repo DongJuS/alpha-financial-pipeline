@@ -3,7 +3,7 @@ test/test_scheduler_market_flow.py — 장 전/중/후 스케줄 통합 테스�
 
 unified_scheduler.py에 등록된 10개 잡을 검증합니다:
 - 장 전: rl_bootstrap, predictor_warmup, krx_stock_master_daily, macro_daily, collector_daily, index_warmup
-- 장 중: index_collection (30초 간격)
+- 장 중: index_collection (30초 간격), minute_aggregation_intraday (1분 간격)
 - 장 후: s3_tick_flush, rl_retrain, blend_weight_adjust
 - 실시간 틱 수집은 별도 tick-collector 서비스로 분리됨
 """
@@ -63,6 +63,7 @@ class TestJobRegistration:
             "collector_daily",
             "index_warmup",
             "index_collection",
+            "minute_aggregation_intraday",
             "kis_token_health",
             "llm_auth_health",
             "s3_tick_flush",
@@ -378,7 +379,7 @@ class TestScheduleTiming:
             assert job_id in added_jobs, f"{job_id} not registered"
 
         # 장 중 잡 (tick 잡은 별도 서비스로 분리됨)
-        market_ids = {"index_collection", "kis_token_health"}
+        market_ids = {"index_collection", "minute_aggregation_intraday", "kis_token_health"}
         for job_id in market_ids:
             assert job_id in added_jobs, f"{job_id} not registered"
 
@@ -397,8 +398,8 @@ class TestScheduleTiming:
         # 월간 잡
         assert "minute_partition_mgmt" in added_jobs
 
-        # 총 14개
-        assert len(added_jobs) == 14
+        # 총 15개
+        assert len(added_jobs) == 15
 
     @pytest.mark.asyncio
     async def test_scheduler_start_called(self):
@@ -624,7 +625,7 @@ class TestTickJobRegistration:
 
         assert "tick_realtime_start" not in registered, "tick_realtime_start should be removed"
         assert "tick_realtime_health" not in registered, "tick_realtime_health should be removed"
-        assert len(registered) == 14, f"Expected 14 jobs, got {len(registered)}: {list(registered.keys())}"
+        assert len(registered) == 15, f"Expected 15 jobs, got {len(registered)}: {list(registered.keys())}"
 
     @pytest.mark.asyncio
     async def test_tick_lock_ttl_removed(self):
