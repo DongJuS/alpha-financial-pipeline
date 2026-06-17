@@ -32,6 +32,7 @@ class TestCronTriggerConfig:
             "collector_daily",
             "index_warmup",
             "index_collection",
+            "minute_aggregation_intraday",
             "kis_token_health",
             "llm_auth_health",
             "s3_tick_flush",
@@ -60,6 +61,12 @@ class TestCronTriggerConfig:
         from src.schedulers.unified_scheduler import _LOCK_TTL
 
         assert _LOCK_TTL["index_collection"] < 30
+
+    def test_minute_aggregation_intraday_ttl_shorter_than_interval(self):
+        """minute_aggregation_intraday는 1분 간격이므로 TTL이 60초보다 짧아야 함."""
+        from src.schedulers.unified_scheduler import _LOCK_TTL
+
+        assert _LOCK_TTL["minute_aggregation_intraday"] < 60
 
 
 # ── 장중/장외 판별 ──────────────────────────────────────────────────────────
