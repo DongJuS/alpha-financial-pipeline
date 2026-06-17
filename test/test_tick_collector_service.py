@@ -342,7 +342,7 @@ class TestSchedulerTickJobRegistration:
 
     @pytest.mark.asyncio
     async def test_total_job_count(self):
-        """tick 잡 제거 후 전체 등록 잡 수는 10개."""
+        """tick 잡 제거 + 장중 분봉 집계 추가 후 전체 등록 잡 수는 15개."""
         import src.schedulers.unified_scheduler as mod
 
         mock_scheduler = MagicMock()
@@ -367,8 +367,8 @@ class TestSchedulerTickJobRegistration:
         ):
             await mod.start_unified_scheduler()
 
-        assert len(registered_ids) == 14, (
-            f"Expected 14 registered jobs, got {len(registered_ids)}: {registered_ids}"
+        assert len(registered_ids) == 15, (
+            f"Expected 15 registered jobs, got {len(registered_ids)}: {registered_ids}"
         )
 
 

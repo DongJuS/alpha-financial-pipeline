@@ -16,6 +16,7 @@ src/schedulers/unified_scheduler.py — 통합 스케줄러
 
     [장 중]
     index_collection      30초 인터벌  IndexCollector (장중)
+    minute_aggregation_intraday  1분 인터벌  tick_data→ohlcv_minute 실시간 집계 (장중)
     kis_token_health    매시 정각 (09~15시, 평일)  KIS OAuth 토큰 유효성 검증
 
     [상시]
@@ -59,6 +60,7 @@ _LOCK_TTL: dict[str, int] = {
     "index_warmup": 60,          # 1분
     "index_collection": 25,      # 30초 인터벌보다 짧게
     "kis_token_health": 30,      # 30초 (토큰 검증 API 호출)
+    "minute_aggregation_intraday": 50,  # 장중 1분 인터벌보다 짧게
     # 장 후
     "s3_tick_flush": 600,        # 10분 (DB→S3 일괄 flush)
     "minute_aggregation": 300,   # 5분 (tick→ohlcv_minute 집계)
@@ -446,6 +448,30 @@ async def start_unified_scheduler() -> None:
         if await is_market_open_now():
             await index.collect_once()
 
+    async def _run_minute_aggregation_if_open() -> None:
+        """장중 1분 인터벌: 최근 ~2분 틱을 1분봉으로 UPSERT한다 (멱등성).
+
+        마감 후 배치(_run_minute_aggregation)와 동일한 집계 함수를 쓰되,
+        직전·진행 중 분만 재집계하므로 비용이 작고 ohlcv_minute 행 수도 늘지 않는다.
+        시작 시각을 분 경계로 내림(floor)하여 완료된 분이 부분 데이터로
+        덮어써지지 않도록 한다.
+        """
+        if not await is_market_open_now():
+            return
+        from datetime import datetime as _dt, timedelta
+
+        from src.db.queries import aggregate_ticks_to_minutes
+
+        now = _dt.now(tz=KST)
+        start = (now - timedelta(minutes=2)).replace(second=0, microsecond=0)
+        count = await aggregate_ticks_to_minutes(start, now)
+        logger.info(
+            "장중 분봉 집계: %d건 (%s~%s)",
+            count,
+            start.strftime("%H:%M"),
+            now.strftime("%H:%M"),
+        )
+
     # -- 장 후: RL 재학습 (16:00 KST) --
     async def _run_rl_retrain() -> None:
         """장 마감 후 모든 RL 정책을 재학습한다."""
@@ -617,6 +643,16 @@ async def start_unified_scheduler() -> None:
         id="index_collection",
         name="Index collection every 30s",
         misfire_grace_time=5,
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
+        _locked_job("minute_aggregation_intraday", _run_minute_aggregation_if_open),
+        "interval",
+        minutes=1,
+        id="minute_aggregation_intraday",
+        name="Intraday minute aggregation (every 1m, market hours)",
+        misfire_grace_time=30,
         replace_existing=True,
     )
 
