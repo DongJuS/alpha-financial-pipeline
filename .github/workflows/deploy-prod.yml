@@ -26,9 +26,9 @@ jobs:
         id: tag
         run: |
           if [ -n "${{ github.event.inputs.image_tag }}" ]; then
-            echo "image_tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+            echo "image_tag=${{ github.event.inputs.image_tag }}" >> "$GITHUB_OUTPUT"
           else
-            echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "image_tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up SSH
@@ -48,7 +48,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=yes \
               ${{ secrets.OCI_SSH_USER }}@${{ secrets.OCI_SSH_HOST }} \
-              "~/deploy/deploy.sh '$IMAGE_TAG'"
+              "\$HOME/deploy/deploy.sh '$IMAGE_TAG'"
 
       - name: Notify success
         if: success() && env.TELEGRAM_BOT_TOKEN_DEPLOY != ''
