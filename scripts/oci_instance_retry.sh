@@ -25,7 +25,7 @@ SHAPE="VM.Standard.A1.Flex"
 OCPUS=4
 MEMORY_GB=24
 BOOT_VOLUME_GB=200
-DISPLAY_NAME="alpha-trading-server"
+DISPLAY_NAME="<OCI_HOSTNAME>"
 
 # ── 성공 마커 파일 ──────────────────────────────────────────────────
 MARKER_FILE="/tmp/oci_instance_created.txt"
