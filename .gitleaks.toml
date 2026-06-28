@@ -26,3 +26,9 @@ id = "oci-server-hostname"
 description = "운영 서버 호스트명"
 regex = '''<OCI_HOSTNAME>'''
 tags = ["oci"]
+
+[allowlist]
+description = "test fixture 의 가짜 시크릿은 정적 분석에서 제외"
+paths = [
+  '''test/.*\.py$''',
+]
