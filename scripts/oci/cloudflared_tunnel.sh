@@ -43,6 +43,7 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cloudflare Quick Tunnel 시작 (name=${LABE
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] Tunnel URL 감지: $url" >> "$TUNNEL_LOG"
             # AUTH_FILE이 있으면 allowedOrigins에 새 URL 자동 등록 + gateway 재시작
             if [[ -n "$AUTH_FILE" && -f "$AUTH_FILE" ]]; then
+                # shellcheck disable=SC2024  # TUNNEL_LOG 는 ubuntu 쓰기 가능 경로, redirect 는 의도된 동작
                 sudo python3 -c "
 import json, subprocess, os, sys
 try:
