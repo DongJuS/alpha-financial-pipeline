@@ -1,0 +1,5 @@
+# Project-wide shellcheck rules.
+#
+# SC1090 (non-constant source) — 의도적: deploy/runtime 스크립트가
+# Infisical bootstrap, .env.runtime 같은 동적 경로를 source 한다.
+disable=SC1090
