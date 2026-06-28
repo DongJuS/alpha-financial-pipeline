@@ -121,6 +121,82 @@ async def _check_tick_count_and_notify(delay_sec: int = 300) -> None:
         logger.warning("틱 건수 조회/알림 실패 (무시): %s", e)
 
 
+async def _send_market_close_summary(stop_event: asyncio.Event) -> None:
+    """장 마감 후(15:35 KST) 당일 수집 현황 + 스토리지 용량을 Telegram 전송합니다."""
+    sent_today: str | None = None
+    while not stop_event.is_set():
+        now_kst = datetime.now(_KST)
+        today_str = now_kst.strftime("%Y-%m-%d")
+        today_ymd = now_kst.strftime("%Y%m%d")
+
+        should_send = (
+            now_kst.weekday() <= 4
+            and now_kst.hour == 15
+            and now_kst.minute >= 35
+            and sent_today != today_str
+        )
+
+        if should_send:
+            sent_today = today_str
+            try:
+                await _build_and_send_close_summary(today_str, today_ymd)
+            except Exception as e:
+                logger.warning("장 마감 요약 전송 실패 (무시): %s", e)
+
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=60)
+            break
+        except asyncio.TimeoutError:
+            pass
+
+
+async def _build_and_send_close_summary(today_str: str, today_ymd: str) -> None:
+    """DB/디스크 조회 후 마감 요약 메시지를 구성합니다."""
+    import shutil
+    from src.utils.db_client import fetchrow
+
+    row = await fetchrow(
+        f"SELECT COUNT(*) AS cnt, "
+        f"pg_total_relation_size('tick_data_{today_ymd}') AS bytes "
+        f"FROM tick_data_{today_ymd}",
+    )
+    today_count = int(row["cnt"]) if row else 0
+    today_bytes = int(row["bytes"]) if row else 0
+
+    cum = await fetchrow("""
+        SELECT COALESCE(SUM(pg_total_relation_size(schemaname||'.'||tablename)), 0) AS bytes
+        FROM pg_tables WHERE tablename LIKE 'tick_data%'
+    """)
+    cumulative_bytes = int(cum["bytes"]) if cum else 0
+
+    disk = shutil.disk_usage("/")
+    disk_total = disk.total
+
+    scope = "real" if not get_settings().kis_is_paper_trading else "paper"
+
+    msg = (
+        f"[Tick Collector] {today_str} 장 마감 리포트\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"금일 수집: {today_count:,}건 ({_fmt_size(today_bytes)})\n"
+        f"디스크: {_fmt_size(cumulative_bytes)} (누적 틱) / {_fmt_size(disk_total)} 전체\n"
+        f"모드: {scope}\n"
+        f"━━━━━━━━━━━━━━━━━━━━"
+    )
+    await _send_telegram(msg)
+    logger.info("장 마감 요약 전송 완료: %d건, %s", today_count, _fmt_size(today_bytes))
+
+
+def _fmt_size(nbytes: int) -> str:
+    """바이트를 사람이 읽기 좋은 단위로 변환합니다."""
+    if nbytes >= 1 << 30:
+        return f"{nbytes / (1 << 30):.2f} GB"
+    if nbytes >= 1 << 20:
+        return f"{nbytes / (1 << 20):.1f} MB"
+    if nbytes >= 1 << 10:
+        return f"{nbytes / (1 << 10):.1f} KB"
+    return f"{nbytes} B"
+
+
 # ── Market Hours Check ───────────────────────────────────────────────────────
 
 _MARKET_OPEN = time(9, 0)
@@ -219,6 +295,10 @@ async def main_async() -> int:
     keepalive_task = asyncio.create_task(_heartbeat_keepalive(stop_event))
     logger.info("Heartbeat keepalive 시작: agent=%s, interval=%ds", _TICK_AGENT_ID, _KEEPALIVE_INTERVAL)
 
+    # ── 장 마감(15:35 KST) 요약 task ─────────────────────────────────
+    market_close_task = asyncio.create_task(_send_market_close_summary(stop_event))
+    logger.info("장 마감 요약 task 시작 (15:35 KST 1회 트리거)")
+
     # ── 메인 수집 루프 ──────────────────────────────────────────────
     notified_today: str | None = None
     try:
@@ -296,7 +376,7 @@ async def main_async() -> int:
             logger.warning("종료 전 버퍼 flush 실패: %s", e)
 
         stop_event.set()
-        await keepalive_task
+        await asyncio.gather(keepalive_task, market_close_task, return_exceptions=True)
         logger.info("Tick collector 종료 완료")
 
     return 0
