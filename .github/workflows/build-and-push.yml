@@ -39,9 +39,9 @@ jobs:
             target: prod
             context: .
           - name: ui
-            dockerfile: ui/Dockerfile
+            dockerfile: ui/web/Dockerfile
             target: prod
-            context: ui
+            context: ui/web
     steps:
       - name: Checkout
         uses: actions/checkout@v4
