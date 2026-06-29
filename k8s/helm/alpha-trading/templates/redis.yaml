@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.infra.redis.host }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "alpha-trading.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  serviceName: {{ .Values.infra.redis.host }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        {{- include "alpha-trading.labels" . | nindent 8 }}
+        app.kubernetes.io/component: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: {{ .Values.infra.redis.port }}
+              name: redis
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.infra.redis.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.infra.redis.storage.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.infra.redis.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.infra.redis.host }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "alpha-trading.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  selector:
+    app.kubernetes.io/component: redis
+  ports:
+    - port: {{ .Values.infra.redis.port }}
+      targetPort: {{ .Values.infra.redis.port }}
+      name: redis
+  clusterIP: None
