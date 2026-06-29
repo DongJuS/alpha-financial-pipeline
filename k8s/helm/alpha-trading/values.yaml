@@ -131,8 +131,23 @@ ingress:
   host: alpha.local
   tls: false
 
-# ── Secrets (Phase 4 에서 Infisical Operator 로 교체) ──────────────────
+# ── Secrets ───────────────────────────────────────────────────────────
+# infisical.enabled=true 면 InfisicalStaticSecret CR 이 alpha-trading-secrets
+# Secret 을 자동 생성. false (로컬/dev) 면 placeholder Secret 이 렌더링됨.
 secrets: {}
+
+# ── Infisical Kubernetes Operator 시크릿 동기화 ────────────────────────
+# Operator (secrets-operator chart) 가 infisical-operator namespace 에 설치돼
+# 있어야 함 (Phase 4 의 서버 작업).
+infisical:
+  enabled: true
+  # cluster-internal 또는 외부 endpoint. Phase 5 cutover 시 docker compose 의
+  # Infisical (80) 에서 k3s 의 Infisical (infisical namespace) 로 전환.
+  address: "http://infisical.infisical.svc.cluster.local:8080"
+  projectSlug: "alpha-financial-pipeline"
+  environmentSlug: "prod"
+  secretPath: "/"
+  resyncInterval: "60s"
 
 # ── PDB ───────────────────────────────────────────────────────────────
 pdb:
