@@ -108,7 +108,7 @@ jobs:
           tar -czf /tmp/gha-archive.tar.gz -C /tmp/gha-archive .
 
           KEY="alpha/gha/deploy-prod/$(date -u +%Y/%m/%d)/${{ github.run_id }}-attempt${{ github.run_attempt }}.tar.gz"
-          aws --endpoint-url "$OCI_BACKUP_ENDPOINT" \
+          aws --endpoint-url "$OCI_BACKUP_ENDPOINT" --region "${OCI_BACKUP_REGION:-ap-chuncheon-1}" \
               s3 cp /tmp/gha-archive.tar.gz "s3://$OCI_BACKUP_BUCKET/$KEY" \
               --no-progress
           echo "archived → s3://$OCI_BACKUP_BUCKET/$KEY"
