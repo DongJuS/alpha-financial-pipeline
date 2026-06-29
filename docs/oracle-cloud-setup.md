@@ -12,7 +12,7 @@
 - [x] OCI CLI 설치 + API Key 등록
 - [x] VCN 생성 (alpha-vcn, 춘천 리전)
 - [x] 인스턴스 생성 크론 등록 (5분 간격)
-- [x] 인스턴스 생성 성공 (134.185.110.214, reserved IP)
+- [x] 인스턴스 생성 성공 (<OCI_PUBLIC_IP>, reserved IP)
 - [x] 서버 세팅 (Docker + Compose)
 - [x] 데이터 이전 + 서비스 기동 (Gate B smoke/health/R2 green)
 - [ ] 모니터링 bootstrap (`scripts/oci/setup_monitoring.sh`)
@@ -24,7 +24,7 @@
 
 | 항목 | 값 |
 |------|-----|
-| 리전 | ap-chuncheon-1 (춘천) |
+| 리전 | <OCI_REGION> (춘천) |
 | Shape | VM.Standard.A1.Flex |
 | OS | Ubuntu 24.04 aarch64 |
 | SSH Key | `~/.ssh/id_ed25519.pub` |

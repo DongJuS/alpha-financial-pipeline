@@ -54,3 +54,7 @@ test/archive/
 age-key*.txt
 *.age
 keys.txt
+
+# Public repo carve-out (PR-public-prep)
+.claude/
+troubleshooting/oci-server-report-*/
