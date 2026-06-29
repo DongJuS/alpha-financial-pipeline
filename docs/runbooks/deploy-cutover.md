@@ -23,14 +23,23 @@ mkdir -p ~/deploy
 ln -sf /home/ubuntu/alpha-financial-pipeline/scripts/deploy/deploy.sh       ~/deploy/deploy.sh
 ln -sf /home/ubuntu/alpha-financial-pipeline/scripts/deploy/wait-healthy.sh ~/deploy/wait-healthy.sh
 ln -sf /home/ubuntu/alpha-financial-pipeline/scripts/deploy/render-env.sh   ~/deploy/render-env.sh
-ln -sf /home/ubuntu/alpha-financial-pipeline/scripts/deploy/pg_dump_to_r2.sh ~/deploy/pg_dump_to_r2.sh
+ln -sf /home/ubuntu/alpha-financial-pipeline/scripts/deploy/pg_dump_backup.sh   ~/deploy/pg_dump_backup.sh
+ln -sf /home/ubuntu/alpha-financial-pipeline/scripts/deploy/sync-logs-backup.sh ~/deploy/sync-logs-backup.sh
 
-# Infisical bootstrap (값은 Infisical 에서 발급 후 채움)
+# 운영 부트스트랩 (Infisical token/projectID 는 Infisical UI 에서 발급, OCI_BACKUP_* 4 개는
+# OCI Object Storage Customer Secret Key 발급 결과로 채움)
 cat > ~/deploy/.env.bootstrap <<'EOF'
+# Infisical (시크릿 저장소 접근)
 INFISICAL_TOKEN=<machine-identity-token>
 INFISICAL_PROJECT_ID=<project-id>
 INFISICAL_ENV=prod
 INFISICAL_API_URL=http://127.0.0.1:80
+
+# OCI Object Storage Archive (운영 백업 sink)
+OCI_BACKUP_ENDPOINT=https://<namespace>.compat.objectstorage.<region>.oraclecloud.com
+OCI_BACKUP_BUCKET=agents-investing-backups
+OCI_BACKUP_ACCESS_KEY=<oci customer secret key id>
+OCI_BACKUP_SECRET_KEY=<oci customer secret key>
 EOF
 chmod 600 ~/deploy/.env.bootstrap
 
@@ -38,8 +47,14 @@ chmod 600 ~/deploy/.env.bootstrap
 curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | sudo -E bash
 sudo apt update && sudo apt install -y infisical
 
-# DB 백업 cron (KST 23:00)
-( crontab -l 2>/dev/null; echo "0 23 * * * /home/ubuntu/deploy/pg_dump_to_r2.sh" ) | crontab -
+# AWS CLI 설치 (S3v4 호환 — OCI Object Storage 백업 업로드용)
+which aws >/dev/null || sudo apt install -y awscli
+
+# 백업 cron 2 종 — 기존 pg_dump_to_r2 가 등록돼 있다면 먼저 제거 후 갱신
+( crontab -l 2>/dev/null | grep -vE 'pg_dump_to_r2\.sh|pg_dump_backup\.sh|sync-logs-backup\.sh'
+  echo "0 23 * * * /home/ubuntu/deploy/pg_dump_backup.sh"        # KST 23:00 — DB dump → OCI Archive
+  echo "30 23 * * * /home/ubuntu/deploy/sync-logs-backup.sh"     # KST 23:30 — 운영 로그 archive
+) | crontab -
 
 # 워킹트리를 main 으로 정렬 (운영 브랜치 폐기는 G10 단계)
 cd /home/ubuntu/alpha-financial-pipeline
