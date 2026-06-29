@@ -43,12 +43,16 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
 
       - name: Trigger remote deploy
+        id: deploy
         env:
           IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
         run: |
+          # deploy 의 stdout/stderr 를 GHA 잡 로그(default 90일) + 별도 파일로 동시 캡처.
+          # 별도 파일은 마지막 step 에서 OCI Archive 로 영구 보존.
+          set -o pipefail
           ssh -o StrictHostKeyChecking=yes \
               ${{ secrets.OCI_SSH_USER }}@${{ secrets.OCI_SSH_HOST }} \
-              "\$HOME/deploy/deploy.sh '$IMAGE_TAG'"
+              "\$HOME/deploy/deploy.sh '$IMAGE_TAG'" 2>&1 | tee /tmp/deploy-output.log
 
       - name: Notify success
         if: success() && env.TELEGRAM_BOT_TOKEN_DEPLOY != ''
@@ -71,3 +75,40 @@ jobs:
           curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN_DEPLOY}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID_DEPLOY}" \
             -d text="[deploy-prod] ❌ ${IMAGE_TAG:0:7} — 서버 deploy.sh 실패. 로그 확인 필요." || true
+
+      - name: Archive run result to OCI Object Storage
+        # 성공/실패 모두 기록. GHA 자체 로그는 90 일 보존이지만 결과 JSON 은 영구 (lifecycle 30 일 retention).
+        if: always()
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.OCI_BACKUP_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.OCI_BACKUP_SECRET_KEY }}
+          OCI_BACKUP_ENDPOINT: ${{ secrets.OCI_BACKUP_ENDPOINT }}
+          OCI_BACKUP_BUCKET: ${{ secrets.OCI_BACKUP_BUCKET }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -e
+          mkdir -p /tmp/gha-archive
+          cat > /tmp/gha-archive/result.json <<EOF
+          {
+            "repo": "${{ github.repository }}",
+            "workflow": "${{ github.workflow }}",
+            "run_id": "${{ github.run_id }}",
+            "run_number": ${{ github.run_number }},
+            "run_attempt": ${{ github.run_attempt }},
+            "image_tag": "$IMAGE_TAG",
+            "status": "$JOB_STATUS",
+            "actor": "${{ github.actor }}",
+            "event": "${{ github.event_name }}",
+            "timestamp": "$(date -u +%FT%TZ)",
+            "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          [ -f /tmp/deploy-output.log ] && cp /tmp/deploy-output.log /tmp/gha-archive/deploy-output.log
+          tar -czf /tmp/gha-archive.tar.gz -C /tmp/gha-archive .
+
+          KEY="alpha/gha/deploy-prod/$(date -u +%Y/%m/%d)/${{ github.run_id }}-attempt${{ github.run_attempt }}.tar.gz"
+          aws --endpoint-url "$OCI_BACKUP_ENDPOINT" \
+              s3 cp /tmp/gha-archive.tar.gz "s3://$OCI_BACKUP_BUCKET/$KEY" \
+              --no-progress
+          echo "archived → s3://$OCI_BACKUP_BUCKET/$KEY"
