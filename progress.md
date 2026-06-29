@@ -7,6 +7,35 @@
 
 ---
 
+### k3s 마이그레이션 — Phase 1 완료 (2026-06-30)
+
+운영 docker compose 스택을 k3s 로 무중단 전환하는 작업 시작. 6 단계 phase
+계획 + 매니저 runbook 은 `docs/runbooks/k3s-migration-plan.md` 에 정리.
+
+**Phase 1 — k3s 클러스터 + helm + kubectl 설치 완료**:
+
+- OCI Ampere ARM64 24 GB 단일 노드. Ubuntu 24.04.
+- 설치: `curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --disable
+  traefik --disable servicelb --write-kubeconfig-mode=644" sh -`
+  - Traefik 비활성: 포트 80 충돌 회피 (Infisical docker container 가 점유 중)
+  - ServiceLB 비활성: 단일 노드라 불요
+  - ingress controller 는 Phase 4 에서 별도 설치
+- 설치된 버전: k3s v1.36.2+k3s1, helm v3.21.2
+- kubectl: k3s 의 내장 cli 를 `/usr/local/bin/kubectl` 로 symlink. ubuntu
+  사용자의 `~/.kube/config` 권한 600.
+- 시스템 pod 3 종 (coredns, local-path-provisioner, metrics-server) 모두
+  Running.
+- docker compose 10 컨테이너 (alpha 5 prod + ui + infisical 3 + openclaw)
+  모두 그대로 healthy — **운영 영향 0** 확인.
+- 상세: `docs/runbooks/k3s-install.md` (이 PR 에서 신설).
+- 롤백: `sudo /usr/local/bin/k3s-uninstall.sh` 한 줄, docker compose 영향
+  없음.
+
+**다음**: Phase 2 — Infisical 자체를 k3s 로 (별도 repo `agents-investing-
+infisical` 에서). 부트스트랩 시크릿은 SOPS + age 로 암호화.
+
+---
+
 ## 이 프로젝트가 하는 일
 
 한국 주식(KOSPI/KOSDAQ)을 **AI가 자동으로 분석하고 매매**하는 시스템이다.
