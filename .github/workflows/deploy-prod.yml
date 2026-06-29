@@ -82,6 +82,9 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.OCI_BACKUP_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.OCI_BACKUP_SECRET_KEY }}
+          # OCI Object Storage 는 AWS chunked encoding (sigv4 streaming) 미지원.
+          # aws CLI v2.30+ 의 새 기본을 when_required 로 낮춰 chunked encoding 회피.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
           OCI_BACKUP_ENDPOINT: ${{ secrets.OCI_BACKUP_ENDPOINT }}
           OCI_BACKUP_BUCKET: ${{ secrets.OCI_BACKUP_BUCKET }}
           IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
