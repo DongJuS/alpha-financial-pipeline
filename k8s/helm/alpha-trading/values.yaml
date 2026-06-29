@@ -1,92 +1,140 @@
 # ── 글로벌 설정 ────────────────────────────────────────────────────────
 namespace: alpha-trading
 
+# 5 prod 서비스 (api / worker / tick-collector / db-init / db-init-migrate) 가
+# 모두 같은 ghcr 이미지 'api' 를 공유 (entrypoint 만 다름). deploy 시 --set
+# image.tag=<git-sha> 로 override. ui 는 별도 이미지 (ui.image 참조).
 image:
-  repository: alpha-trading
+  repository: ghcr.io/dongjus/alpha-financial-pipeline/api
   tag: latest
   pullPolicy: IfNotPresent
 
-# ── 인프라 (Bitnami chart로 외부 관리) ────────────────────────────────
-# PostgreSQL, Redis, MinIO는 Bitnami Helm chart로 별도 설치합니다.
-# 설치 방법: k8s/helm/bitnami-values/README.md 참조
-# 서비스명: postgresql (5432), redis-master (6379), minio (9000)
+# GHCR private 패키지 — pull 자격증명. 운영자가 cluster 에 직접 docker-registry
+# 타입 secret 으로 만들어야 함 (별도 작업).
+imagePullSecrets:
+  - name: ghcr-pull-secret
+
+# ── 인프라 — self-managed ──────────────────────────────────────────────
 infra:
   postgres:
-    host: postgresql
+    host: postgres
     port: 5432
     database: alpha_db
     user: alpha_user
+    storage:
+      storageClass: local-path
+      size: 20Gi
+    resources:
+      requests: { cpu: 200m, memory: 512Mi }
+      limits:   { cpu: 1,    memory: 1536Mi }
   redis:
-    host: redis-master
+    host: redis
     port: 6379
-  minio:
+    storage:
+      storageClass: local-path
+      size: 2Gi
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits:   { cpu: 250m, memory: 512Mi }
+  # 운영 .env 의 S3_* 값들이 secret 으로 들어오므로 별도 host 키 X
+  minio:                # 호환을 위해 남겨둠 (configmap _helpers 가 참조)
     host: minio
     port: 9000
     bucket: alpha-lake
 
 # ── API 서버 ──────────────────────────────────────────────────────────
 api:
-  replicas: 2
+  replicas: 1
   port: 8000
   resources:
-    requests:
-      cpu: 250m
-      memory: 512Mi
-    limits:
-      cpu: "1"
-      memory: 1Gi
+    requests: { cpu: 250m, memory: 512Mi }
+    limits:   { cpu: 1,    memory: 2Gi }
   rollingUpdate:
     maxSurge: 1
     maxUnavailable: 0
 
-# ── Worker (오케스트레이터) ────────────────────────────────────────────
+# ── Worker ────────────────────────────────────────────────────────────
 worker:
   replicas: 1
   rlDataStorage: 5Gi
   resources:
-    requests:
-      cpu: 500m
-      memory: 1Gi
-    limits:
-      cpu: "2"
-      memory: 2Gi
+    requests: { cpu: 500m, memory: 1Gi }
+    limits:   { cpu: 2,    memory: 3Gi }
+  hostPathMounts:
+    enabled: true
+    mounts:
+      - name: gcloud-auth
+        hostPath: /home/ubuntu/.config/gcloud
+        mountPath: /root/.config/gcloud
+        readOnly: true
+      - name: claude-auth
+        hostPath: /home/ubuntu/.claude
+        mountPath: /root/.claude
+        readOnly: false
+      - name: codex-auth
+        hostPath: /home/ubuntu/.codex
+        mountPath: /root/.codex
+        readOnly: false
   env:
     ORCH_MODE: blend
     ORCH_INTERVAL_SECONDS: "600"
     ORCH_RUN_ONCE: "false"
     ORCH_ENABLE_DAILY_REPORT: "false"
+    ORCH_ENABLE_RL_AUTO_RETRAIN: "false"
 
-# ── UI (프론트엔드) ───────────────────────────────────────────────────
+# ── Tick Collector ────────────────────────────────────────────────────
+tickCollector:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 1Gi }
+  env:
+    TICK_MARKET_HOURS_ONLY: "true"
+    TICK_RECONNECT_MAX: "10"
+
+# ── UI (nginx prod, 80 port) ───────────────────────────────────────────
 ui:
   enabled: true
   replicas: 1
-  image: alpha-trading-ui
+  image: ghcr.io/dongjus/alpha-financial-pipeline/ui
   tag: latest
-  port: 5173
+  port: 80
   resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 256Mi
+    requests: { cpu: 50m,  memory: 64Mi }
+    limits:   { cpu: 250m, memory: 256Mi }
 
-# ── Ingress (K3s Traefik) ────────────────────────────────────────────
-ingress:
+# ── DB migration ──────────────────────────────────────────────────────
+migration:
   enabled: true
-  className: traefik
+  command:
+    - /bin/bash
+    - -c
+    - |
+      set -e
+      echo "=== [1/4] Schema migration ==="
+      python scripts/db/migrate_to_v2_instruments.py
+      echo "=== [2/4] ohlcv_minute partitions ==="
+      python scripts/db/migrate_ohlcv_minute.py
+      echo "=== [3/4] Seed instruments ==="
+      python scripts/db/seed_all_instruments.py --market KR --instruments-only
+      echo "=== [4/4] Seed universe ==="
+      python scripts/db/seed_trading_universe.py
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits:   { cpu: 1,    memory: 1Gi }
+  backoffLimit: 2
+
+# ── Ingress ───────────────────────────────────────────────────────────
+ingress:
+  enabled: false
+  className: ""
   host: alpha.local
   tls: false
 
-# ── Secrets ───────────────────────────────────────────────────────────
-# 본 helm 차트는 현재 미사용 (배포 경로는 kustomize: k8s/base/).
-# Cluster Secret 은 SOPS 로 관리한다 → k8s/secrets/app-secret.enc.yaml
-# 운영 가이드: docs/secrets.md
-# 향후 helm 차트를 사용한다면 externalSecrets 또는 lookup 함수로 cluster의
-# app-secret 을 참조할 것. 평문 placeholder 커밋은 금지.
+# ── Secrets (Phase 4 에서 Infisical Operator 로 교체) ──────────────────
 secrets: {}
 
-# ── Pod Disruption Budget ────────────────────────────────────────────
+# ── PDB ───────────────────────────────────────────────────────────────
 pdb:
   api:
     minAvailable: 1
