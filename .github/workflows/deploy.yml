@@ -8,17 +8,16 @@
 name: Deploy to K3s
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  # workflow_run 자동 트리거는 Phase 2 (k3s 운영) 까지 비활성. 본 워크플로우는
+  # K3s 환경 (K3S_HOST 시크릿 등) 을 가정하는데 현재는 docker compose 직접 배포
+  # 사용중이라 동작하지 않는다. 수동 트리거만 허용해 다른 PR 머지 시점에 자동
+  # 호출되지 않도록 한다.
   workflow_dispatch:
     inputs:
       image_tag:
         description: "배포할 이미지 태그 (기본: latest)"
         required: false
         default: "latest"
-
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: dongjus/alpha-financial-pipeline
@@ -26,7 +25,7 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' }}
 
     steps:
       - uses: actions/checkout@v4
