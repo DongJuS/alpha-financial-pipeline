@@ -77,6 +77,7 @@ services:
   # base의 db-init은 alpha_pass 하드코딩 → prod에선 .env POSTGRES_PASSWORD로 override
   # env_file 추가: 일부 init 스크립트가 get_settings() 를 호출하므로 JWT_SECRET 등 필요
   db-init:
+    image: ghcr.io/dongjus/alpha-financial-pipeline/api:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -97,6 +98,7 @@ services:
   # 3. KRX 종목 마스터 시딩 (2,773건)
   # 4. trading universe 시딩 (paper 스코프)
   db-init-migrate:
+    image: ghcr.io/dongjus/alpha-financial-pipeline/api:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -127,6 +129,7 @@ services:
     restart: "no"
 
   api:
+    image: ghcr.io/dongjus/alpha-financial-pipeline/api:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -163,6 +166,7 @@ services:
           cpus: "1.0"
 
   worker:
+    image: ghcr.io/dongjus/alpha-financial-pipeline/api:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -211,6 +215,7 @@ services:
   # 클라우드 서버에서 DB/S3 연결 실패.
   # K3s 대응: k8s/base/tick-collector.yaml (envFrom으로 configMap/secret 참조)
   tick-collector:
+    image: ghcr.io/dongjus/alpha-financial-pipeline/api:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -266,6 +271,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-alpha_user}:${POSTGRES_PASSWORD}@postgres:5432/alpha_gen_db
 
   ui:
+    image: ghcr.io/dongjus/alpha-financial-pipeline/ui:${IMAGE_TAG:-latest}
     build:
       context: ./ui/web
       dockerfile: Dockerfile
