@@ -39,6 +39,10 @@ spec:
         {{- include "alpha-trading.labels" . | nindent 8 }}
         app.kubernetes.io/component: worker
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -49,6 +53,11 @@ spec:
                 name: alpha-trading-config
             - secretRef:
                 name: alpha-trading-secrets
+          env:
+            {{- range $k, $v := .Values.worker.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
           volumeMounts:
             - name: rl-data
               mountPath: /data/rl/models
@@ -56,6 +65,13 @@ spec:
             - name: rl-data
               mountPath: /data/rl/experiments
               subPath: experiments
+            {{- if .Values.worker.hostPathMounts.enabled }}
+            {{- range .Values.worker.hostPathMounts.mounts }}
+            - name: {{ .name }}
+              mountPath: {{ .mountPath }}
+              readOnly: {{ .readOnly | default false }}
+            {{- end }}
+            {{- end }}
           livenessProbe:
             exec:
               command:
@@ -82,3 +98,11 @@ spec:
         - name: rl-data
           persistentVolumeClaim:
             claimName: worker-rl-data
+        {{- if .Values.worker.hostPathMounts.enabled }}
+        {{- range .Values.worker.hostPathMounts.mounts }}
+        - name: {{ .name }}
+          hostPath:
+            path: {{ .hostPath }}
+            type: DirectoryOrCreate
+        {{- end }}
+        {{- end }}
