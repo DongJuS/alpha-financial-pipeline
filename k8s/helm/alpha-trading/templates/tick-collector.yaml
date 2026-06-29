@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tick-collector
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "alpha-trading.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tick-collector
+spec:
+  replicas: {{ .Values.tickCollector.replicas }}
+  strategy:
+    type: Recreate    # 단일 WebSocket 연결을 끊고 다시 — KIS 세션 충돌 회피
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: tick-collector
+  template:
+    metadata:
+      labels:
+        {{- include "alpha-trading.labels" . | nindent 8 }}
+        app.kubernetes.io/component: tick-collector
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: tick-collector
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "scripts/run_tick_collector.py"]
+          envFrom:
+            - configMapRef:
+                name: alpha-trading-config
+            - secretRef:
+                name: alpha-trading-secrets
+          env:
+            {{- range $k, $v := .Values.tickCollector.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import sys; sys.exit(0)"
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.tickCollector.resources | nindent 12 }}

@@ -1,0 +1,44 @@
+{{- if .Values.migration.enabled }}
+# db-init-migrate Job — helm pre-install + pre-upgrade hook 으로 매 배포 시 실행.
+# docker-compose.prod.yml 의 db-init-migrate 서비스와 동일한 4 단계 시퀀스.
+# 모든 스크립트는 idempotent (재실행해도 안전).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-init-migrate
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "alpha-trading.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db-init-migrate
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "alpha-trading.labels" . | nindent 8 }}
+        app.kubernetes.io/component: db-init-migrate
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: db-init-migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            {{- toYaml .Values.migration.command | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: alpha-trading-config
+            - secretRef:
+                name: alpha-trading-secrets
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+{{- end }}

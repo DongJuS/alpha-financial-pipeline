@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.infra.postgres.host }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "alpha-trading.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: {{ .Values.infra.postgres.host }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        {{- include "alpha-trading.labels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: {{ .Values.infra.postgres.port }}
+              name: pg
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.infra.postgres.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.infra.postgres.user | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: alpha-trading-secrets
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.infra.postgres.user | quote }}]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.infra.postgres.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.infra.postgres.storage.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.infra.postgres.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.infra.postgres.host }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "alpha-trading.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  selector:
+    app.kubernetes.io/component: postgres
+  ports:
+    - port: {{ .Values.infra.postgres.port }}
+      targetPort: {{ .Values.infra.postgres.port }}
+      name: pg
+  clusterIP: None  # headless — StatefulSet 의 stable DNS 를 위함
