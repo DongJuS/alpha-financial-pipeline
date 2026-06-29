@@ -22,6 +22,7 @@ BOOTSTRAP="${INFISICAL_BOOTSTRAP:-$DEPLOY_HOME/.env.bootstrap}"
 : "${OCI_BACKUP_BUCKET:?OCI_BACKUP_BUCKET 미설정}"
 : "${OCI_BACKUP_ACCESS_KEY:?OCI_BACKUP_ACCESS_KEY 미설정}"
 : "${OCI_BACKUP_SECRET_KEY:?OCI_BACKUP_SECRET_KEY 미설정}"
+: "${OCI_BACKUP_REGION:=ap-chuncheon-1}"
 
 DATE_TAG=$(date +%Y/%m/%d)
 ARCHIVE_KEY="alpha/logs/${HOST_TAG}/${DATE_TAG}.tar.gz"
@@ -38,13 +39,13 @@ fi
 tar -czf - $log_files \
   | AWS_ACCESS_KEY_ID="$OCI_BACKUP_ACCESS_KEY" \
     AWS_SECRET_ACCESS_KEY="$OCI_BACKUP_SECRET_KEY" \
-    aws --endpoint-url "$OCI_BACKUP_ENDPOINT" \
+    /usr/local/bin/aws --endpoint-url "$OCI_BACKUP_ENDPOINT" --region "$OCI_BACKUP_REGION" \
         s3 cp - "s3://${OCI_BACKUP_BUCKET}/${ARCHIVE_KEY}" \
         --no-progress
 
 SIZE=$(AWS_ACCESS_KEY_ID="$OCI_BACKUP_ACCESS_KEY" \
        AWS_SECRET_ACCESS_KEY="$OCI_BACKUP_SECRET_KEY" \
-       aws --endpoint-url "$OCI_BACKUP_ENDPOINT" \
+       /usr/local/bin/aws --endpoint-url "$OCI_BACKUP_ENDPOINT" --region "$OCI_BACKUP_REGION" \
            s3api head-object --bucket "$OCI_BACKUP_BUCKET" --key "$ARCHIVE_KEY" \
            --query 'ContentLength' --output text 2>/dev/null || echo "0")
 
