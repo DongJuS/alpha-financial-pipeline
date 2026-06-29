@@ -1,0 +1,73 @@
+name: deploy-prod
+
+# 트리거:
+# - 우선 workflow_dispatch 만 활성 (수동). G9 통과 후 build-and-push 성공 시 자동 트리거로 전환 예정.
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "배포할 이미지 SHA (기본=현재 main의 HEAD)"
+        required: false
+        default: ""
+
+# 본 잡은 'production' environment 에 한정 — secret 노출 격리.
+# protected branches=main 만 / required reviewers 는 환경 설정에서 관리.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: ssh deploy to OCI
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            echo "image_tag=${{ github.event.inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image_tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
+
+      - name: Register OCI server host key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.OCI_DEPLOY_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Trigger remote deploy
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+        run: |
+          ssh -o StrictHostKeyChecking=yes \
+              ${{ secrets.OCI_SSH_USER }}@${{ secrets.OCI_SSH_HOST }} \
+              "\$HOME/deploy/deploy.sh '$IMAGE_TAG'"
+
+      - name: Notify success
+        if: success() && env.TELEGRAM_BOT_TOKEN_DEPLOY != ''
+        env:
+          TELEGRAM_BOT_TOKEN_DEPLOY: ${{ secrets.TELEGRAM_BOT_TOKEN_DEPLOY }}
+          TELEGRAM_CHAT_ID_DEPLOY: ${{ secrets.TELEGRAM_CHAT_ID_DEPLOY }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+        run: |
+          curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN_DEPLOY}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID_DEPLOY}" \
+            -d text="[deploy-prod] ✅ ${IMAGE_TAG:0:7} — $(date -u +%FT%TZ)" || true
+
+      - name: Notify failure
+        if: failure() && env.TELEGRAM_BOT_TOKEN_DEPLOY != ''
+        env:
+          TELEGRAM_BOT_TOKEN_DEPLOY: ${{ secrets.TELEGRAM_BOT_TOKEN_DEPLOY }}
+          TELEGRAM_CHAT_ID_DEPLOY: ${{ secrets.TELEGRAM_CHAT_ID_DEPLOY }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+        run: |
+          curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN_DEPLOY}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID_DEPLOY}" \
+            -d text="[deploy-prod] ❌ ${IMAGE_TAG:0:7} — 서버 deploy.sh 실패. 로그 확인 필요." || true
