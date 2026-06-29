@@ -6,6 +6,11 @@
 # 환경변수 (pg_dump_backup.sh 와 동일): OCI_BACKUP_*
 set -euo pipefail
 
+# OCI Object Storage 는 AWS chunked encoding (sigv4 streaming) 을 지원 안 함 (NotImplemented).
+# aws CLI v2.30+ 의 새 기본은 checksum 을 streaming 으로 계산하는데, 이를 when_required
+# 로 낮춰 chunked encoding 회피.
+export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+
 DEPLOY_HOME="${DEPLOY_HOME:-$HOME/deploy}"
 HOST_TAG="${HOST_TAG:-$(hostname -s)}"
 LOG_FILE="$DEPLOY_HOME/sync-logs.log"
