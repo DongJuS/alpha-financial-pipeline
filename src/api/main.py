@@ -6,6 +6,7 @@ src/api/main.py — FastAPI 애플리케이션 진입점
 """
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -133,13 +134,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning("DB 로그 핸들러 초기화 실패 (비필수): %s", e)
 
-    # 통합 스케줄러 시작 (krx_stock_master / macro / collector / index 포함)
-    await start_unified_scheduler()
+    # 통합 스케줄러 — worker pod 가 단독 책임. api 는 HTTP 서빙만.
+    # 둘 다 시작하면 14 cron jobs 가 중복 실행 (Index collection / LLM auth
+    # health check 등이 Redis 의 분산락을 우회해 양쪽 모두 적재 → 데이터
+    # 무결성 + 알림 노이즈 위험). 명시적으로 켜야만 시작.
+    run_scheduler = os.environ.get("RUN_UNIFIED_SCHEDULER", "false").lower() == "true"
+    if run_scheduler:
+        await start_unified_scheduler()
+    else:
+        logger.info("RUN_UNIFIED_SCHEDULER 비활성 — api 는 scheduler 시작 안 함 (worker 가 담당)")
 
     yield
 
-    # 통합 스케줄러 종료
-    await stop_unified_scheduler()
+    if run_scheduler:
+        await stop_unified_scheduler()
 
     logger.info("🔴 Alpha Trading System 종료 중...")
     await close_pool()
