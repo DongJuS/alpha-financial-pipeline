@@ -1,19 +1,17 @@
 {{- if .Values.migration.enabled }}
-# db-init-migrate Job — helm pre-install + pre-upgrade hook 으로 매 배포 시 실행.
-# docker-compose.prod.yml 의 db-init-migrate 서비스와 동일한 4 단계 시퀀스.
-# 모든 스크립트는 idempotent (재실행해도 안전).
+# db-init-migrate Job — 매 release revision 마다 새 Job.
+# 이전 hook 방식은 ConfigMap/Secret 보다 먼저 적용 → 'configmap not found' fail.
+# 일반 매니페스트로 두면 helm 이 의존성 순서대로 적용 (ConfigMap → Job).
+# Job 이름에 .Release.Revision 포함 → 매 upgrade 마다 새 Job (Job spec 은
+# immutable selector). 옛 Job 은 ttlSecondsAfterFinished 로 1 시간 후 자동 삭제.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: db-init-migrate
+  name: db-init-migrate-r{{ .Release.Revision }}
   namespace: {{ .Values.namespace }}
   labels:
     {{- include "alpha-trading.labels" . | nindent 4 }}
     app.kubernetes.io/component: db-init-migrate
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "10"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   backoffLimit: {{ .Values.migration.backoffLimit }}
   ttlSecondsAfterFinished: 3600
