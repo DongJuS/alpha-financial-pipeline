@@ -36,6 +36,7 @@ class TestCronTriggerConfig:
             "llm_auth_health",
             "s3_tick_flush",
             "minute_aggregation",
+            "minute_aggregation_intraday",
             "rl_retrain",
             "blend_weight_adjust",
             "minute_partition_mgmt",
@@ -60,6 +61,13 @@ class TestCronTriggerConfig:
         from src.schedulers.unified_scheduler import _LOCK_TTL
 
         assert _LOCK_TTL["index_collection"] < 30
+
+    def test_minute_aggregation_intraday_ttl_shorter_than_interval(self):
+        """minute_aggregation_intraday는 1분 간격이므로 TTL이 60초 미만이어야
+        다음 호출이 즉시 락 획득 가능."""
+        from src.schedulers.unified_scheduler import _LOCK_TTL
+
+        assert _LOCK_TTL["minute_aggregation_intraday"] < 60
 
 
 # ── 장중/장외 판별 ──────────────────────────────────────────────────────────
