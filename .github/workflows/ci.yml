@@ -90,11 +90,72 @@ jobs:
       - name: Initialize DB schema
         run: python scripts/db/init_db.py
 
-      - name: Run tests
+      - name: Run unit tests
         run: |
           pytest test/ -v --tb=short \
             --ignore=test/test_search_pipeline.py \
+            --ignore=test/integration \
             -k "not integration"
+
+  # ── Integration Test ────────────────────────────────────────────
+  # FastAPI TestClient + mock 기반 통합 테스트. unit 과 분리해 결과 가시화.
+  # test/integration/* (17 파일) 만 실행.
+  integration:
+    runs-on: ubuntu-latest
+    needs: lint
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: alpha_test_db
+          POSTGRES_USER: alpha_user
+          POSTGRES_PASSWORD: alpha_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U alpha_user -d alpha_test_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://alpha_user:alpha_pass@localhost:5432/alpha_test_db
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-test-secret
+      KIS_IS_PAPER_TRADING: "true"
+      S3_ENDPOINT_URL: http://localhost:9000
+      S3_ACCESS_KEY: test
+      S3_SECRET_KEY: test
+      S3_BUCKET_NAME: alpha-test-lake
+      S3_REGION: ap-northeast-2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Initialize DB schema
+        run: python scripts/db/init_db.py
+
+      - name: Run integration tests
+        run: pytest test/integration -v --tb=short
 
   # ── Helm Lint ─────────────────────────────────────────────────
   helm-lint:
