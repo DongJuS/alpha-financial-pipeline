@@ -7,6 +7,35 @@
 
 ---
 
+### k3s 마이그레이션 — Phase 5b 완료, Phase 5c 사용자 셋업 대기 (2026-06-30)
+
+Phase 1 ~ Phase 5b 모두 완료. Infisical 자체가 k3s 안에서 동작 (dual-run).
+alpha 의 k3s 첫 deploy 는 사용자 사전 셋업 (Infisical UI 시크릿 import +
+Universal Auth Identity + GH secret 등록 + GitHub PAT 등록) 후 자동 재개.
+
+**완료 phase + PR (alpha + infisical 합산 13 머지)**:
+- Phase 1 — k3s + helm + kubectl 설치 (alpha #209)
+- Phase 2 — Infisical k3s helm chart + SOPS+age 부트스트랩 (infisical #4)
+- Phase 3 — alpha helm chart (postgres/redis StatefulSet + tick-collector +
+  db-init Job) (alpha #210, #211)
+- Phase 4 — Infisical Kubernetes Operator (secrets-operator v0.11.2) 설치 +
+  InfisicalStaticSecret CR (alpha #211)
+- Phase 5 — deploy.yml (K3s) 갱신 + --atomic (alpha #212, #213)
+- Phase 5b — **Infisical k3s 실 deploy 성공** (infisical #5~#10) — 디버깅 6 회
+  retry 끝 동작. infisical app /healthcheck 200, dual-run 안전.
+
+**다음 — Phase 5c 사용자 사전 셋업** (자동 불가, 사용자 작업):
+- Infisical UI (http://운영_IP:80) 에서 alpha-financial-pipeline 프로젝트 +
+  prod 환경 + 운영 .env 의 23 시크릿 import
+- Machine Identity (Universal Auth) 발급 → client ID + secret
+- GH Environment production 에 INFISICAL_CLIENT_ID + INFISICAL_CLIENT_SECRET
+  + GHCR_PULL_TOKEN (read:packages PAT) 시크릿 등록
+- 위 완료 후 우리가 자동: kubectl secret 등록 + alpha deploy workflow_dispatch
+
+상세 phase 매트릭스 + 디버깅 trail + 리스크: `docs/runbooks/k3s-migration-plan.md`
+
+---
+
 ### k3s 마이그레이션 — Phase 1 완료 (2026-06-30)
 
 운영 docker compose 스택을 k3s 로 무중단 전환하는 작업 시작. 6 단계 phase
