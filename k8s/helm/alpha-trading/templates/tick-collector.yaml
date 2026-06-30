@@ -35,6 +35,13 @@ spec:
                 name: alpha-trading-secrets
           env:
             {{- include "alpha-trading.runtimeEnv" . | nindent 12 }}
+            {{- if eq .Values.tickCollector.kisTickMode "real" }}
+            - name: KIS_IS_PAPER_TRADING
+              value: "false"
+            {{- else if eq .Values.tickCollector.kisTickMode "paper" }}
+            - name: KIS_IS_PAPER_TRADING
+              value: "true"
+            {{- end }}
             {{- range $k, $v := .Values.tickCollector.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}

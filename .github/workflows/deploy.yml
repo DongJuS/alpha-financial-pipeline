@@ -18,6 +18,15 @@ on:
         description: "배포할 이미지 SHA (비우면 현재 main HEAD)"
         required: false
         default: ""
+      kis_tick_mode:
+        description: "tick-collector 의 KIS 모드 (default=Infisical 값 그대로 / real=실 계좌 WebSocket / paper=모의)"
+        required: false
+        default: "default"
+        type: choice
+        options:
+          - default
+          - real
+          - paper
 
 concurrency:
   group: deploy-k3s
@@ -53,8 +62,16 @@ jobs:
         id: deploy
         env:
           IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+          KIS_TICK_MODE: ${{ github.event.inputs.kis_tick_mode }}
         run: |
           set -o pipefail
+          # kisTickMode 가 'default' 면 chart 의 빈 값 그대로 (Infisical 값
+          # 따름). real/paper 면 --set 으로 override → KIS_IS_PAPER_TRADING
+          # env 가 tick-collector 에만 추가됨.
+          EXTRA_SETS=""
+          if [ "$KIS_TICK_MODE" = "real" ] || [ "$KIS_TICK_MODE" = "paper" ]; then
+            EXTRA_SETS="--set tickCollector.kisTickMode=$KIS_TICK_MODE"
+          fi
           # ServerAliveInterval/CountMax — helm install --wait 가 10분 가까이
           # 걸릴 수 있고 그 동안 SSH stdout 이 침묵 → OCI 경로의 NAT/방화벽이
           # idle TCP 를 끊으면 'client_loop: send disconnect: Broken pipe' 가
@@ -70,6 +87,7 @@ jobs:
                  --namespace alpha-trading --create-namespace \
                  --set image.tag='$IMAGE_TAG' \
                  --set ui.tag='$IMAGE_TAG' \
+                 $EXTRA_SETS \
                  --atomic --wait --timeout 10m && \
                kubectl -n alpha-trading get pods" 2>&1 | tee /tmp/deploy-output.log
 
