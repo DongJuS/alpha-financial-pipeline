@@ -14,11 +14,19 @@ image:
 imagePullSecrets:
   - name: ghcr-pull-secret
 
-# ── 인프라 — self-managed ──────────────────────────────────────────────
+# ── 인프라 — Phase 5c (dual-run) 기본값은 외부 docker compose 의 postgres/redis 공유 ──
+# enabled=false → 노드 host-port (externalIP:externalPort) 를 가리키는
+#                 Service + Endpoints 만 생성. data 단일 source 유지.
+# enabled=true  → k3s 안 StatefulSet + PVC 직접 운영 (Phase 6 마이그 후).
+# externalIP 는 `kubectl get nodes -o wide` 의 InternalIP. 단일 노드 cluster
+# 가정 — 다중 노드 전환 시 ExternalName Service 또는 NodeLocal endpoint 로 변경.
 infra:
   postgres:
+    enabled: false
     host: postgres
     port: 5432
+    externalIP: "10.0.0.248"
+    externalPort: 5432
     database: alpha_db
     user: alpha_user
     storage:
@@ -28,8 +36,11 @@ infra:
       requests: { cpu: 200m, memory: 512Mi }
       limits:   { cpu: 1,    memory: 1536Mi }
   redis:
+    enabled: false
     host: redis
     port: 6379
+    externalIP: "10.0.0.248"
+    externalPort: 6379
     storage:
       storageClass: local-path
       size: 2Gi
@@ -104,8 +115,11 @@ ui:
     limits:   { cpu: 250m, memory: 256Mi }
 
 # ── DB migration ──────────────────────────────────────────────────────
+# 외부 docker postgres 공유 시기 (infra.postgres.enabled=false) 에는 schema
+# 가 이미 있으므로 기본값 false. k3s 안 postgres StatefulSet 운영으로 전환할
+# 때 (Phase 6) 함께 true 로.
 migration:
-  enabled: true
+  enabled: false
   command:
     - /bin/bash
     - -c
