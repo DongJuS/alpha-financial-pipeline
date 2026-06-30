@@ -67,6 +67,7 @@ class TestJobRegistration:
             "llm_auth_health",
             "s3_tick_flush",
             "minute_aggregation",
+            "minute_aggregation_intraday",
             "rl_retrain",
             "blend_weight_adjust",
             "minute_partition_mgmt",
@@ -378,7 +379,7 @@ class TestScheduleTiming:
             assert job_id in added_jobs, f"{job_id} not registered"
 
         # 장 중 잡 (tick 잡은 별도 서비스로 분리됨)
-        market_ids = {"index_collection", "kis_token_health"}
+        market_ids = {"index_collection", "kis_token_health", "minute_aggregation_intraday"}
         for job_id in market_ids:
             assert job_id in added_jobs, f"{job_id} not registered"
 
