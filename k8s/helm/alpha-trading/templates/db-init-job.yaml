@@ -37,6 +37,8 @@ spec:
                 name: alpha-trading-config
             - secretRef:
                 name: alpha-trading-secrets
+          env:
+            {{- include "alpha-trading.runtimeEnv" . | nindent 12 }}
           resources:
             {{- toYaml .Values.migration.resources | nindent 12 }}
 {{- end }}

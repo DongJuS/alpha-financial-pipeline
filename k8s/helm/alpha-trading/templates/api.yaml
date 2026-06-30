@@ -52,6 +52,8 @@ spec:
                 name: alpha-trading-config
             - secretRef:
                 name: alpha-trading-secrets
+          env:
+            {{- include "alpha-trading.runtimeEnv" . | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /health
