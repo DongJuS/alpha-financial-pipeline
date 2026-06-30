@@ -100,22 +100,25 @@ class GeminiAuthResilienceTest(unittest.IsolatedAsyncioTestCase):
         )
         return client
 
-    async def test_auth_error_disables_client_globally(self) -> None:
+    async def test_auth_error_propagates_without_global_disable(self) -> None:
+        # 옛 동작: auth error 1회만 발생해도 _disable_globally → process 전체
+        # 영구 fail. 새 동작 (PR 본문 설명): retry 후 fail 하되 글로벌 상태는
+        # 건드리지 않음 — 다음 호출은 정상 경로 진입.
         client = self._build_client(RuntimeError("403 ACCESS_TOKEN_SCOPE_INSUFFICIENT"))
 
         with patch("src.llm.gemini_client.reserve_provider_call", new=AsyncMock()):
-            with self.assertRaisesRegex(RuntimeError, "비활성화"):
+            with self.assertRaisesRegex(RuntimeError, "403"):
                 await client.ask("hello")
 
-        self.assertFalse(client.is_configured)
-        self.assertIsNotNone(GeminiClient.disabled_reason())
+        # 글로벌 disable 안 됨 → 다음 호출은 generate_content 까지 진입
+        self.assertIsNone(GeminiClient.disabled_reason())
 
-        second = self._build_client(RuntimeError("should not run"))
+        second = self._build_client(RuntimeError("transient error"))
         with patch("src.llm.gemini_client.reserve_provider_call", new=AsyncMock()):
-            with self.assertRaisesRegex(RuntimeError, "비활성화"):
+            with self.assertRaisesRegex(RuntimeError, "transient error"):
                 await second.ask("hello again")
 
-        second._model.generate_content.assert_not_called()
+        second._model.generate_content.assert_called_once()
 
 
 class RLPrimeKisTicksTest(unittest.IsolatedAsyncioTestCase):
