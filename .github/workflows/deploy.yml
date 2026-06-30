@@ -64,7 +64,7 @@ jobs:
                  --namespace alpha-trading --create-namespace \
                  --set image.tag='$IMAGE_TAG' \
                  --set ui.tag='$IMAGE_TAG' \
-                 --wait --timeout 10m && \
+                 --atomic --wait --timeout 10m && \
                kubectl -n alpha-trading get pods" 2>&1 | tee /tmp/deploy-output.log
 
       - name: Telegram 알림 — 성공
