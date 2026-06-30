@@ -121,9 +121,47 @@
 
 ## 진행 상태 (live tracker)
 
-- [x] Phase 1 — k3s + helm 설치 (본 PR)
-- [ ] Phase 2 — Infisical 을 k3s 로
-- [ ] Phase 3 — alpha helm chart 작성
-- [ ] Phase 4 — Infisical Operator + CI/CD 갱신
-- [ ] Phase 5 — 점진 cutover
-- [ ] Phase 6 — docker 종료 + cleanup
+- [x] **Phase 1** — k3s + helm + kubectl 설치 (alpha #209)
+- [x] **Phase 2** — Infisical k3s helm chart (SOPS+age 부트스트랩) — infisical #4
+- [x] **Phase 3** — alpha helm chart 갱신 (postgres/redis StatefulSet + tick-collector
+      + db-init Job) — alpha #210, #211
+- [x] **Phase 4** — Infisical Kubernetes Operator (secrets-operator v0.11.2) 설치 +
+      InfisicalStaticSecret CR (`templates/infisical-secret.yaml`) — alpha #211
+- [x] **Phase 5** — deploy.yml (K3s) 갱신 + `--atomic` — alpha #212, #213
+- [x] **Phase 5b** — Infisical k3s 실 deploy 성공 (dual-run) — infisical #5~#10
+      - 디버깅 trail (실 deploy 까지 6 회 retry 끝에 동작):
+        1. private repo fetch 인증 → GH_TOKEN 전달 (#5)
+        2. 옛 deploy.sh 닭달걀 → workflow 가 직접 fetch (#6)
+        3. namespace.yaml 과 `--create-namespace` 충돌 → 매니페스트 제거 (#7)
+        4. `$(DB_PASSWORD)` forward reference → env 순서 (#8)
+        5. ssh idle timeout → ServerAliveInterval (#9)
+        6. helm fail state stuck → `--atomic` (#10)
+- [ ] **Phase 5c** — alpha 의 k3s 실 deploy
+      - **사용자 사전 셋업** 필요 (자동 불가):
+        a. Infisical UI 에서 `alpha-financial-pipeline` 프로젝트 + `prod` 환경
+           생성 → 운영 `.env` 의 23 시크릿 import
+        b. Machine Identity (Universal Auth) 발급 → client ID + secret 받음
+        c. GH Environment `production` 의 두 시크릿 등록:
+           `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`
+        d. GitHub PAT (`read:packages` scope) 발급 → GH secret `GHCR_PULL_TOKEN`
+      - 위 완료 후 우리가 자동 진행:
+        e. `kubectl create secret generic infisical-universal-auth ...`
+        f. `kubectl create secret docker-registry ghcr-pull-secret ...`
+        g. alpha 의 `deploy.yml` (K3s) workflow_dispatch
+- [ ] **Phase 5d** — 점진 cutover
+      - Infisical address (alpha `values.yaml` 의 `infisical.address`) 를
+        docker compose 의 80 에서 k3s service (`http://infisical.infisical.svc.cluster.local:8080`) 로
+        전환 — 이미 default 가 k3s service
+      - 운영 Infisical 의 DB dump → 새 k3s Infisical 의 postgres 에 restore (시크릿
+        데이터 마이그레이션). 또는 사용자가 처음부터 새 Infisical 에 입력 (Phase
+        5c 의 a 항목과 동일)
+      - cloudflared tunnel backend: docker (5173) → k3s ingress (별도 phase
+        에서 ingress controller 활성 + tunnel 갱신)
+- [ ] **Phase 6** — docker compose 종료 + 최종 cleanup
+      - 모든 트래픽 안정화 후 `docker compose -p alpha-financial-pipeline down`
+      - `docker compose -p infisical down` (k3s Infisical 로 완전 전환 후)
+      - openclaw 는 별도 (k3s 이전 작업 시 phase 추가)
+      - docker volume 백업 → OCI Archive 후 `docker system prune -a --volumes`
+      - 옛 deploy-prod.yml (docker compose) 비활성 또는 제거
+      - 운영 브랜치 `infra/oci-monitoring-and-budget` 삭제 (G10)
+      - 본 runbook 의 docker compose 관련 안내 → k3s 전용으로 교체
