@@ -110,12 +110,16 @@ tickCollector:
   kisTickMode: ""   # "", "real", "paper" 중 하나. 빈 값 = Infisical 값 따름
 
 # ── UI (nginx prod, 80 port) ───────────────────────────────────────────
+# Phase 5d — cloudflared Quick Tunnel 이 노드의 NodePort 로 routing.
+# 외부 트래픽: trycloudflare.com → cloudflared → host:30080 → ui pod:80
 ui:
   enabled: true
   replicas: 1
   image: ghcr.io/dongjus/alpha-financial-pipeline/ui
   tag: latest
   port: 80
+  serviceType: NodePort
+  nodePort: 30080
   resources:
     requests: { cpu: 50m,  memory: 64Mi }
     limits:   { cpu: 250m, memory: 256Mi }
