@@ -34,6 +34,7 @@ spec:
             - secretRef:
                 name: alpha-trading-secrets
           env:
+            {{- include "alpha-trading.runtimeEnv" . | nindent 12 }}
             {{- range $k, $v := .Values.tickCollector.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
