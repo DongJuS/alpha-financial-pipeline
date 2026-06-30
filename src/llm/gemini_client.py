@@ -179,7 +179,12 @@ class GeminiClient:
         if self.__class__._global_disabled_reason is not None:
             raise RuntimeError(self.__class__._global_disabled_reason)
         if not self._model:
-            raise RuntimeError("Gemini client is not configured.")
+            # 인스턴스 init 시 OAuth 가 일시 실패해 _model 이 None 인 경우
+            # 호출 시점에 한 번 더 시도 (credentials cache 도 clear 해 fresh
+            # ADC reload). 영구 disable 대신 transient retry.
+            _clear_gemini_oauth_credentials_cache()
+            if not self._configure_oauth():
+                raise RuntimeError("Gemini client is not configured.")
 
         await reserve_provider_call("gemini")
 
@@ -197,9 +202,21 @@ class GeminiClient:
                 self.__class__._global_quota_exhausted = True
                 logger.warning("Gemini quota exhausted.")
             elif self._is_auth_error(e):
-                reason = f"Gemini 인증이 불가해 비활성화합니다: {e}"
-                self._disable_globally(reason)
-                raise RuntimeError(reason) from e
+                # 영구 disable 금지 — ADC access token 이 ~1 시간마다
+                # 만료되므로 일시 auth error 1회만 발생할 가능성이 큼.
+                # credentials cache 초기화 + 재인증 후 1회만 재시도하고,
+                # 그래도 실패하면 이 호출만 실패시키고 다음 호출은 정상
+                # 경로 진입. (옛 로직은 _disable_globally → process 종료
+                # 까지 영구 fail = 사용자가 보고한 "됐다 안 됐다 반복" 의
+                # 직접 원인.)
+                logger.warning("Gemini auth error — 재인증 후 1회 재시도: %s", e)
+                _clear_gemini_oauth_credentials_cache()
+                if self._configure_oauth():
+                    try:
+                        return (await asyncio.to_thread(_run)).strip()
+                    except Exception as retry_e:
+                        logger.warning("Gemini 재인증 후에도 실패: %s", retry_e)
+                        raise
             raise
 
     async def ask_json(self, prompt: str, temperature: float = 0.4) -> dict:
