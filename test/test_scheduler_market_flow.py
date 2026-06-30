@@ -67,6 +67,7 @@ class TestJobRegistration:
             "llm_auth_health",
             "s3_tick_flush",
             "minute_aggregation",
+            "minute_aggregation_intraday",
             "rl_retrain",
             "blend_weight_adjust",
             "minute_partition_mgmt",
@@ -378,7 +379,7 @@ class TestScheduleTiming:
             assert job_id in added_jobs, f"{job_id} not registered"
 
         # 장 중 잡 (tick 잡은 별도 서비스로 분리됨)
-        market_ids = {"index_collection", "kis_token_health"}
+        market_ids = {"index_collection", "kis_token_health", "minute_aggregation_intraday"}
         for job_id in market_ids:
             assert job_id in added_jobs, f"{job_id} not registered"
 
@@ -397,8 +398,9 @@ class TestScheduleTiming:
         # 월간 잡
         assert "minute_partition_mgmt" in added_jobs
 
-        # 총 14개
-        assert len(added_jobs) == 14
+        # 총 15개 (minute_aggregation_intraday 포함)
+        assert "minute_aggregation_intraday" in added_jobs
+        assert len(added_jobs) == 15
 
     @pytest.mark.asyncio
     async def test_scheduler_start_called(self):
@@ -624,7 +626,7 @@ class TestTickJobRegistration:
 
         assert "tick_realtime_start" not in registered, "tick_realtime_start should be removed"
         assert "tick_realtime_health" not in registered, "tick_realtime_health should be removed"
-        assert len(registered) == 14, f"Expected 14 jobs, got {len(registered)}: {list(registered.keys())}"
+        assert len(registered) == 15, f"Expected 15 jobs, got {len(registered)}: {list(registered.keys())}"
 
     @pytest.mark.asyncio
     async def test_tick_lock_ttl_removed(self):
