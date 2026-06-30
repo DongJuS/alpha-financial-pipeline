@@ -1,13 +1,17 @@
 # ================================================================
-# Deploy Pipeline — K3s helm 배포 (Phase 5)
+# Deploy Pipeline — K3s helm 배포
 #
 # 트리거 정책:
-# - 본 PR 머지 시점에는 workflow_dispatch 만. 사전 조건 (Infisical Operator
-#   를 위한 infisical-universal-auth k8s Secret + ghcr-pull-secret + 운영
-#   Infisical 의 prod 프로젝트 + 23 시크릿 import) 충족 후 별도 PR 으로
-#   workflow_run 자동 트리거 활성.
-# - deploy-prod.yml (docker compose) 와는 동시 동작 가능 (Phase 5b cutover
-#   기간 동안 트래픽이 점진 전환).
+#   - workflow_dispatch : 수동 (image_tag / kis_tick_mode override 가능)
+#   - workflow_run      : build-and-push 가 main 에서 성공한 직후 자동 트리거.
+#                         G9 (자동 트리거 활성) — main push 마다 build →
+#                         GHCR push → 자동 deploy. main 머지가 곧 운영 배포.
+#
+# 안전망:
+#   - environment: production (시크릿 scope, branch protection 통과 main 만)
+#   - helm --atomic --wait --timeout 10m (fail 시 자동 rollback)
+#   - concurrency: deploy-k3s (동시 배포 충돌 방지, cancel-in-progress=false 라
+#                  앞 배포가 끝날 때까지 대기 — 중간 단계 cutover 보호)
 # ================================================================
 name: Deploy to K3s
 
@@ -27,6 +31,10 @@ on:
           - default
           - real
           - paper
+  workflow_run:
+    workflows: ["build-and-push"]   # name: 키와 매칭
+    types: [completed]
+    branches: [main]
 
 concurrency:
   group: deploy-k3s
@@ -37,12 +45,23 @@ jobs:
     name: helm upgrade on k3s
     runs-on: ubuntu-latest
     environment: production
+    # workflow_run 으로 트리거된 경우엔 build 가 성공한 것만 진행 (실패한 build
+    # 의 image 가 GHCR 에 없으니 pull 자체가 fail). workflow_dispatch 는 무조건.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     steps:
       - name: Resolve image tag
         id: tag
+        # workflow_run 트리거 시 github.sha 는 workflow file 의 default branch HEAD
+        # 이라 build 가 만든 image tag 와 다를 수 있음. workflow_run.head_sha 가
+        # build 가 실제로 본 commit. workflow_dispatch 의 image_tag input 이 있으면
+        # 그게 우선 (수동 rollback / 특정 SHA 배포).
         run: |
           if [ -n "${{ github.event.inputs.image_tag }}" ]; then
             echo "image_tag=${{ github.event.inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "image_tag=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
           else
             echo "image_tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
