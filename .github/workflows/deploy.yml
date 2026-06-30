@@ -55,7 +55,13 @@ jobs:
           IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
         run: |
           set -o pipefail
+          # ServerAliveInterval/CountMax — helm install --wait 가 10분 가까이
+          # 걸릴 수 있고 그 동안 SSH stdout 이 침묵 → OCI 경로의 NAT/방화벽이
+          # idle TCP 를 끊으면 'client_loop: send disconnect: Broken pipe' 가
+          # 발생. keepalive 로 연결 유지. (infisical repo PR #9 와 동일 조치)
           ssh -o StrictHostKeyChecking=yes \
+              -o ServerAliveInterval=30 \
+              -o ServerAliveCountMax=20 \
               ${{ secrets.OCI_SSH_USER }}@${{ secrets.OCI_SSH_HOST }} \
               "cd /home/ubuntu/alpha-financial-pipeline && \
                git fetch origin main --quiet && \
