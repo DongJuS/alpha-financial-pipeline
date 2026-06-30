@@ -1,91 +1,126 @@
 # ================================================================
-# Deploy Pipeline — K3s 배포 자동화
+# Deploy Pipeline — K3s helm 배포 (Phase 5)
 #
-# 트리거: CI 완료 후 main push, 수동 dispatch
-# 전제: K3s 호스트에 self-hosted runner 또는 SSH 접근 설정
+# 트리거 정책:
+# - 본 PR 머지 시점에는 workflow_dispatch 만. 사전 조건 (Infisical Operator
+#   를 위한 infisical-universal-auth k8s Secret + ghcr-pull-secret + 운영
+#   Infisical 의 prod 프로젝트 + 23 시크릿 import) 충족 후 별도 PR 으로
+#   workflow_run 자동 트리거 활성.
+# - deploy-prod.yml (docker compose) 와는 동시 동작 가능 (Phase 5b cutover
+#   기간 동안 트래픽이 점진 전환).
 # ================================================================
-
 name: Deploy to K3s
 
 on:
-  # workflow_run 자동 트리거는 Phase 2 (k3s 운영) 까지 비활성. 본 워크플로우는
-  # K3s 환경 (K3S_HOST 시크릿 등) 을 가정하는데 현재는 docker compose 직접 배포
-  # 사용중이라 동작하지 않는다. 수동 트리거만 허용해 다른 PR 머지 시점에 자동
-  # 호출되지 않도록 한다.
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "배포할 이미지 태그 (기본: latest)"
+        description: "배포할 이미지 SHA (비우면 현재 main HEAD)"
         required: false
-        default: "latest"
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: dongjus/alpha-financial-pipeline
+        default: ""
+
+concurrency:
+  group: deploy-k3s
+  cancel-in-progress: false
 
 jobs:
   deploy:
+    name: helm upgrade on k3s
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-
+    environment: production
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set image tag
+      - name: Resolve image tag
         id: tag
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            echo "image_tag=${{ github.event.inputs.image_tag }}" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "image_tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Deploy to K3s via SSH
-        uses: appleboy/ssh-action@v1
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          host: ${{ secrets.K3S_HOST }}
-          username: ${{ secrets.K3S_USER }}
-          key: ${{ secrets.K3S_SSH_KEY }}
-          script: |
-            set -e
+          ssh-private-key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
 
-            IMAGE_TAG="${{ steps.tag.outputs.tag }}"
-            REGISTRY="${{ env.REGISTRY }}"
-            IMAGE="${{ env.IMAGE_NAME }}"
+      - name: Register OCI server host key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.OCI_DEPLOY_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
-            echo "=== Deploying ${IMAGE}:${IMAGE_TAG} ==="
+      - name: Helm upgrade on k3s
+        id: deploy
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+        run: |
+          set -o pipefail
+          ssh -o StrictHostKeyChecking=yes \
+              ${{ secrets.OCI_SSH_USER }}@${{ secrets.OCI_SSH_HOST }} \
+              "cd /home/ubuntu/alpha-financial-pipeline && \
+               git fetch origin main --quiet && \
+               git reset --hard '$IMAGE_TAG' && \
+               helm upgrade --install alpha-trading k8s/helm/alpha-trading \
+                 --namespace alpha-trading --create-namespace \
+                 --set image.tag='$IMAGE_TAG' \
+                 --set ui.tag='$IMAGE_TAG' \
+                 --wait --timeout 10m && \
+               kubectl -n alpha-trading get pods" 2>&1 | tee /tmp/deploy-output.log
 
-            # Helm이 설치되어 있으면 Helm으로, 아니면 kubectl로 배포
-            if command -v helm &> /dev/null && [ -d ~/alpha-financial-pipeline/k8s/helm/alpha-trading ]; then
-              echo "--- Helm upgrade ---"
-              helm upgrade --install alpha-trading ~/alpha-financial-pipeline/k8s/helm/alpha-trading \
-                --set image.repository="${REGISTRY}/${IMAGE}" \
-                --set image.tag="${IMAGE_TAG}" \
-                --namespace alpha-trading \
-                --create-namespace \
-                --wait --timeout 5m
-            else
-              echo "--- kubectl rolling update ---"
-              kubectl set image deployment/alpha-api \
-                api="${REGISTRY}/${IMAGE}:${IMAGE_TAG}" \
-                -n alpha-trading
-              kubectl set image deployment/alpha-worker \
-                worker="${REGISTRY}/${IMAGE}:${IMAGE_TAG}" \
-                -n alpha-trading
-              kubectl rollout status deployment/alpha-api -n alpha-trading --timeout=5m
-              kubectl rollout status deployment/alpha-worker -n alpha-trading --timeout=5m
-            fi
+      - name: Telegram 알림 — 성공
+        if: success() && env.TELEGRAM_BOT_TOKEN_DEPLOY != ''
+        env:
+          TELEGRAM_BOT_TOKEN_DEPLOY: ${{ secrets.TELEGRAM_BOT_TOKEN_DEPLOY }}
+          TELEGRAM_CHAT_ID_DEPLOY: ${{ secrets.TELEGRAM_CHAT_ID_DEPLOY }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+        run: |
+          curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN_DEPLOY}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID_DEPLOY}" \
+            -d text="[k3s deploy] OK ${IMAGE_TAG:0:7} — $(date -u +%FT%TZ)" || true
 
-            echo "=== Deploy complete ==="
+      - name: Telegram 알림 — 실패
+        if: failure() && env.TELEGRAM_BOT_TOKEN_DEPLOY != ''
+        env:
+          TELEGRAM_BOT_TOKEN_DEPLOY: ${{ secrets.TELEGRAM_BOT_TOKEN_DEPLOY }}
+          TELEGRAM_CHAT_ID_DEPLOY: ${{ secrets.TELEGRAM_CHAT_ID_DEPLOY }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+        run: |
+          curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN_DEPLOY}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID_DEPLOY}" \
+            -d text="[k3s deploy] FAIL ${IMAGE_TAG:0:7} — helm upgrade 실패" || true
 
-      - name: Verify deployment
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.K3S_HOST }}
-          username: ${{ secrets.K3S_USER }}
-          key: ${{ secrets.K3S_SSH_KEY }}
-          script: |
-            echo "=== Pod status ==="
-            kubectl get pods -n alpha-trading -o wide
-            echo ""
-            echo "=== Recent events ==="
-            kubectl get events -n alpha-trading --sort-by='.lastTimestamp' | tail -10
+      - name: Archive run result to OCI Object Storage
+        if: always()
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.OCI_BACKUP_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.OCI_BACKUP_SECRET_KEY }}
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          OCI_BACKUP_ENDPOINT: ${{ secrets.OCI_BACKUP_ENDPOINT }}
+          OCI_BACKUP_BUCKET: ${{ secrets.OCI_BACKUP_BUCKET }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -e
+          mkdir -p /tmp/gha-archive
+          cat > /tmp/gha-archive/result.json <<EOF
+          {
+            "repo": "${{ github.repository }}",
+            "workflow": "${{ github.workflow }}",
+            "run_id": "${{ github.run_id }}",
+            "run_number": ${{ github.run_number }},
+            "run_attempt": ${{ github.run_attempt }},
+            "image_tag": "$IMAGE_TAG",
+            "status": "$JOB_STATUS",
+            "actor": "${{ github.actor }}",
+            "event": "${{ github.event_name }}",
+            "timestamp": "$(date -u +%FT%TZ)",
+            "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          [ -f /tmp/deploy-output.log ] && cp /tmp/deploy-output.log /tmp/gha-archive/deploy-output.log
+          tar -czf /tmp/gha-archive.tar.gz -C /tmp/gha-archive .
+          KEY="alpha/gha/deploy-k3s/$(date -u +%Y/%m/%d)/${{ github.run_id }}-attempt${{ github.run_attempt }}.tar.gz"
+          aws --endpoint-url "$OCI_BACKUP_ENDPOINT" --region "${OCI_BACKUP_REGION:-ap-chuncheon-1}" \
+              s3 cp /tmp/gha-archive.tar.gz "s3://$OCI_BACKUP_BUCKET/$KEY" \
+              --no-progress
+          echo "archived → s3://$OCI_BACKUP_BUCKET/$KEY"
