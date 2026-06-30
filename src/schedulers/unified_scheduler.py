@@ -23,7 +23,8 @@ src/schedulers/unified_scheduler.py — 통합 스케줄러
 
     [장 후]
     s3_tick_flush       15:40 KST  DB→S3 틱 데이터 일괄 flush (hour 파티셔닝)
-    minute_aggregation  15:50 KST  tick_data→ohlcv_minute 1분봉 배치 집계
+    minute_aggregation  15:50 KST  tick_data→ohlcv_minute 1분봉 배치 집계 (마감 보정)
+    minute_aggregation_intraday  1분 인터벌  tick_data→ohlcv_minute 실시간 집계 (장중)
     rl_retrain          16:00 KST  RL 전략 재학습
     blend_weight_adjust 16:30 KST  블렌딩 가중치 동적 조정
 
@@ -62,6 +63,7 @@ _LOCK_TTL: dict[str, int] = {
     # 장 후
     "s3_tick_flush": 600,        # 10분 (DB→S3 일괄 flush)
     "minute_aggregation": 300,   # 5분 (tick→ohlcv_minute 집계)
+    "minute_aggregation_intraday": 50,  # 50초 (1분 인터벌보다 짧게)
     "rl_retrain": 3600,          # 60분 (멀티 티커 학습)
     "blend_weight_adjust": 120,  # 2분
     # 월간
@@ -677,6 +679,39 @@ async def start_unified_scheduler() -> None:
         id="minute_aggregation",
         name="Minute aggregation (15:50 KST)",
         misfire_grace_time=60,
+        replace_existing=True,
+    )
+
+    # -- 장 중: tick_data → ohlcv_minute 분봉 실시간 집계 (1분 인터벌) --
+    # 마감 후 배치(minute_aggregation, 15:50)는 그대로 두고, 장중에도 분봉이
+    # 실시간으로 채워지도록 보완. is_market_open_now() 가드로 장중에만 실행.
+    # 최근 ~2분 윈도우만 재집계 (UPSERT 멱등성이라 ohlcv_minute 행 수는 늘지 않음).
+    async def _run_minute_aggregation_intraday() -> None:
+        if not await is_market_open_now():
+            return
+        from datetime import datetime as _dt, timedelta
+
+        from src.db.queries import aggregate_ticks_to_minutes
+
+        now = _dt.now(tz=KST)
+        # 분 경계로 floor 한 후 [-2분, +1분) — 진행 중 분은 다음 호출에서 갱신
+        end_minute = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        start_minute = end_minute - timedelta(minutes=3)
+
+        count = await aggregate_ticks_to_minutes(start_minute, end_minute)
+        logger.debug(
+            "장중 분봉 집계: window=[%s, %s), %d건",
+            start_minute.isoformat(), end_minute.isoformat(), count,
+        )
+
+    scheduler.add_job(
+        _locked_job("minute_aggregation_intraday", _run_minute_aggregation_intraday),
+        "interval",
+        minutes=1,
+        timezone=str(KST),
+        id="minute_aggregation_intraday",
+        name="Minute aggregation (intraday, every 1m)",
+        misfire_grace_time=20,
         replace_existing=True,
     )
 
