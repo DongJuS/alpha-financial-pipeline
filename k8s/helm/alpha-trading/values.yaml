@@ -14,18 +14,16 @@ image:
 imagePullSecrets:
   - name: ghcr-pull-secret
 
-# ── 인프라 — Phase 5c (dual-run) 기본값은 외부 docker compose 의 postgres/redis 공유 ──
-# enabled=false → 노드 host-port (externalIP:externalPort) 를 가리키는
-#                 Service + Endpoints 만 생성. data 단일 source 유지.
-# enabled=true  → k3s 안 StatefulSet + PVC 직접 운영 (Phase 6 마이그 후).
-# externalIP 는 `kubectl get nodes -o wide` 의 InternalIP. 단일 노드 cluster
-# 가정 — 다중 노드 전환 시 ExternalName Service 또는 NodeLocal endpoint 로 변경.
+# ── 인프라 — Phase 6 마이그 완료. k3s 안 StatefulSet + PVC 단독 운영 ──
+# enabled=true (default) → chart 의 StatefulSet + PVC 가 데이터 source.
+# enabled=false → 외부 host-port (externalIP:externalPort) 를 가리키는
+#                 Service + EndpointSlice 만 생성 (dual-run 시기 용).
 infra:
   postgres:
-    enabled: false
+    enabled: true
     host: postgres
     port: 5432
-    externalIP: "10.0.0.248"
+    externalIP: "10.0.0.248"   # enabled=false 일 때만 사용
     externalPort: 5432
     database: alpha_db
     user: alpha_user
@@ -36,7 +34,7 @@ infra:
       requests: { cpu: 200m, memory: 512Mi }
       limits:   { cpu: 1,    memory: 1536Mi }
   redis:
-    enabled: false
+    enabled: true
     host: redis
     port: 6379
     externalIP: "10.0.0.248"
