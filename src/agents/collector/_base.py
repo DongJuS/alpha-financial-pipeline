@@ -51,6 +51,9 @@ class _CollectorBase:
         self._realtime_task: asyncio.Task | None = None  # 스케줄러 헬스체크용
 
     def _account_scope(self) -> str:
+        # 본 함수는 sync 이라 Redis 조회 (async) 를 못 함 — env 기반 유지.
+        # UI 토글의 즉시 반영이 필요한 endpoint (portfolio, market 등) 는
+        # `services.trading_mode.get_current_trading_mode` 를 async 로 직접 호출.
         return "paper" if self.settings.kis_is_paper_trading else "real"
 
     def _has_kis_market_credentials(self) -> bool:
