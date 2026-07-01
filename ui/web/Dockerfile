@@ -33,6 +33,22 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # API 를 backend api Service 로 reverse-proxy. 같은 namespace 라 short name.
+    # nginx 는 시작 시 upstream 을 resolve — api Service 가 없으면 시작 실패라
+    # 값 upstream 정의 대신 location 안 proxy_pass 로 late-bind.
+    location /api/ {
+        resolver kube-dns.kube-system.svc.cluster.local valid=30s;
+        proxy_pass http://api:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 300s;
+    }
+
     # SPA 라우팅: 존재하지 않는 경로는 index.html 로 (history mode 지원)
     location / {
         try_files $uri $uri/ /index.html;
