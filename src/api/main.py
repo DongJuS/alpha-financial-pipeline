@@ -30,6 +30,7 @@ from src.api.routers import (
     scheduler,
     strategy,
     system_health,
+    system_trading_mode,
 )
 from src.schedulers.unified_scheduler import start_unified_scheduler, stop_unified_scheduler
 from src.utils.config import get_settings
@@ -199,6 +200,7 @@ app.include_router(models.router, prefix=f"{API_PREFIX}/models", tags=["models"]
 app.include_router(marketplace.router, prefix=f"{API_PREFIX}/marketplace", tags=["marketplace"])
 app.include_router(rl.router, prefix=f"{API_PREFIX}/rl", tags=["rl"])
 app.include_router(system_health.router, prefix=f"{API_PREFIX}/system", tags=["system-health"])
+app.include_router(system_trading_mode.router, prefix=API_PREFIX, tags=["system"])
 app.include_router(datalake.router, prefix=f"{API_PREFIX}/datalake", tags=["datalake"])
 app.include_router(audit.router, prefix=f"{API_PREFIX}/audit", tags=["audit"])
 app.include_router(feedback.router, prefix=f"{API_PREFIX}/feedback", tags=["feedback"])
@@ -240,11 +242,14 @@ async def health_check() -> HealthResponse:
     sched_status = get_scheduler_status()
     status = "healthy" if (db_ok and redis_ok) else "degraded"
 
+    # runtime trading mode (Redis 우선, env fallback) — UI 토글 즉시 반영
+    from src.services.trading_mode import is_paper_trading
+
     return HealthResponse(
         status=status,
         version="0.1.0",
         environment=settings.app_env,
-        paper_trading=settings.kis_is_paper_trading,
+        paper_trading=await is_paper_trading(),
         services={
             "database": "ok" if db_ok else "error",
             "redis": "ok" if redis_ok else "error",
