@@ -100,12 +100,13 @@ tickCollector:
   env:
     TICK_MARKET_HOURS_ONLY: "true"
     TICK_RECONNECT_MAX: "10"
-  # KIS 실 계좌(real) vs 모의(paper) 토글. chart 기본은 Infisical 의 값을
-  # 그대로 따름 (= paper 가 prod 의 baseline). real 로 돌리고 싶을 때
-  # deploy workflow_dispatch 의 kis_tick_mode 입력 = "real" 또는
-  # helm 직접 호출 시 `--set tickCollector.kisTickMode=real`. (자본
-  # 리스크 0 — 거래는 worker, worker 는 paper 그대로.)
-  kisTickMode: ""   # "", "real", "paper" 중 하나. 빈 값 = Infisical 값 따름
+  # KIS 실 계좌(real) vs 모의(paper) 토글.
+  # chart default 를 "real" 로 명시 — G9 auto deploy (workflow_run trigger)
+  # 시 kis_tick_mode input 이 default 라 --set 이 안 붙어 Infisical 값 (paper) 로
+  # 리셋되던 문제 해소. 틱 데이터는 real KIS WebSocket 만 가능하므로 default 로 유지.
+  # paper 로 돌리고 싶으면 workflow_dispatch 의 kis_tick_mode=paper.
+  # (자본 리스크 0 — 거래는 worker, worker 는 여전히 Infisical 의 paper 값 따름.)
+  kisTickMode: "real"   # "" / "real" / "paper". 빈 값 = Infisical 값 따름
 
 # ── UI (nginx prod, 80 port) ───────────────────────────────────────────
 # Phase 5d — cloudflared Quick Tunnel 이 노드의 NodePort 로 routing.
