@@ -75,8 +75,21 @@ async def list_tickers(
     market: Optional[str] = Query(default=None, pattern="^(KOSPI|KOSDAQ)$"),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=3000),
+    include_empty: bool = Query(
+        default=False,
+        description=(
+            "True 면 instruments 전체 반환. False (default) 는 ohlcv_daily 에 "
+            "실제 데이터가 있는 종목만 — UI 가 각 종목 quote 를 호출할 때 "
+            "대량 404 회피."
+        ),
+    ),
 ) -> dict:
-    """추적 중인 종목 목록을 반환합니다."""
+    """추적 중인 종목 목록을 반환합니다.
+
+    UI 는 이 endpoint 로 받은 종목 각각에 대해 /market/quote/{ticker} 를 호출.
+    include_empty=False (default) 로 ohlcv_daily 에 데이터 없는 종목은 애초에
+    노출하지 않아 404 대량 발생 방지. 관리자용 전체 조회는 ?include_empty=true.
+    """
     offset = (page - 1) * per_page
 
     base_query = "FROM instruments i LEFT JOIN krx_stock_master sm ON i.ticker = sm.ticker"
@@ -84,8 +97,16 @@ async def list_tickers(
     where = " WHERE i.is_active = TRUE"
 
     if market:
-        where += " AND i.market_id = $3"
+        where += f" AND i.market_id = ${len(params) + 1}"
         params.append(market)
+
+    if not include_empty:
+        # EXISTS 서브쿼리 — ohlcv_daily 는 partition + (instrument_id, traded_at DESC)
+        # index 라 fast lookup. LIMIT 1 로 첫 매치 즉시 return.
+        where += (
+            " AND EXISTS (SELECT 1 FROM ohlcv_daily o"
+            " WHERE o.instrument_id = i.instrument_id LIMIT 1)"
+        )
 
     rows = await fetch(
         f"""
