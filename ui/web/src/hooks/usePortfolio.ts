@@ -378,14 +378,81 @@ interface RealHoldingsResponse {
   positions: RealHoldingPosition[];
 }
 
+// Backend 응답 shape (flat) — /portfolio/account-overview 의 실제 응답 필드.
+// UI 가 사용하는 RealHoldingsResponse (nested `summary`) 와 이름 mapping 필요.
+interface AccountOverviewApiResponse {
+  account_scope: "paper" | "real";
+  broker_name: string;
+  account_label: string;
+  base_currency: string;
+  seed_capital: number;
+  cash_balance: number;
+  buying_power: number;
+  position_market_value: number;
+  total_equity: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  total_pnl: number;
+  total_pnl_pct: number;
+  position_count: number;
+  last_snapshot_at: string | null;
+}
+
+interface PositionsApiResponse {
+  total_value: number;
+  total_pnl: number;
+  total_pnl_pct: number;
+  is_paper: boolean;
+  positions: Array<{
+    ticker: string;
+    name?: string;
+    quantity: number;
+    avg_price?: number;
+    average_price?: number;
+    current_price: number;
+    eval_amount?: number;
+    market_value?: number;
+    unrealized_pnl: number;
+    unrealized_pnl_pct?: number;
+  }>;
+}
+
 export function useRealHoldings() {
   return useQuery({
     queryKey: ["portfolio", "real-holdings"],
-    queryFn: async () => {
-      const { data } = await api.get<RealHoldingsResponse>("/portfolio/account-overview", {
-        params: { mode: "real" },
-      });
-      return data;
+    queryFn: async (): Promise<RealHoldingsResponse> => {
+      // Backend 는 두 endpoint 로 분리 — 요약 + positions 병렬 fetch 후 UI shape 로 조립.
+      const [overviewRes, positionsRes] = await Promise.all([
+        api.get<AccountOverviewApiResponse>("/portfolio/account-overview", {
+          params: { mode: "real" },
+        }),
+        api.get<PositionsApiResponse>("/portfolio/positions", {
+          params: { mode: "real" },
+        }),
+      ]);
+      const o = overviewRes.data;
+      const p = positionsRes.data;
+      return {
+        account_number_masked: o.account_label ?? "실계좌",
+        fetched_at: o.last_snapshot_at ?? new Date().toISOString(),
+        summary: {
+          cash_balance: o.cash_balance ?? 0,
+          total_eval_amount: o.position_market_value ?? 0,
+          total_equity: o.total_equity ?? 0,
+          total_unrealized_pnl: o.unrealized_pnl ?? 0,
+          total_unrealized_pnl_pct: o.total_pnl_pct ?? 0,
+        },
+        positions: (p.positions ?? []).map((pos) => ({
+          ticker: pos.ticker,
+          name: pos.name ?? pos.ticker,
+          quantity: pos.quantity,
+          avg_price: pos.avg_price ?? pos.average_price ?? 0,
+          current_price: pos.current_price,
+          eval_amount: pos.eval_amount ?? pos.market_value ?? 0,
+          unrealized_pnl: pos.unrealized_pnl,
+          unrealized_pnl_pct: pos.unrealized_pnl_pct ?? 0,
+        })),
+      };
     },
     retry: 1,
     refetchInterval: 30_000,
