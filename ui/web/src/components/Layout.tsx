@@ -1,4 +1,37 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useTradingMode, useSetTradingMode } from "@/hooks/useTradingMode";
+
+function TradingModeToggle() {
+  const { data: mode } = useTradingMode();
+  const setMode = useSetTradingMode();
+  const current: "paper" | "real" = mode ?? "paper";
+
+  const handleToggle = () => {
+    const next = current === "paper" ? "real" : "paper";
+    if (next === "real" && !window.confirm("실계좌 모드로 전환합니다. 실 KIS 계좌 자격증명이 사용됩니다.")) {
+      return;
+    }
+    setMode.mutate(next);
+  };
+
+  const isReal = current === "real";
+  const bg = isReal ? "var(--red-bg, #fee2e2)" : "var(--green-bg)";
+  const color = isReal ? "var(--red, #b91c1c)" : "var(--green)";
+  const label = isReal ? "Real mode" : "Paper mode";
+
+  return (
+    <button
+      type="button"
+      onClick={handleToggle}
+      disabled={setMode.isPending}
+      className="hidden rounded-full px-3 py-1.5 text-xs font-semibold transition-opacity md:inline-flex hover:opacity-80 disabled:opacity-50"
+      style={{ background: bg, color }}
+      title="클릭하여 paper/real 모드 전환"
+    >
+      {label}
+    </button>
+  );
+}
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "홈", description: "자산 현황" },
@@ -85,6 +118,7 @@ export default function Layout() {
               </div>
 
               <div className="flex items-center justify-between gap-2 md:justify-end">
+                <TradingModeToggle />
                 <div
                   className="hidden rounded-full px-3 py-1.5 text-xs font-semibold md:inline-flex"
                   style={{ background: "var(--green-bg)", color: "var(--green)" }}
