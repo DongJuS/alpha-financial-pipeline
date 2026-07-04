@@ -60,11 +60,16 @@ spec:
               value: {{ $v | quote }}
             {{- end }}
           volumeMounts:
+            # RL 정책/실험 아티팩트. RLPolicyStoreV2 · RLExperimentManager 가
+            # 기대하는 코드 상 경로(`{repo_root}/artifacts/rl/…`)에 마운트한다.
+            # 이전엔 `/data/rl/…` 로 잘못 마운트돼 파일은 컨테이너 ephemeral 층
+            # 에만 쓰이고 재시작으로 유실 → DB record 만 남고 file 없음 → RLRunner
+            # load_policy 실패.
             - name: rl-data
-              mountPath: /data/rl/models
+              mountPath: /app/artifacts/rl/models
               subPath: models
             - name: rl-data
-              mountPath: /data/rl/experiments
+              mountPath: /app/artifacts/rl/experiments
               subPath: experiments
             {{- if .Values.worker.hostPathMounts.enabled }}
             {{- range .Values.worker.hostPathMounts.mounts }}
