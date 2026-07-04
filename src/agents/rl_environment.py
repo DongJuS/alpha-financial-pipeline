@@ -84,6 +84,11 @@ ACTION_HOLD = 2
 ACTION_CLOSE = 3  # 포지션 청산 (flat으로)
 NUM_ACTIONS = 4
 
+# 일봉 전용 관측 벡터 차원 = feature_columns(5) + position(1). combined 모드는 여기에
+# intraday_features 차원이 뒤로 이어붙는다. 어댑터가 학습된 obs_dim 과 대조해 부족한
+# feature 차원만큼 마스킹으로 채워야 할 때 참조한다.
+DEFAULT_DAILY_OBS_DIM = len(TradingEnvConfig().feature_columns) + 1
+
 
 def action_to_str(action: int) -> str:
     """Action index → 문자열."""

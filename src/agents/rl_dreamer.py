@@ -637,6 +637,17 @@ class DreamerRLPolicy:
     def act(self, closes, *, position: int = 0, features=None):
         from src.agents.rl_policy_interface import PolicyDecision
 
+        # combined 로 학습된 정책 (obs_dim > DEFAULT_DAILY_OBS_DIM) 인데 호출자가
+        # features 를 안 넘긴 경우, 학습 시 마스킹 semantics 와 동일하게 zero-mask
+        # 로 채워 shape mismatch 를 방지한다. Runner 가 아직 combined-aware 이지
+        # 않을 때의 방어망 (Option A). Runner 가 실 features 를 넘기면 그대로 사용.
+        if features is None and self._trainer.obs_dim is not None:
+            from src.agents.rl_environment import DEFAULT_DAILY_OBS_DIM
+
+            needed = int(self._trainer.obs_dim) - DEFAULT_DAILY_OBS_DIM
+            if needed > 0:
+                features = [[0.0] * needed for _ in closes]
+
         action, conf = self._trainer.act_from_window(closes, features, position)
         return PolicyDecision(
             action=action, confidence=conf, meta={"algorithm": self.algorithm}
