@@ -341,6 +341,22 @@ CREATE_TABLES: list[str] = [
     ALTER TABLE portfolio_config
         ADD CONSTRAINT portfolio_config_primary_account_scope_check
         CHECK (primary_account_scope IN ('paper', 'real', 'virtual'));
+    -- Sell strategy Phase A 리스크 파라미터 (docs/plans/SELL_STRATEGY_PHASES.md §3-3)
+    ALTER TABLE portfolio_config
+        ADD COLUMN IF NOT EXISTS individual_stop_loss_pct INTEGER NOT NULL DEFAULT 7
+            CHECK (individual_stop_loss_pct BETWEEN 1 AND 100);
+    ALTER TABLE portfolio_config
+        ADD COLUMN IF NOT EXISTS take_profit_pct INTEGER NOT NULL DEFAULT 5
+            CHECK (take_profit_pct BETWEEN 1 AND 100);
+    ALTER TABLE portfolio_config
+        ADD COLUMN IF NOT EXISTS portfolio_drawdown_limit_pct INTEGER NOT NULL DEFAULT 8
+            CHECK (portfolio_drawdown_limit_pct BETWEEN 1 AND 100);
+    COMMENT ON COLUMN portfolio_config.individual_stop_loss_pct IS
+        'Phase A Layer 1 개별 종목 손절 임계 %. _check_rule_based_exits 가 소비. Mandate default 7.';
+    COMMENT ON COLUMN portfolio_config.take_profit_pct IS
+        'Take profit 임계 %. _check_rule_based_exits (Phase A) + Phase B 부분 매도가 소비. Mandate default 5.';
+    COMMENT ON COLUMN portfolio_config.portfolio_drawdown_limit_pct IS
+        'Phase A Layer 2 포트폴리오 drawdown 임계 %. _check_portfolio_drawdown 이 소비. Mandate default 8.';
     -- 단일 행 보장용 초기값 삽입 (이미 있으면 무시)
     INSERT INTO portfolio_config
         (
@@ -531,6 +547,15 @@ CREATE_TABLES: list[str] = [
     -- N-way 블렌딩 메타데이터
     ALTER TABLE broker_orders
         ADD COLUMN IF NOT EXISTS blend_meta JSONB;
+    -- Sell strategy Phase A~D 감사 트레이싱 (docs/plans/SELL_STRATEGY_PHASES.md §3-3)
+    ALTER TABLE broker_orders
+        ADD COLUMN IF NOT EXISTS trigger_source VARCHAR(20) NULL;
+    ALTER TABLE broker_orders
+        ADD COLUMN IF NOT EXISTS trigger_snapshot JSONB NULL;
+    COMMENT ON COLUMN broker_orders.trigger_source IS
+        'Sell strategy phase A~D trigger origin: llm_signal|hard_stop_L1|hard_stop_L2|take_profit|time_exit|rebalance';
+    COMMENT ON COLUMN broker_orders.trigger_snapshot IS
+        'JSONB — layer/pricing/state at trigger time. Audit reproducibility.';
     CREATE INDEX IF NOT EXISTS idx_broker_orders_scope_ts
         ON broker_orders (account_scope, requested_at DESC);
     CREATE INDEX IF NOT EXISTS idx_broker_orders_scope_status_ts
