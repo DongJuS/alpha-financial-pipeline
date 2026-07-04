@@ -452,6 +452,7 @@ class PortfolioManagerDailyLossBlockedTest(unittest.IsolatedAsyncioTestCase):
 class PortfolioManagerRuleBasedExitsTest(unittest.IsolatedAsyncioTestCase):
     """_check_rule_based_exits 다양한 조건 테스트."""
 
+    @patch("src.db.queries.compute_avg_fill_price_by_ticker", new=AsyncMock(return_value={}))
     @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
     async def test_take_profit_triggered(self, mock_positions) -> None:
         """수익률이 take_profit_pct 이상이면 SELL 시그널."""
@@ -465,6 +466,7 @@ class PortfolioManagerRuleBasedExitsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(signals[0].signal, "SELL")
         self.assertIn("익절", signals[0].reasoning_summary)
 
+    @patch("src.db.queries.compute_avg_fill_price_by_ticker", new=AsyncMock(return_value={}))
     @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
     async def test_stop_loss_triggered(self, mock_positions) -> None:
         """수익률이 stop_loss_pct 이하이면 SELL 시그널."""
@@ -478,6 +480,7 @@ class PortfolioManagerRuleBasedExitsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(signals[0].signal, "SELL")
         self.assertIn("손절", signals[0].reasoning_summary)
 
+    @patch("src.db.queries.compute_avg_fill_price_by_ticker", new=AsyncMock(return_value={}))
     @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
     async def test_no_exit_in_range(self, mock_positions) -> None:
         """수익률이 익절/손절 범위 내이면 시그널 없음."""
@@ -489,6 +492,7 @@ class PortfolioManagerRuleBasedExitsTest(unittest.IsolatedAsyncioTestCase):
         signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
         self.assertEqual(len(signals), 0)
 
+    @patch("src.db.queries.compute_avg_fill_price_by_ticker", new=AsyncMock(return_value={}))
     @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
     async def test_zero_quantity_skipped(self, mock_positions) -> None:
         """수량 0인 포지션은 무시."""
@@ -500,6 +504,7 @@ class PortfolioManagerRuleBasedExitsTest(unittest.IsolatedAsyncioTestCase):
         signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
         self.assertEqual(len(signals), 0)
 
+    @patch("src.db.queries.compute_avg_fill_price_by_ticker", new=AsyncMock(return_value={}))
     @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
     async def test_zero_avg_price_skipped(self, mock_positions) -> None:
         """avg_price=0인 포지션은 무시."""
@@ -511,6 +516,7 @@ class PortfolioManagerRuleBasedExitsTest(unittest.IsolatedAsyncioTestCase):
         signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
         self.assertEqual(len(signals), 0)
 
+    @patch("src.db.queries.compute_avg_fill_price_by_ticker", new=AsyncMock(return_value={}))
     @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
     async def test_empty_positions(self, mock_positions) -> None:
         """포지션 없으면 빈 리스트."""

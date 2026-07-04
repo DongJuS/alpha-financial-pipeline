@@ -395,10 +395,14 @@ class PortfolioManagerAgent:
         trigger_snapshot 을 attach — broker_orders 감사 컬럼으로 흐름.
         (docs/plans/SELL_STRATEGY_PHASES.md §3-1 · §3-3)
 
-        NOTE(§8-7): 현재 avg_price (portfolio_positions.avg_price) 사용.
-        원칙 4 는 broker_orders.avg_fill_price 요구. 별도 세션에서 통일 예정.
+        원칙 4 정합: `broker_orders.avg_fill_price` wavg 사용
+        (compute_avg_fill_price_by_ticker). broker_orders 에 데이터 없는 종목
+        (예: seed 초기) 은 `portfolio_positions.avg_price` fallback.
         """
-        from src.db.queries import get_positions_for_scope
+        from src.db.queries import (
+            compute_avg_fill_price_by_ticker,
+            get_positions_for_scope,
+        )
 
         take_profit_pct = int(cfg.get("take_profit_pct", 5))
         individual_stop_loss_pct = int(cfg.get("individual_stop_loss_pct", 7))
@@ -406,18 +410,21 @@ class PortfolioManagerAgent:
         exit_signals: list[PredictionSignal] = []
 
         positions = await get_positions_for_scope(account_scope)
+        avg_fill_by_ticker = await compute_avg_fill_price_by_ticker(account_scope)
+
         for pos in positions:
             ticker = str(pos["ticker"])
             qty = int(pos.get("quantity", 0))
             if qty <= 0:
                 continue
 
-            avg_price = float(pos.get("avg_price", 0))
+            avg_fill = avg_fill_by_ticker.get(ticker)
+            avg_fill_price = float(avg_fill) if avg_fill and avg_fill > 0 else float(pos.get("avg_price", 0))
             current_price = float(pos.get("current_price", 0))
-            if avg_price <= 0 or current_price <= 0:
+            if avg_fill_price <= 0 or current_price <= 0:
                 continue
 
-            pnl_pct = (current_price - avg_price) / avg_price * 100.0
+            pnl_pct = (current_price - avg_fill_price) / avg_fill_price * 100.0
 
             reason: str | None = None
             trigger_source: str | None = None
@@ -432,7 +439,8 @@ class PortfolioManagerAgent:
                 logger.info("규칙 기반 매도 트리거: %s %s", ticker, reason)
                 snapshot = {
                     "layer": 1 if trigger_source == "hard_stop_L1" else None,
-                    "avg_price": int(avg_price),
+                    "avg_fill_price": int(avg_fill_price),
+                    "avg_fill_source": "broker_orders_wavg" if avg_fill else "portfolio_positions_fallback",
                     "current_price": int(current_price),
                     "pnl_pct": round(pnl_pct, 3),
                     "stop_line_pct": stop_loss_threshold
@@ -474,8 +482,12 @@ class PortfolioManagerAgent:
         (§8-2 정확한 "전주 종가" 스냅샷 로직은 open question).
         소비 파라미터: portfolio_drawdown_limit_pct (default 8)
         최약체 정의: unrealized pnl (%) 하위 (§8-2 default).
+        원칙 4 정합: broker_orders.avg_fill_price wavg 사용 (fallback avg_price).
         """
-        from src.db.queries import get_positions_for_scope
+        from src.db.queries import (
+            compute_avg_fill_price_by_ticker,
+            get_positions_for_scope,
+        )
         from src.utils.db_client import fetchrow
 
         dd_limit = int(cfg.get("portfolio_drawdown_limit_pct", 8))
@@ -515,17 +527,23 @@ class PortfolioManagerAgent:
             return []
 
         positions = await get_positions_for_scope(account_scope)
-        candidates: list[tuple[float, dict]] = []
+        avg_fill_by_ticker = await compute_avg_fill_price_by_ticker(account_scope)
+        candidates: list[tuple[float, dict, int, bool]] = []
         for pos in positions:
             qty = int(pos.get("quantity", 0))
             if qty <= 0:
                 continue
-            avg_price = float(pos.get("avg_price", 0))
+            ticker = str(pos["ticker"])
+            avg_fill = avg_fill_by_ticker.get(ticker)
+            used_broker_wavg = bool(avg_fill and avg_fill > 0)
+            avg_fill_price = (
+                float(avg_fill) if used_broker_wavg else float(pos.get("avg_price", 0))
+            )
             current_price = float(pos.get("current_price", 0))
-            if avg_price <= 0 or current_price <= 0:
+            if avg_fill_price <= 0 or current_price <= 0:
                 continue
-            pnl_pct = (current_price - avg_price) / avg_price * 100.0
-            candidates.append((pnl_pct, pos))
+            pnl_pct = (current_price - avg_fill_price) / avg_fill_price * 100.0
+            candidates.append((pnl_pct, pos, int(avg_fill_price), used_broker_wavg))
         if not candidates:
             return []
         candidates.sort(key=lambda x: x[0])
@@ -533,9 +551,8 @@ class PortfolioManagerAgent:
 
         now_iso = datetime.utcnow().isoformat()
         exit_signals: list[PredictionSignal] = []
-        for pnl_pct, pos in weakest_two:
+        for pnl_pct, pos, avg_fill_price, used_broker_wavg in weakest_two:
             ticker = str(pos["ticker"])
-            avg_price = float(pos.get("avg_price", 0))
             current_price = float(pos.get("current_price", 0))
             reason = (
                 f"L2 포트 dd {dd_pct:+.2f}% <= -{dd_limit}%, "
@@ -555,7 +572,10 @@ class PortfolioManagerAgent:
                     trigger_source="hard_stop_L2",
                     trigger_snapshot={
                         "layer": 2,
-                        "avg_price": int(avg_price),
+                        "avg_fill_price": avg_fill_price,
+                        "avg_fill_source": "broker_orders_wavg"
+                        if used_broker_wavg
+                        else "portfolio_positions_fallback",
                         "current_price": int(current_price),
                         "portfolio_dd_pct": round(dd_pct, 3),
                         "portfolio_dd_limit_pct": dd_limit,
@@ -574,7 +594,10 @@ class PortfolioManagerAgent:
 
         (docs/plans/SELL_STRATEGY_PHASES.md §3-2)
 
-        Layer 우선순위: L3 lockout → L1 개별 → L2 포트 dd.
+        Layer 우선순위:
+            L3-persistent (Redis flag, 전일 -3% 잔여 lockout) → early return
+            L3-daily (당일 pnl -3%) → Redis flag 세팅 후 return
+            L1 개별 → L2 포트 dd
         L1 이 이미 매도한 종목은 L2 중복 발주 방지.
 
         이중 발주 방지:
@@ -586,14 +609,37 @@ class PortfolioManagerAgent:
         로그와 return 만.
         """
         from src.schedulers.distributed_lock import DistributedLock
-        from src.services.trading_mode import is_hard_stop_dry_run
+        from src.services.trading_mode import (
+            is_hard_stop_dry_run,
+            is_hard_stop_lockout_active,
+            set_hard_stop_lockout,
+        )
+        from src.utils.market_hours import next_trading_day_start
+
+        # L3 persistent — 전일 -3% 도달 흔적 (Redis flag, 다음 거래일 09:00 까지)
+        if await is_hard_stop_lockout_active(account_scope):
+            logger.info(
+                "Hard stop L3 persistent lockout: scope=%s (다음 거래일 09:00 까지)",
+                account_scope,
+            )
+            return []
 
         blocked, pnl_pct = await self._is_daily_loss_blocked(account_scope, cfg)
         if blocked:
+            # L3 daily 트리거 → 다음 거래일 09:00 까지 lockout Redis flag 세팅
+            try:
+                until = next_trading_day_start()
+                await set_hard_stop_lockout(account_scope, until)
+            except Exception as exc:
+                logger.warning(
+                    "hard_stop lockout 세팅 실패 (계속 진행): scope=%s, %s",
+                    account_scope,
+                    exc,
+                )
             daily_limit = int(cfg.get("daily_loss_limit_pct", 3))
             await self._publish_circuit_breaker(account_scope, pnl_pct, daily_limit)
             logger.info(
-                "Hard stop L3 lockout: scope=%s, pnl=%.2f%%, limit=-%d%%",
+                "Hard stop L3 daily lockout: scope=%s, pnl=%.2f%%, limit=-%d%%",
                 account_scope,
                 pnl_pct,
                 daily_limit,
@@ -701,9 +747,24 @@ class PortfolioManagerAgent:
             logger.info("PortfolioManagerAgent 장외 주문 스킵: market_status=%s", market_status)
             return []
 
+        # Phase A Layer 3 persistent lockout — 전일 -3% 도달 흔적 (Redis flag).
+        # process_predictions 도 존중해서 자정 넘은 다음 거래일에도 매매 skip
+        # (docs/plans/SELL_STRATEGY_PHASES.md §3-1 · §8-8).
+        from src.services.trading_mode import is_hard_stop_lockout_active
+
         orders: list[dict] = []
         blocked_scopes: list[dict[str, object]] = []
         for account_scope in enabled_scopes:
+            if await is_hard_stop_lockout_active(account_scope):
+                logger.info(
+                    "process_predictions L3 persistent lockout: scope=%s (다음 거래일까지)",
+                    account_scope,
+                )
+                blocked_scopes.append(
+                    {"account_scope": account_scope, "reason": "hard_stop_persistent_lockout"}
+                )
+                continue
+
             blocked, pnl_pct = await self._is_daily_loss_blocked(account_scope, cfg)
             if blocked:
                 await self._publish_circuit_breaker(account_scope, pnl_pct, daily_loss_limit_pct)
