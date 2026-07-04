@@ -990,8 +990,20 @@ async def insert_broker_order(
     status: str = "PENDING",
     broker_order_id: str | None = None,
     rejection_reason: str | None = None,
+    trigger_source: str | None = None,
+    trigger_snapshot: dict | None = None,
 ) -> None:
+    # trigger_source / trigger_snapshot: Sell strategy Phase A~D 감사 트레이싱
+    # (docs/plans/SELL_STRATEGY_PHASES.md §3-3). Hard stop / take_profit / time_exit
+    # 발주 시 왜 매도가 나갔는지 재현 가능하게 저장. LLM signal 발주 시엔 None.
+    import json as _json
+
     scope = normalize_account_scope(account_scope)
+    snapshot_json = (
+        _json.dumps(trigger_snapshot, ensure_ascii=False, default=str)
+        if trigger_snapshot is not None
+        else None
+    )
     await execute(
         """
         INSERT INTO broker_orders (
@@ -999,12 +1011,14 @@ async def insert_broker_order(
             order_type, requested_quantity, requested_price,
             filled_quantity, avg_fill_price, status,
             signal_source, agent_id, broker_order_id, rejection_reason,
+            trigger_source, trigger_snapshot,
             requested_at, created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6,
             'MARKET', $7, $8,
             0, NULL, $9,
             $10, $11, $12, $13,
+            $14, $15::jsonb,
             NOW(), NOW(), NOW()
         )
         """,
@@ -1021,6 +1035,8 @@ async def insert_broker_order(
         agent_id,
         broker_order_id,
         rejection_reason,
+        trigger_source,
+        snapshot_json,
     )
 
 
