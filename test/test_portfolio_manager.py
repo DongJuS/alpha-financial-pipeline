@@ -459,7 +459,7 @@ class PortfolioManagerRuleBasedExitsTest(unittest.IsolatedAsyncioTestCase):
             {"ticker": "005930", "quantity": 10, "avg_price": 100.0, "current_price": 106.0},
         ]
         agent = PortfolioManagerAgent()
-        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        cfg = {"take_profit_pct": 5, "individual_stop_loss_pct": 3}
         signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
         self.assertEqual(len(signals), 1)
         self.assertEqual(signals[0].signal, "SELL")
@@ -472,7 +472,7 @@ class PortfolioManagerRuleBasedExitsTest(unittest.IsolatedAsyncioTestCase):
             {"ticker": "005930", "quantity": 10, "avg_price": 100.0, "current_price": 96.0},
         ]
         agent = PortfolioManagerAgent()
-        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        cfg = {"take_profit_pct": 5, "individual_stop_loss_pct": 3}
         signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
         self.assertEqual(len(signals), 1)
         self.assertEqual(signals[0].signal, "SELL")
@@ -485,7 +485,7 @@ class PortfolioManagerRuleBasedExitsTest(unittest.IsolatedAsyncioTestCase):
             {"ticker": "005930", "quantity": 10, "avg_price": 100.0, "current_price": 102.0},
         ]
         agent = PortfolioManagerAgent()
-        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        cfg = {"take_profit_pct": 5, "individual_stop_loss_pct": 3}
         signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
         self.assertEqual(len(signals), 0)
 
@@ -496,7 +496,7 @@ class PortfolioManagerRuleBasedExitsTest(unittest.IsolatedAsyncioTestCase):
             {"ticker": "005930", "quantity": 0, "avg_price": 100.0, "current_price": 200.0},
         ]
         agent = PortfolioManagerAgent()
-        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        cfg = {"take_profit_pct": 5, "individual_stop_loss_pct": 3}
         signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
         self.assertEqual(len(signals), 0)
 
@@ -507,7 +507,7 @@ class PortfolioManagerRuleBasedExitsTest(unittest.IsolatedAsyncioTestCase):
             {"ticker": "005930", "quantity": 10, "avg_price": 0, "current_price": 100.0},
         ]
         agent = PortfolioManagerAgent()
-        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        cfg = {"take_profit_pct": 5, "individual_stop_loss_pct": 3}
         signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
         self.assertEqual(len(signals), 0)
 
@@ -516,7 +516,7 @@ class PortfolioManagerRuleBasedExitsTest(unittest.IsolatedAsyncioTestCase):
         """포지션 없으면 빈 리스트."""
         mock_positions.return_value = []
         agent = PortfolioManagerAgent()
-        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        cfg = {"take_profit_pct": 5, "individual_stop_loss_pct": 3}
         signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
         self.assertEqual(len(signals), 0)
 
