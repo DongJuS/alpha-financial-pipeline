@@ -89,7 +89,12 @@ class _CollectorBase:
             )
             self._last_hb_db_at = now
 
-    def _resolve_tickers(self, requested: list[str] | None, limit: int = 20) -> list[tuple[str, str, str]]:
+    def _resolve_tickers(
+        self,
+        requested: list[str] | None,
+        limit: int = 20,
+        market_hint_map: dict[str, str] | None = None,
+    ) -> list[tuple[str, str, str]]:
         fdr = self._load_fdr()
         listing = fdr.StockListing("KRX")
 
@@ -108,11 +113,39 @@ class _CollectorBase:
 
         if requested:
             missing = [t for t in requested if t not in {x[0] for x in selected}]
-            selected.extend((t, t, "KOSPI") for t in missing)
+            hints = market_hint_map or {}
+            selected.extend((t, t, hints.get(t, "KOSPI")) for t in missing)
         return selected
 
+    @staticmethod
+    async def _instrument_market_map(requested: list[str]) -> dict[str, str]:
+        """`instruments` 테이블에서 raw ticker → market_id 매핑을 사전조회한다.
+
+        FDR StockListing 에서 누락된 종목(신규 상장/특수코드 등)을 KOSPI 로 잘못
+        기본화하는 것을 방지하기 위한 힌트 소스.
+        """
+        if not requested:
+            return {}
+        try:
+            from src.utils.db_client import fetch as db_fetch
+
+            rows = await db_fetch(
+                "SELECT ticker, market_id FROM instruments "
+                "WHERE ticker = ANY($1::text[]) AND is_active = TRUE",
+                requested,
+            )
+            return {
+                r["ticker"]: r["market_id"]
+                for r in rows
+                if r["market_id"] in {"KOSPI", "KOSDAQ"}
+            }
+        except Exception as exc:
+            logger.warning("instruments market_id 프리페치 실패 (KOSPI fallback 유지): %s", exc)
+            return {}
+
     async def resolve_tickers(self, requested: list[str] | None, limit: int = 20) -> list[tuple[str, str, str]]:
-        return await asyncio.to_thread(self._resolve_tickers, requested, limit)
+        market_hint_map = await self._instrument_market_map(requested or [])
+        return await asyncio.to_thread(self._resolve_tickers, requested, limit, market_hint_map)
 
     async def _cache_latest_tick(self, tick, source: str) -> None:
         """TickData 또는 MarketDataPoint를 Redis에 캐시합니다."""

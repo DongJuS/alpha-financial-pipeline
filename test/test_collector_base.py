@@ -151,6 +151,19 @@ class TestResolveTickers:
         idx = tickers.index("UNKNOWN_TICKER")
         assert result[idx][2] == "KOSPI"
 
+    def test_resolve_tickers_missing_uses_market_hint(self, collector):
+        """FDR 리스팅에 없는 종목이라도 hint_map 에 있으면 그 market 사용 (KOSDAQ 오분류 방지)."""
+        mock_fdr = MagicMock()
+        mock_fdr.StockListing.return_value = self._mock_listing()
+        with patch.object(collector, "_load_fdr", return_value=mock_fdr):
+            result = collector._resolve_tickers(
+                ["298380"], limit=20, market_hint_map={"298380": "KOSDAQ"},
+            )
+        tickers = [t[0] for t in result]
+        assert "298380" in tickers
+        idx = tickers.index("298380")
+        assert result[idx][2] == "KOSDAQ"
+
     def test_resolve_tickers_returns_tuples(self, collector):
         """반환값이 (ticker, name, market) 튜플 리스트."""
         mock_fdr = MagicMock()
@@ -169,12 +182,34 @@ class TestResolveTickers:
 class TestResolveTickers_Async:
     """resolve_tickers (async wrapper) 검증."""
 
+    def _mock_listing(self):
+        import pandas as pd
+        return pd.DataFrame({
+            "Code": ["005930", "000660", "035420", "999999"],
+            "Name": ["삼성전자", "SK하이닉스", "NAVER", "테스트"],
+            "Market": ["KOSPI", "KOSPI", "KOSPI", "ETF"],
+        })
+
     async def test_async_wrapper(self, collector):
         """async resolve_tickers가 _resolve_tickers 결과를 반환."""
         expected = [("005930", "삼성전자", "KOSPI")]
         with patch.object(collector, "_resolve_tickers", return_value=expected):
             result = await collector.resolve_tickers(["005930"], limit=1)
         assert result == expected
+
+    async def test_async_wrapper_prefetches_market_hint_from_db(self, collector):
+        """resolve_tickers 는 instruments 조회 결과를 hint_map 으로 sync 층에 전달."""
+        mock_fdr = MagicMock()
+        # FDR StockListing 에 없는 종목만 요청 → 폴백 경로 강제
+        mock_fdr.StockListing.return_value = self._mock_listing()
+        db_rows = [{"ticker": "298380", "market_id": "KOSDAQ"}]
+
+        with patch.object(collector, "_load_fdr", return_value=mock_fdr), \
+             patch("src.utils.db_client.fetch", new=AsyncMock(return_value=db_rows)):
+            result = await collector.resolve_tickers(["298380"], limit=20)
+
+        tickers = {t[0]: t[2] for t in result}
+        assert tickers.get("298380") == "KOSDAQ"
 
 
 # =============================================================================
