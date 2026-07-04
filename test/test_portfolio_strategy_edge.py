@@ -81,6 +81,7 @@ class PortfolioManagerRuleBasedExitEdgeTest(unittest.IsolatedAsyncioTestCase):
 
         return PortfolioManagerAgent()
 
+    @patch("src.db.queries.compute_avg_fill_price_by_ticker", new=AsyncMock(return_value={}))
     @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
     async def test_rule_based_exit_avg_price_zero_skips(self, mock_positions) -> None:
         """avg_price=0 포지션 → SELL 시그널 없음 (continue)."""
@@ -93,12 +94,13 @@ class PortfolioManagerRuleBasedExitEdgeTest(unittest.IsolatedAsyncioTestCase):
             },
         ]
         agent = self._make_agent()
-        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        cfg = {"take_profit_pct": 5, "individual_stop_loss_pct": 3}
 
         signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
 
         self.assertEqual(len(signals), 0)
 
+    @patch("src.db.queries.compute_avg_fill_price_by_ticker", new=AsyncMock(return_value={}))
     @patch("src.db.queries.get_positions_for_scope", new_callable=AsyncMock)
     async def test_rule_based_exit_take_profit_trigger(self, mock_positions) -> None:
         """P&L >= take_profit_pct → SELL 시그널 생성, agent_id='rule_based_exit'."""
@@ -111,7 +113,7 @@ class PortfolioManagerRuleBasedExitEdgeTest(unittest.IsolatedAsyncioTestCase):
             },
         ]
         agent = self._make_agent()
-        cfg = {"take_profit_pct": 5.0, "stop_loss_pct": -3.0}
+        cfg = {"take_profit_pct": 5, "individual_stop_loss_pct": 3}
 
         signals = await agent._check_rule_based_exits(["005930"], cfg, "paper")
 
