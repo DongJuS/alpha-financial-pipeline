@@ -93,3 +93,65 @@ async def set_hard_stop_dry_run(enabled: bool) -> None:
     redis = await get_redis()
     await redis.set(_HARD_STOP_DRY_RUN_REDIS_KEY, "true" if enabled else "false")
     logger.info("hard_stop_dry_run 변경: %s", enabled)
+
+
+# ── Hard stop persistent lockout (Layer 3 다음 거래일까지) ─────────
+#
+# docs/plans/SELL_STRATEGY_PHASES.md §3-1 Layer 3 스펙:
+#   "그날 모든 신규 주문 취소 + 다음 거래일까지 매매 lockout"
+# _is_daily_loss_blocked 는 매 사이클 당일 pnl 만 체크 → 자정 지나면 자동 해제.
+# 이를 보완: -3% 도달 시 Redis flag 세팅, 다음 거래일 09:00 까지 TTL.
+# Flag 활성 시 hard_stop_scan 및 process_predictions 매매 skip.
+
+_LOCKOUT_KEY_PREFIX = "hard_stop:lockout:"
+
+
+async def is_hard_stop_lockout_active(account_scope: str) -> bool:
+    """다음 거래일 lockout Redis flag 가 활성인지 조회.
+
+    (docs/plans/SELL_STRATEGY_PHASES.md §3-1 · §8-8)
+    True 면 매매 skip. Redis 실패 시 False (안전 기본값 아님 — Redis 장애 시
+    lockout 자동 해제되지만 daily pnl 체크는 여전히 동작해서 당일 재판정 됨).
+    """
+    try:
+        redis = await get_redis()
+        val = await redis.get(f"{_LOCKOUT_KEY_PREFIX}{account_scope}")
+        return val is not None
+    except Exception as exc:
+        logger.warning("hard_stop lockout Redis 조회 실패: %s", exc)
+        return False
+
+
+async def set_hard_stop_lockout(account_scope: str, until):  # type: ignore[no-untyped-def]
+    """Redis 에 lockout flag 세팅. TTL 은 until (datetime, KST) 까지.
+
+    until 이 현재보다 과거면 최소 60초 TTL 로 clamp.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    kst = ZoneInfo("Asia/Seoul")
+    now = datetime.now(kst)
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=kst)
+    ttl_seconds = max(int((until - now).total_seconds()), 60)
+
+    redis = await get_redis()
+    await redis.set(
+        f"{_LOCKOUT_KEY_PREFIX}{account_scope}",
+        "true",
+        ex=ttl_seconds,
+    )
+    logger.info(
+        "hard_stop lockout 세팅: scope=%s, until=%s (ttl=%ds)",
+        account_scope,
+        until.isoformat(),
+        ttl_seconds,
+    )
+
+
+async def clear_hard_stop_lockout(account_scope: str) -> None:
+    """Lockout flag 즉시 해제 (긴급 오버라이드 · 테스트용)."""
+    redis = await get_redis()
+    await redis.delete(f"{_LOCKOUT_KEY_PREFIX}{account_scope}")
+    logger.info("hard_stop lockout 해제: scope=%s", account_scope)

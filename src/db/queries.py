@@ -1069,6 +1069,48 @@ async def update_broker_order_status(
     )
 
 
+async def compute_avg_fill_price_by_ticker(
+    account_scope: AccountScope,
+) -> dict[str, int]:
+    """종목별 실 체결가 가중평균 (avg_fill_price wavg) 을 반환.
+
+    Sell strategy Phase A 원칙 4 정합 (docs/plans/SELL_STRATEGY_PHASES.md §2):
+    "손절/익절 계산은 반드시 avg_fill_price 기준. requested_price 는 시장가
+    슬리피지가 실제 손절선을 왜곡한다."
+
+    소스: `broker_orders` 의 BUY + FILLED + avg_fill_price NOT NULL rows.
+    Wavg = SUM(filled_quantity * avg_fill_price) / SUM(filled_quantity).
+
+    부분 매도 후에도 남은 포지션의 avg_fill_price 는 매수들의 wavg (avg 회계).
+    호출부는 broker_orders 에 데이터 없는 종목 (예: seed 초기) 은 dict 에
+    미포함이므로 fallback 처리 필요 (portfolio_positions.avg_price 로).
+    """
+    scope = normalize_account_scope(account_scope)
+    rows = await fetch(
+        """
+        SELECT ticker,
+               SUM(filled_quantity * avg_fill_price)::bigint AS weighted_sum,
+               SUM(filled_quantity)::bigint AS total_qty
+        FROM broker_orders
+        WHERE account_scope = $1
+          AND side = 'BUY'
+          AND status = 'FILLED'
+          AND avg_fill_price IS NOT NULL
+          AND filled_quantity > 0
+        GROUP BY ticker
+        """,
+        scope,
+    )
+    result: dict[str, int] = {}
+    for r in rows:
+        total_qty = int(r["total_qty"] or 0)
+        if total_qty <= 0:
+            continue
+        weighted_sum = int(r["weighted_sum"] or 0)
+        result[str(r["ticker"])] = int(weighted_sum / total_qty)
+    return result
+
+
 async def attach_broker_order_reference(
     client_order_id: str,
     *,
