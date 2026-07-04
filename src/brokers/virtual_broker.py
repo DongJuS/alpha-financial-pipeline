@@ -103,9 +103,22 @@ class VirtualBroker:
         price: int,
         name: str = "",
         signal_source: str = "VIRTUAL",
+        trigger_source: str | None = None,
+        trigger_snapshot: dict | None = None,
     ) -> VirtualBrokerExecution:
-        """Virtual 주문을 실행합니다 (시뮬레이션)."""
+        """Virtual 주문을 실행합니다 (시뮬레이션).
+
+        trigger_source / trigger_snapshot: Sell strategy Phase A~D 감사 트레이싱
+        (docs/plans/SELL_STRATEGY_PHASES.md §3-3).
+        """
+        import json as _json
+
         client_order_id = f"VB-{uuid.uuid4().hex[:12]}"
+        snapshot_json = (
+            _json.dumps(trigger_snapshot, ensure_ascii=False, default=str)
+            if trigger_snapshot is not None
+            else None
+        )
 
         # 체결 지연 시뮬레이션
         delay = await self._simulate_delay()
@@ -138,12 +151,12 @@ class VirtualBroker:
                 client_order_id, account_scope, broker_name, ticker, name,
                 side, order_type, requested_quantity, requested_price,
                 filled_quantity, avg_fill_price, status, signal_source,
-                strategy_id, filled_at
+                strategy_id, trigger_source, trigger_snapshot, filled_at
             ) VALUES (
                 $1, 'virtual', 'VirtualBroker', $2, $3,
                 $4, 'MARKET', $5, $6,
                 $7, $8, 'FILLED', $9,
-                $10, NOW()
+                $10, $11, $12::jsonb, NOW()
             )
             """,
             client_order_id,
@@ -156,6 +169,8 @@ class VirtualBroker:
             fill_price,
             signal_source,
             self.strategy_id,
+            trigger_source,
+            snapshot_json,
         )
 
         # DB 기록: trade_history

@@ -96,6 +96,11 @@ class PredictionSignal(BaseModel):
     debate_transcript_id: Optional[int] = None
     trading_date: date
     is_shadow: bool = False
+    # Sell strategy Phase A~D audit — trigger origin + state snapshot at trigger time
+    # (docs/plans/SELL_STRATEGY_PHASES.md §3-3). Set by _check_rule_based_exits /
+    # _check_portfolio_drawdown; propagated into broker_orders columns via PaperOrderRequest.
+    trigger_source: Optional[str] = None
+    trigger_snapshot: Optional[dict] = None
 
 
 class PaperOrderRequest(BaseModel):
@@ -109,6 +114,9 @@ class PaperOrderRequest(BaseModel):
     account_scope: AccountScope = "paper"
     strategy_id: Optional[str] = None
     blend_meta: Optional[dict] = None
+    # Sell strategy Phase A~D audit — see PredictionSignal fields above.
+    trigger_source: Optional[str] = None
+    trigger_snapshot: Optional[dict] = None
 
 
 class AgentHeartbeatRecord(BaseModel):

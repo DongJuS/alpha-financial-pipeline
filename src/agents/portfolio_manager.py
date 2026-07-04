@@ -218,6 +218,8 @@ class PortfolioManagerAgent:
                 price=order.price,
                 name=order.name,
                 signal_source=order.signal_source or "VIRTUAL",
+                trigger_source=order.trigger_source,
+                trigger_snapshot=order.trigger_snapshot,
             )
         return await broker.execute_order(order)
 
@@ -307,6 +309,8 @@ class PortfolioManagerAgent:
                 signal_source=signal_source,
                 agent_id=self.agent_id,
                 account_scope=account_scope,
+                trigger_source=signal.trigger_source,
+                trigger_snapshot=signal.trigger_snapshot,
             )
             broker = self._broker_for_scope(
                 account_scope,
@@ -348,6 +352,8 @@ class PortfolioManagerAgent:
             signal_source=signal_source,
             agent_id=self.agent_id,
             account_scope=account_scope,
+            trigger_source=signal.trigger_source,
+            trigger_snapshot=signal.trigger_snapshot,
         )
         broker = self._broker_for_scope(
             account_scope,
@@ -378,11 +384,25 @@ class PortfolioManagerAgent:
         cfg: dict,
         account_scope: str,
     ) -> list[PredictionSignal]:
-        """보유 포지션 중 익절/손절 기준에 해당하는 종목을 SELL 시그널로 반환합니다."""
+        """보유 포지션 중 익절/손절 기준에 해당하는 종목을 SELL 시그널로 반환합니다.
+
+        Phase A Layer 1 (개별 -7% 하드 손절) + take profit 통합.
+        소비 파라미터 (portfolio_config):
+            - individual_stop_loss_pct (default 7, 양수 값 → -7% 임계)
+            - take_profit_pct (default 5)
+
+        Exit signal 에 trigger_source ('hard_stop_L1' | 'take_profit') 과
+        trigger_snapshot 을 attach — broker_orders 감사 컬럼으로 흐름.
+        (docs/plans/SELL_STRATEGY_PHASES.md §3-1 · §3-3)
+
+        NOTE(§8-7): 현재 avg_price (portfolio_positions.avg_price) 사용.
+        원칙 4 는 broker_orders.avg_fill_price 요구. 별도 세션에서 통일 예정.
+        """
         from src.db.queries import get_positions_for_scope
 
-        take_profit_pct = float(cfg.get("take_profit_pct", 5.0))
-        stop_loss_pct = float(cfg.get("stop_loss_pct", -3.0))
+        take_profit_pct = int(cfg.get("take_profit_pct", 5))
+        individual_stop_loss_pct = int(cfg.get("individual_stop_loss_pct", 7))
+        stop_loss_threshold = -individual_stop_loss_pct
         exit_signals: list[PredictionSignal] = []
 
         positions = await get_positions_for_scope(account_scope)
@@ -400,13 +420,30 @@ class PortfolioManagerAgent:
             pnl_pct = (current_price - avg_price) / avg_price * 100.0
 
             reason: str | None = None
+            trigger_source: str | None = None
             if pnl_pct >= take_profit_pct:
                 reason = f"규칙 익절 ({pnl_pct:+.2f}% >= +{take_profit_pct}%)"
-            elif pnl_pct <= stop_loss_pct:
-                reason = f"규칙 손절 ({pnl_pct:+.2f}% <= {stop_loss_pct}%)"
+                trigger_source = "take_profit"
+            elif pnl_pct <= stop_loss_threshold:
+                reason = f"규칙 손절 ({pnl_pct:+.2f}% <= {stop_loss_threshold}%)"
+                trigger_source = "hard_stop_L1"
 
             if reason:
                 logger.info("규칙 기반 매도 트리거: %s %s", ticker, reason)
+                snapshot = {
+                    "layer": 1 if trigger_source == "hard_stop_L1" else None,
+                    "avg_price": int(avg_price),
+                    "current_price": int(current_price),
+                    "pnl_pct": round(pnl_pct, 3),
+                    "stop_line_pct": stop_loss_threshold
+                    if trigger_source == "hard_stop_L1"
+                    else None,
+                    "take_profit_line_pct": take_profit_pct
+                    if trigger_source == "take_profit"
+                    else None,
+                    "account_scope": account_scope,
+                    "triggered_at": datetime.utcnow().isoformat(),
+                }
                 exit_signals.append(
                     PredictionSignal(
                         agent_id="rule_based_exit",
@@ -417,10 +454,200 @@ class PortfolioManagerAgent:
                         confidence=1.0,
                         reasoning_summary=reason,
                         trading_date=datetime.utcnow().date(),
+                        trigger_source=trigger_source,
+                        trigger_snapshot=snapshot,
                     )
                 )
 
         return exit_signals
+
+    async def _check_portfolio_drawdown(
+        self,
+        cfg: dict,
+        account_scope: str,
+    ) -> list[PredictionSignal]:
+        """포트폴리오 drawdown 이 임계 초과 시 최약체 2 종목 SELL 시그널을 반환.
+
+        Phase A Layer 2 (docs/plans/SELL_STRATEGY_PHASES.md §3-1).
+
+        Baseline: 지난 5~10 일 스냅샷 중 가장 이른 total_equity 근사값
+        (§8-2 정확한 "전주 종가" 스냅샷 로직은 open question).
+        소비 파라미터: portfolio_drawdown_limit_pct (default 8)
+        최약체 정의: unrealized pnl (%) 하위 (§8-2 default).
+        """
+        from src.db.queries import get_positions_for_scope
+        from src.utils.db_client import fetchrow
+
+        dd_limit = int(cfg.get("portfolio_drawdown_limit_pct", 8))
+
+        curr = await fetchrow(
+            """
+            SELECT total_equity
+            FROM account_snapshots
+            WHERE account_scope = $1
+            ORDER BY snapshot_at DESC
+            LIMIT 1
+            """,
+            account_scope,
+        )
+        if curr is None or int(curr["total_equity"]) <= 0:
+            return []
+        current_equity = int(curr["total_equity"])
+
+        baseline_row = await fetchrow(
+            """
+            SELECT total_equity
+            FROM account_snapshots
+            WHERE account_scope = $1
+              AND snapshot_at <= NOW() - INTERVAL '5 days'
+              AND snapshot_at >= NOW() - INTERVAL '10 days'
+            ORDER BY snapshot_at ASC
+            LIMIT 1
+            """,
+            account_scope,
+        )
+        if baseline_row is None or int(baseline_row["total_equity"]) <= 0:
+            return []
+        baseline_equity = int(baseline_row["total_equity"])
+
+        dd_pct = (current_equity - baseline_equity) / baseline_equity * 100.0
+        if dd_pct > -dd_limit:
+            return []
+
+        positions = await get_positions_for_scope(account_scope)
+        candidates: list[tuple[float, dict]] = []
+        for pos in positions:
+            qty = int(pos.get("quantity", 0))
+            if qty <= 0:
+                continue
+            avg_price = float(pos.get("avg_price", 0))
+            current_price = float(pos.get("current_price", 0))
+            if avg_price <= 0 or current_price <= 0:
+                continue
+            pnl_pct = (current_price - avg_price) / avg_price * 100.0
+            candidates.append((pnl_pct, pos))
+        if not candidates:
+            return []
+        candidates.sort(key=lambda x: x[0])
+        weakest_two = candidates[:2]
+
+        now_iso = datetime.utcnow().isoformat()
+        exit_signals: list[PredictionSignal] = []
+        for pnl_pct, pos in weakest_two:
+            ticker = str(pos["ticker"])
+            avg_price = float(pos.get("avg_price", 0))
+            current_price = float(pos.get("current_price", 0))
+            reason = (
+                f"L2 포트 dd {dd_pct:+.2f}% <= -{dd_limit}%, "
+                f"최약체 매도: {ticker} pnl={pnl_pct:+.2f}%"
+            )
+            logger.info("Layer 2 매도 트리거: %s", reason)
+            exit_signals.append(
+                PredictionSignal(
+                    agent_id="rule_based_exit",
+                    llm_model="rule",
+                    strategy="EXIT",
+                    ticker=ticker,
+                    signal="SELL",
+                    confidence=1.0,
+                    reasoning_summary=reason,
+                    trading_date=datetime.utcnow().date(),
+                    trigger_source="hard_stop_L2",
+                    trigger_snapshot={
+                        "layer": 2,
+                        "avg_price": int(avg_price),
+                        "current_price": int(current_price),
+                        "portfolio_dd_pct": round(dd_pct, 3),
+                        "portfolio_dd_limit_pct": dd_limit,
+                        "current_equity": current_equity,
+                        "baseline_equity": baseline_equity,
+                        "position_pnl_pct": round(pnl_pct, 3),
+                        "account_scope": account_scope,
+                        "triggered_at": now_iso,
+                    },
+                )
+            )
+        return exit_signals
+
+    async def _hard_stop_scan(self, cfg: dict, account_scope: str) -> list[dict]:
+        """Hard stop 잡 entry — L3 → L1 → L2 순 판정 후 매도 발주.
+
+        (docs/plans/SELL_STRATEGY_PHASES.md §3-2)
+
+        Layer 우선순위: L3 lockout → L1 개별 → L2 포트 dd.
+        L1 이 이미 매도한 종목은 L2 중복 발주 방지.
+
+        이중 발주 방지:
+            - 잡 레벨 lock: unified_scheduler 자동 (scheduler:lock:hard_stop_check)
+            - 종목별 lock: hard_stop:{ticker} TTL 25s
+            - 주문 중복: broker_orders.client_order_id UNIQUE
+
+        Dry-run 시 (is_hard_stop_dry_run() = True) broker.execute_order 스킵,
+        로그와 return 만.
+        """
+        from src.schedulers.distributed_lock import DistributedLock
+        from src.services.trading_mode import is_hard_stop_dry_run
+
+        blocked, pnl_pct = await self._is_daily_loss_blocked(account_scope, cfg)
+        if blocked:
+            daily_limit = int(cfg.get("daily_loss_limit_pct", 3))
+            await self._publish_circuit_breaker(account_scope, pnl_pct, daily_limit)
+            logger.info(
+                "Hard stop L3 lockout: scope=%s, pnl=%.2f%%, limit=-%d%%",
+                account_scope,
+                pnl_pct,
+                daily_limit,
+            )
+            return []
+
+        l1_signals = await self._check_rule_based_exits([], cfg, account_scope)
+        l2_signals = await self._check_portfolio_drawdown(cfg, account_scope)
+
+        l1_tickers = {s.ticker for s in l1_signals}
+        l2_signals = [s for s in l2_signals if s.ticker not in l1_tickers]
+
+        all_signals = l1_signals + l2_signals
+        if not all_signals:
+            return []
+
+        dry_run = await is_hard_stop_dry_run()
+        if dry_run:
+            logger.info(
+                "Hard stop DRY-RUN — 실 발주 스킵: scope=%s, L1=%d, L2=%d, tickers=%s",
+                account_scope,
+                len(l1_signals),
+                len(l2_signals),
+                [s.ticker for s in all_signals],
+            )
+            return [
+                {
+                    "ticker": s.ticker,
+                    "trigger_source": s.trigger_source,
+                    "dry_run": True,
+                }
+                for s in all_signals
+            ]
+
+        redis = await get_redis()
+        dispatched: list[dict] = []
+        for signal in all_signals:
+            async with DistributedLock(
+                redis,
+                f"hard_stop:{signal.ticker}",
+                ttl=25,
+                raise_on_fail=False,
+            ) as lock:
+                if not lock.acquired:
+                    logger.debug("Hard stop 종목 lock 스킵: %s", signal.ticker)
+                    continue
+                order = await self.process_signal(
+                    signal,
+                    signal_source_override="EXIT",
+                    account_scope_override=account_scope,
+                )
+                if order is not None:
+                    dispatched.append(order)
+        return dispatched
 
     async def process_predictions(
         self,

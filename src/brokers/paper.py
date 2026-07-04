@@ -48,6 +48,8 @@ class PaperBroker:
             requested_price=order.price,
             signal_source=order.signal_source,
             agent_id=order.agent_id,
+            trigger_source=order.trigger_source,
+            trigger_snapshot=order.trigger_snapshot,
         )
 
         account_state = await self.sync_account_state(scope, snapshot_source="pre_trade")

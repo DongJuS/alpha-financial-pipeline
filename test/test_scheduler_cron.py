@@ -40,6 +40,7 @@ class TestCronTriggerConfig:
             "rl_retrain",
             "blend_weight_adjust",
             "minute_partition_mgmt",
+            "hard_stop_check",  # Phase A (docs/plans/SELL_STRATEGY_PHASES.md §3-2)
         }
         assert expected_keys == set(_LOCK_TTL.keys())
 
