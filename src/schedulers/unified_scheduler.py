@@ -16,6 +16,7 @@ src/schedulers/unified_scheduler.py — 통합 스케줄러
 
     [장 중]
     index_collection      30초 인터벌  IndexCollector (장중)
+    hard_stop_check       10초 인터벌  Phase A 하드 손절 (L3 lockout → L1 개별 -7% → L2 포트 dd -8%). Dry-run default true.
     kis_token_health    매시 정각 (09~15시, 평일)  KIS OAuth 토큰 유효성 검증
 
     [상시]
@@ -70,6 +71,8 @@ _LOCK_TTL: dict[str, int] = {
     "minute_partition_mgmt": 600,  # 10분 (S3 아카이브 포함)
     # 상시
     "llm_auth_health": 30,  # 30초
+    # Phase A 하드 손절 (docs/plans/SELL_STRATEGY_PHASES.md §3-2)
+    "hard_stop_check": 25,  # 10초 인터벌보다 넉넉하게. 종목별 lock 은 별개.
 }
 
 
@@ -619,6 +622,35 @@ async def start_unified_scheduler() -> None:
         id="index_collection",
         name="Index collection every 30s",
         misfire_grace_time=5,
+        replace_existing=True,
+    )
+
+    # Phase A Hard stop check (10 초 인터벌, 장중만 · Dry-run default true)
+    # docs/plans/SELL_STRATEGY_PHASES.md §3-2
+    async def _run_hard_stop_check() -> None:
+        from src.utils.market_hours import is_market_open_now
+
+        if not await is_market_open_now():
+            return
+        from src.agents.portfolio_manager import PortfolioManagerAgent
+        from src.db.queries import get_portfolio_config
+
+        cfg = await get_portfolio_config()
+        agent = PortfolioManagerAgent()
+        enabled_scopes = agent._enabled_account_scopes_from_config(cfg)
+        for scope in enabled_scopes:
+            try:
+                await agent._hard_stop_scan(cfg, scope)
+            except Exception as exc:
+                logger.exception("hard_stop_scan 실패 scope=%s: %s", scope, exc)
+
+    scheduler.add_job(
+        _locked_job("hard_stop_check", _run_hard_stop_check),
+        "interval",
+        seconds=10,
+        id="hard_stop_check",
+        name="Hard stop check (10s, market hours only)",
+        misfire_grace_time=3,
         replace_existing=True,
     )
 

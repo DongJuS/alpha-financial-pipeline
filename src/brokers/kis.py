@@ -373,6 +373,8 @@ class KISBroker:
             signal_source=order.signal_source,
             agent_id=order.agent_id,
             status="PENDING",
+            trigger_source=order.trigger_source,
+            trigger_snapshot=order.trigger_snapshot,
         )
 
         try:

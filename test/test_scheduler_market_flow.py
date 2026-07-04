@@ -71,6 +71,7 @@ class TestJobRegistration:
             "rl_retrain",
             "blend_weight_adjust",
             "minute_partition_mgmt",
+            "hard_stop_check",  # Phase A (docs/plans/SELL_STRATEGY_PHASES.md §3-2)
         }
         assert set(registered_ids) == expected_ids
 
@@ -398,9 +399,10 @@ class TestScheduleTiming:
         # 월간 잡
         assert "minute_partition_mgmt" in added_jobs
 
-        # 총 15개 (minute_aggregation_intraday 포함)
+        # 총 16 개 (minute_aggregation_intraday + Phase A hard_stop_check 포함)
         assert "minute_aggregation_intraday" in added_jobs
-        assert len(added_jobs) == 15
+        assert "hard_stop_check" in added_jobs
+        assert len(added_jobs) == 16
 
     @pytest.mark.asyncio
     async def test_scheduler_start_called(self):
@@ -626,7 +628,7 @@ class TestTickJobRegistration:
 
         assert "tick_realtime_start" not in registered, "tick_realtime_start should be removed"
         assert "tick_realtime_health" not in registered, "tick_realtime_health should be removed"
-        assert len(registered) == 15, f"Expected 15 jobs, got {len(registered)}: {list(registered.keys())}"
+        assert len(registered) == 16, f"Expected 16 jobs (Phase A hard_stop_check 포함), got {len(registered)}: {list(registered.keys())}"
 
     @pytest.mark.asyncio
     async def test_tick_lock_ttl_removed(self):
