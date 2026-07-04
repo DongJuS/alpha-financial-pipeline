@@ -107,8 +107,19 @@ class RLRunner:
             await self._log_skip("policy_load_failed", 1, ticker=signal_ticker)
             return None
 
-        # 최근 OHLCV 데이터 조회 (DB는 raw 코드 사용)
-        candles = await fetch_recent_ohlcv(ticker=db_ticker, days=60)
+        # 데이터 조회 — 알고리즘의 학습 시 data_scope 와 일치시켜야 한다.
+        # dreamer_v3 는 combined (일봉+분봉 유래 일중특징) 로 학습 → 라이브 추론도
+        # `fetch_daily_with_intraday` 로 조회해 분봉 있는 날은 실 features, 없는 날은
+        # 자동 zero-mask (has_intraday=0) 로 통과. 나머지 알고리즘 (tabular / SB3) 은
+        # 종가만 사용하므로 기존 `fetch_recent_ohlcv` 유지.
+        needs_intraday = artifact.algorithm == "dreamer_v3"
+        if needs_intraday:
+            from src.agents.rl_intraday_features import intraday_obs_vector
+            from src.db.queries import fetch_daily_with_intraday
+
+            candles = await fetch_daily_with_intraday(db_ticker, days=60)
+        else:
+            candles = await fetch_recent_ohlcv(ticker=db_ticker, days=60)
         if not candles or len(candles) < _MIN_CLOSES_FOR_INFERENCE:
             candle_count = len(candles) if candles else 0
             logger.warning(
@@ -121,10 +132,24 @@ class RLRunner:
             return None
 
         closes = [float(c["close"]) for c in candles]
+        features = (
+            [intraday_obs_vector(c) for c in candles] if needs_intraday else None
+        )
 
         # 알고리즘 기반 추론 분기
         if artifact.algorithm in ("dqn", "a2c", "ppo") and artifact.model_path:
             action, confidence, state, q_values = self._infer_sb3(artifact, closes)
+        elif artifact.algorithm == "dreamer_v3":
+            # 공통 정책 인터페이스로 라우팅 — Dreamer 어댑터가 obs_dim 기반 마스킹
+            # 폴백을 알아서 처리 (Runner 가 features 를 못 넘긴 경우 대비).
+            from src.agents.rl_policy_interface import policy_from_artifact
+
+            policy = policy_from_artifact(artifact)
+            decision = policy.act(closes, features=features, position=0)
+            action = decision.action
+            confidence = decision.confidence
+            state = str(decision.meta.get("state", ""))
+            q_values = {}
         else:
             action, confidence, state, q_values = self._trainer.infer_action(
                 artifact,
