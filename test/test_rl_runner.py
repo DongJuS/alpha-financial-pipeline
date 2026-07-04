@@ -263,6 +263,56 @@ class TestInferForTicker:
         assert result.llm_model == "rl-dqn"
 
     @pytest.mark.asyncio
+    async def test_dreamer_uses_combined_fetch_and_common_interface(self):
+        """dreamer_v3 정책일 땐 fetch_daily_with_intraday 로 조회하고,
+        공통 정책 인터페이스(policy_from_artifact)로 라우팅해 features 를 넘긴다."""
+        artifact = _make_artifact(algorithm="dreamer_v3", model_path="/tmp/dreamer.pt")
+        store = AsyncMock()
+        store.load_policy.return_value = artifact
+        runner = _make_runner(store=store)
+
+        # combined 조회 결과: close + 6개 intraday feature 컬럼
+        combined_rows = [
+            {
+                "close": 100.0 + i,
+                "intraday_range_pct": 0.01,
+                "intraday_return": 0.002,
+                "intraday_volatility": 0.001,
+                "vwap_dev": 0.0,
+                "volume_skew": -0.1,
+                "has_intraday": 1.0 if i >= 20 else 0.0,
+            }
+            for i in range(30)
+        ]
+
+        mock_policy = MagicMock()
+        mock_policy.act.return_value = MagicMock(
+            action="BUY", confidence=0.72, meta={"state": "dreamer_probe"}
+        )
+
+        with patch(
+            "src.db.queries.fetch_daily_with_intraday", new_callable=AsyncMock
+        ) as mock_combined, patch(
+            "src.agents.rl_policy_interface.policy_from_artifact",
+            return_value=mock_policy,
+        ) as mock_factory:
+            mock_combined.return_value = combined_rows
+            with patch.object(RLRunner, "_log_skip", new_callable=AsyncMock):
+                result = await runner._infer_for_ticker(
+                    "005930", "policy_dreamer", "005930.KS"
+                )
+
+        mock_combined.assert_awaited_once()
+        mock_factory.assert_called_once_with(artifact)
+        # features 인자가 넘어갔는지 (combined 데이터 소비) 확인
+        call_kwargs = mock_policy.act.call_args.kwargs
+        assert call_kwargs.get("features") is not None
+        assert len(call_kwargs["features"]) == len(combined_rows)
+        assert result is not None
+        assert result.signal == "BUY"
+        assert result.llm_model == "rl-dreamer_v3"
+
+    @pytest.mark.asyncio
     async def test_signal_ticker_fallback_to_db_ticker(self):
         """original_ticker 없을 때 db_ticker 사용."""
         artifact = _make_artifact()

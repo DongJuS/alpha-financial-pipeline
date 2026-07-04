@@ -100,6 +100,25 @@ class DreamerPolicyInferenceTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             DreamerRLPolicy(art)
 
+    def test_act_auto_masks_features_when_omitted(self) -> None:
+        # combined 로 학습된 정책 (obs_dim=12) 이 있어도 호출자가 features 를 안
+        # 넘기면 shape mismatch 로 폭발했었다. 이제 어댑터가 학습된 obs_dim 과
+        # DEFAULT_DAILY_OBS_DIM 을 비교해 부족한 차원만큼 zero-mask 로 채우고,
+        # 그 결과 정상 PolicyDecision 을 반환해야 한다. (Option A 안전망)
+        trainer = DreamerV3Trainer(cfg=_small_cfg())
+        result = trainer._train_core(_dataset(80, with_features=True))
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "dreamer_combined.pt")
+            save_dreamer_checkpoint(path, result)
+            policy = policy_from_artifact(_artifact(path))
+
+            closes = _dataset(60, with_features=False).closes
+            # features 인자를 아예 안 넘김 — Runner 가 combined-aware 이지 않을
+            # 때의 호출 패턴 시뮬레이션.
+            decision = policy.act(closes, position=0)
+            self.assertIsInstance(decision, PolicyDecision)
+            self.assertIn(decision.action, ("BUY", "SELL", "HOLD", "CLOSE"))
+
 
 class DreamerTrainerContractTest(unittest.TestCase):
     """RLContinuousImprover 계약(train_with_metadata/evaluate) 적합성."""
@@ -141,6 +160,38 @@ class DreamerTrainerContractTest(unittest.TestCase):
         finally:
             if artifact.model_path and os.path.exists(artifact.model_path):
                 os.remove(artifact.model_path)
+
+
+class RLEvaluationMetricsCoerceTest(unittest.TestCase):
+    """SB3 / Dreamer 학습 결과가 numpy/torch 스칼라로 들어와도 json.dumps 통과."""
+
+    def test_numpy_scalars_coerced_to_native(self) -> None:
+        import json
+
+        import numpy as np
+
+        from src.agents.rl_trading import RLEvaluationMetrics
+
+        m = RLEvaluationMetrics(
+            total_return_pct=np.float64(12.34),
+            baseline_return_pct=np.float32(5.67),
+            excess_return_pct=np.float64(6.67),
+            max_drawdown_pct=np.float64(-4.5),
+            trades=np.int64(3),
+            win_rate=np.float64(0.66),
+            holdout_steps=np.int32(10),
+            approved=np.bool_(True),
+        )
+        self.assertIs(type(m.approved), bool)
+        self.assertIs(type(m.total_return_pct), float)
+        self.assertIs(type(m.trades), int)
+        # 실제 저장 경로 (json.dumps) 성공 여부까지 검증
+        payload = {
+            "approved": m.approved,
+            "total_return_pct": m.total_return_pct,
+            "trades": m.trades,
+        }
+        json.dumps(payload)  # 예외 안 나야 함
 
 
 if __name__ == "__main__":
