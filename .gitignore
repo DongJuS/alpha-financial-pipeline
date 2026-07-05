@@ -8,6 +8,12 @@ cloud_env.md
 *.local.md
 
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# Office (Word/Excel/PowerPoint) lock/temp files
+~$*
+
 k8s/base/.secrets/
 
 .agent/
