@@ -165,9 +165,20 @@ class DreamerV3Trainer:
 
     algorithm = "dreamer_v3"
 
-    def __init__(self, cfg: DreamerConfig | None = None, **overrides: Any) -> None:
+    def __init__(
+        self,
+        cfg: DreamerConfig | None = None,
+        *,
+        device: str | torch.device | None = None,
+        **overrides: Any,
+    ) -> None:
         self.cfg = cfg or DreamerConfig(**overrides)
-        self.device = torch.device("cpu")
+        # device=None → CUDA 가용 시 자동 사용, 아니면 CPU. 명시 문자열/torch.device
+        # 넘기면 그걸 강제 (테스트에서 "cpu" 고정 등에 사용).
+        if device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device(device)
         self.obs_dim: int | None = None
         self.world: WorldModel | None = None
         self.ac: ActorCritic | None = None
@@ -250,7 +261,7 @@ class DreamerV3Trainer:
             model_path, closes = model_path_or_prices, closes_or_none
         else:
             closes, model_path = model_path_or_prices, closes_or_none
-        ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
+        ckpt = torch.load(model_path, map_location=self.device, weights_only=False)
         self.load_state(ckpt["state_dict"], int(ckpt["obs_dim"]))
         # walk-forward 는 raw closes(특징 없음) 전달 → 일봉 전용 평가
         lookback = min(self.cfg.lookback, max(2, len(closes) - 2))
@@ -624,14 +635,24 @@ class DreamerRLPolicy:
 
     algorithm = "dreamer_v3"
 
-    def __init__(self, artifact: Any) -> None:
+    def __init__(
+        self,
+        artifact: Any,
+        *,
+        device: str | torch.device | None = None,
+    ) -> None:
         if not getattr(artifact, "model_path", None):
             raise ValueError(
                 f"DreamerV3 정책에 model_path 가 없습니다: policy_id={getattr(artifact, 'policy_id', '?')}"
             )
-        ckpt = torch.load(artifact.model_path, map_location="cpu", weights_only=False)
+        resolved_device = (
+            torch.device(device)
+            if device is not None
+            else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        )
+        ckpt = torch.load(artifact.model_path, map_location=resolved_device, weights_only=False)
         cfg = DreamerConfig(**ckpt["config"]) if ckpt.get("config") else DreamerConfig()
-        self._trainer = DreamerV3Trainer(cfg=cfg)
+        self._trainer = DreamerV3Trainer(cfg=cfg, device=resolved_device)
         self._trainer.load_state(ckpt["state_dict"], int(ckpt["obs_dim"]))
 
     def act(self, closes, *, position: int = 0, features=None):
