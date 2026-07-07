@@ -236,6 +236,10 @@ RL 정책의 시간축 수익률 궤적을 트레이더가 30초 안에 매매 �
 
 **R3→R6→R7→R8 재검토 이력**: 조사 부족 3연속 반복 (rl_* 접두어만 봄 → backtest_* 놓침). 룰 도출 = 스키마 결정 전 도메인 명사 최소 5개(backtest/experiment/trade/trajectory/curve/episode/run) grep 필수.
 
+**R9 UI 배치 정정 (2026-07-07 사용자 4차 지침)**: `/rl-trading` (`RLTrading.tsx`) 탭 기반 페이지. 사용자 원칙적 UX 진입점. `TABS` 2번째 위치에 신규 탭 "그래프 조회" 삽입. `EquityCurvesTab` 컴포넌트 신설 (recharts LineChart + 알고리즘 필터 + 종목별 line overlay). 스키마·API·데이터 소스는 R8 유효.
+
+**PR 나누기**: PR-A(`feat/rl-bootstrap-save-to-backtest`, 백엔드 저장 연동) → PR-B(`feat/rl-trading-equity-curves-tab`, UI 탭).
+
 **마일스톤**: M1 스키마·저장 (1주) → M2 API (1주) → M3 UI (2주).
 
 상세: `.agent/discussions/20260707-rl-training-visualization-roundtable.md`
