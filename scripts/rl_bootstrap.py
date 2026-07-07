@@ -35,9 +35,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -200,6 +201,7 @@ async def bootstrap_ticker(
                 logger.info("[부트스트랩] %s: 강제 승격 완료", ticker)
 
         _log_retrain_outcome(ticker, outcome)
+        await _save_backtest_via_cli(ticker, outcome, train_days=train_days)
     except Exception as exc:
         logger.error("[부트스트랩] %s: 학습 실패 — %s", ticker, exc)
         result.retrain = RetrainOutcome(
@@ -233,6 +235,76 @@ def _log_retrain_outcome(ticker: str, outcome: RetrainOutcome) -> None:
         outcome.active_policy_before or "없음",
         outcome.active_policy_after or "없음",
     )
+
+
+async def _save_backtest_via_cli(
+    ticker: str,
+    outcome: RetrainOutcome,
+    train_days: int,
+) -> None:
+    """학습 성공 시 backtest CLI 를 subprocess 로 재실행하여 결과를 DB 저장.
+
+    저장 목적: /rl-trading '그래프 조회' 탭이 backtest_runs + backtest_daily
+    에서 equity curve 를 렌더링한다 (Round 8/9 결정,
+    .agent/discussions/20260707-rl-training-visualization-roundtable.md).
+    새 스키마/저장 함수를 만들지 않고 검증된 CLI 재사용.
+
+    실패 시 학습 결과에 영향 없이 경고 로그만 남긴다.
+    """
+    if not outcome.success or not outcome.new_policy_id:
+        return
+
+    # train / test 분할: selected_train_ratio 기반 (기본 0.7)
+    ratio = outcome.selected_train_ratio or 0.7
+    today = date.today()
+    test_span_days = max(1, int(train_days * (1 - ratio)))
+    train_start = today - timedelta(days=train_days)
+    test_end = today
+    test_start = today - timedelta(days=test_span_days) + timedelta(days=1)
+    train_end = test_start - timedelta(days=1)
+
+    profile = outcome.profile_id or DEFAULT_PROFILES[0]
+
+    cmd = [
+        sys.executable, "-m", "src.backtest", "run",
+        "--ticker", ticker,
+        "--strategy", "RL",
+        "--train-start", train_start.isoformat(),
+        "--train-end", train_end.isoformat(),
+        "--test-start", test_start.isoformat(),
+        "--test-end", test_end.isoformat(),
+        "--profile", profile,
+        "--policy-id", outcome.new_policy_id,
+        "--save-db",
+    ]
+
+    logger.info(
+        "[백테스트] %s: profile=%s policy=%s 실행",
+        ticker, profile, outcome.new_policy_id,
+    )
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=str(ROOT),
+        )
+        stdout_bytes, _ = await proc.communicate()
+        stdout_text = stdout_bytes.decode("utf-8", errors="replace")
+
+        if proc.returncode == 0:
+            m = re.search(r"DB 저장 완료:\s*run_id=(\d+)", stdout_text)
+            run_id = m.group(1) if m else "?"
+            logger.info("[백테스트] %s: 저장 완료 run_id=%s", ticker, run_id)
+        else:
+            logger.warning(
+                "[백테스트] %s: 실패 (rc=%d) — 학습 결과는 유효, 그래프 조회만 누락. "
+                "stdout 마지막 1000자: %s",
+                ticker, proc.returncode, stdout_text[-1000:],
+            )
+    except Exception as exc:  # subprocess 자체 실패 (spawn 오류 등)
+        logger.warning("[백테스트] %s: 예외 — %s", ticker, exc)
 
 
 # ── 메인 실행 ─────────────────────────────────────────────────────────
