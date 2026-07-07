@@ -6,8 +6,10 @@ import { useState, useMemo } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
+  ReferenceDot,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -36,7 +38,11 @@ import {
   type RLTickerInfo,
   type TrainingJob,
 } from "@/hooks/useRL";
-import { useBacktestRuns, useBacktestDaily } from "@/hooks/useBacktest";
+import {
+  useBacktestRuns,
+  useBacktestDaily,
+  useBacktestDetail,
+} from "@/hooks/useBacktest";
 import { api, formatPct } from "@/utils/api";
 
 /** 특정 종목의 시장 데이터를 FDR로 즉시 수집 → DB 저장 */
@@ -307,17 +313,56 @@ function TickersTab() {
 /* ── 정책 관리 탭 ──────────────────────────────────────────────────────── */
 /* ── 그래프 조회 탭 ─────────────────────────────────────────────────────── */
 
+// 색상 팔레트 (var 이 dark 테마 대응 안 되는 케이스를 대비해 명시 fallback)
+const COLOR = {
+  primary: "#0f172a",      // 진한 slate — 기본 텍스트
+  secondary: "#475569",    // 중간 slate — 보조 텍스트
+  faint: "#94a3b8",        // 밝은 slate — 힌트
+  green: "#10b981",        // 매수/양수
+  red: "#ef4444",          // 매도/음수/MDD
+  blue: "#3b82f6",         // portfolio_value line
+  gridBorder: "#e2e8f0",
+  selectedBg: "rgba(59,130,246,0.10)",
+  hoverBg: "rgba(148,163,184,0.08)",
+};
+
+function MetricCell({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+}) {
+  return (
+    <div
+      className="rounded-lg px-3 py-2"
+      style={{ background: "rgba(148,163,184,0.08)" }}
+    >
+      <p className="text-[10px] font-semibold" style={{ color: COLOR.faint }}>
+        {label}
+      </p>
+      <p
+        className="mt-0.5 text-sm font-bold font-mono"
+        style={{ color: color ?? COLOR.primary }}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function EquityCurvesTab() {
-  // 전체 백테스트 리스트 조회 → strategy 가 "RL" 로 시작하는 것만 필터.
-  // strategy 는 CLI 관례상 "RL (dreamer_v3)" 같은 형식으로 저장됨.
   // per_page 는 backend Query validation 상한(100) 을 넘지 못한다
-  // (src/api/routers/backtest.py Query(..., le=100)). 정책 개수가 100 을 넘으면
-  // 페이지네이션 추가 필요.
+  // (src/api/routers/backtest.py Query(..., le=100)). 100 초과 시 페이지네이션 필요.
   const { data, isLoading, isError } = useBacktestRuns(1, 100);
   const rlRuns = useMemo(() => {
     return (data?.data ?? []).filter((r) => r.strategy.startsWith("RL"));
   }, [data]);
 
+  // 알고리즘 필터 옵션. 현재 backend 가 strategy="RL" 만 저장하므로 dropdown 은
+  // 사실상 "RL" 하나만 노출. backend 확장(PR-B) 후 "RL (dreamer_v3)" 등으로 구분됨.
   const algorithms = useMemo(() => {
     const set = new Set<string>();
     rlRuns.forEach((r) => set.add(r.strategy));
@@ -332,12 +377,40 @@ function EquityCurvesTab() {
     return rlRuns.filter((r) => r.strategy === selectedAlgo);
   }, [rlRuns, selectedAlgo]);
 
-  const { data: dailyData, isLoading: dailyLoading } = useBacktestDaily(selectedRunId);
+  // 선택된 run 의 detail + daily
+  const { data: detail } = useBacktestDetail(selectedRunId);
+  const { data: dailyData, isLoading: dailyLoading } =
+    useBacktestDaily(selectedRunId);
+
   const chartData = useMemo(() => {
     return (dailyData ?? []).map((d) => ({
       date: d.date,
       portfolio_value: d.portfolio_value,
+      close_price: d.close_price,
     }));
+  }, [dailyData]);
+
+  // 매매 시점 계산: position_qty 변화 감지 → BUY(증가) / SELL(감소).
+  // backtest_daily 에 side 컬럼이 별도 없어 quantity 변화로 추정 (충분히 정확).
+  const tradeMarkers = useMemo(() => {
+    const markers: {
+      date: string;
+      portfolio_value: number;
+      side: "BUY" | "SELL";
+    }[] = [];
+    const daily = dailyData ?? [];
+    for (let i = 1; i < daily.length; i++) {
+      const prev = daily[i - 1].position_qty;
+      const curr = daily[i].position_qty;
+      if (prev !== curr) {
+        markers.push({
+          date: daily[i].date,
+          portfolio_value: daily[i].portfolio_value,
+          side: curr > prev ? "BUY" : "SELL",
+        });
+      }
+    }
+    return markers;
   }, [dailyData]);
 
   if (isLoading) {
@@ -351,7 +424,7 @@ function EquityCurvesTab() {
   if (isError) {
     return (
       <div className="card">
-        <p className="text-sm" style={{ color: "var(--red)" }}>
+        <p className="text-sm" style={{ color: COLOR.red }}>
           백테스트 조회에 실패했습니다.
         </p>
       </div>
@@ -361,13 +434,13 @@ function EquityCurvesTab() {
   if (rlRuns.length === 0) {
     return (
       <div className="card space-y-2">
-        <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
+        <h3 className="text-sm font-bold" style={{ color: COLOR.primary }}>
           학습 수익률 곡선
         </h3>
-        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+        <p className="text-sm" style={{ color: COLOR.secondary }}>
           RL 학습 결과가 아직 <code>backtest_runs</code> 에 저장되어 있지 않습니다.
         </p>
-        <p className="text-xs" style={{ color: "var(--text-faint)" }}>
+        <p className="text-xs" style={{ color: COLOR.faint }}>
           <code>rl_bootstrap</code> 학습 파이프라인이 완료 시점에 백테스트를 자동
           저장하도록 연동되면 이 탭에 종목별·알고리즘별 equity curve 가 표시됩니다.
         </p>
@@ -379,7 +452,7 @@ function EquityCurvesTab() {
     <div className="space-y-4">
       {/* 필터 */}
       <div className="card">
-        <h3 className="text-sm font-bold mb-3" style={{ color: "var(--text-primary)" }}>
+        <h3 className="text-sm font-bold mb-3" style={{ color: COLOR.primary }}>
           알고리즘 필터
         </h3>
         <select
@@ -389,7 +462,7 @@ function EquityCurvesTab() {
             setSelectedRunId(null);
           }}
           className="w-full rounded-lg border px-3 py-2 text-sm"
-          style={{ borderColor: "var(--border-color)" }}
+          style={{ borderColor: COLOR.gridBorder, color: COLOR.primary }}
         >
           <option value="">전체 알고리즘</option>
           {algorithms.map((a) => (
@@ -398,8 +471,9 @@ function EquityCurvesTab() {
             </option>
           ))}
         </select>
-        <p className="mt-2 text-xs" style={{ color: "var(--text-faint)" }}>
+        <p className="mt-2 text-xs" style={{ color: COLOR.faint }}>
           {filteredRuns.length}개 백테스트 결과 · 좌측 리스트에서 종목 선택 시 오른쪽에 곡선 표시.
+          매매 시점은 곡선 위에 초록(BUY)/빨강(SELL) 점으로 표시.
         </p>
       </div>
 
@@ -407,17 +481,28 @@ function EquityCurvesTab() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* 리스트 */}
         <div className="card">
-          <h3 className="text-sm font-bold mb-3" style={{ color: "var(--text-primary)" }}>
+          <h3 className="text-sm font-bold mb-3" style={{ color: COLOR.primary }}>
             학습 결과 리스트
           </h3>
           <div className="overflow-auto max-h-96">
-            <table className="w-full text-xs">
+            <table className="w-full text-xs" style={{ color: COLOR.primary }}>
               <thead>
-                <tr className="border-b" style={{ borderColor: "var(--border-color)" }}>
-                  <th className="text-left py-2 font-semibold">종목</th>
-                  <th className="text-left py-2 font-semibold">알고리즘</th>
-                  <th className="text-right py-2 font-semibold">수익률</th>
-                  <th className="text-right py-2 font-semibold">MDD</th>
+                <tr className="border-b" style={{ borderColor: COLOR.gridBorder }}>
+                  <th className="text-left py-2 font-semibold" style={{ color: COLOR.secondary }}>
+                    종목
+                  </th>
+                  <th className="text-left py-2 font-semibold" style={{ color: COLOR.secondary }}>
+                    알고리즘
+                  </th>
+                  <th className="text-right py-2 font-semibold" style={{ color: COLOR.secondary }}>
+                    수익률
+                  </th>
+                  <th className="text-right py-2 font-semibold" style={{ color: COLOR.secondary }}>
+                    MDD
+                  </th>
+                  <th className="text-right py-2 font-semibold" style={{ color: COLOR.secondary }}>
+                    트레이딩
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -425,30 +510,52 @@ function EquityCurvesTab() {
                   <tr
                     key={run.id}
                     onClick={() => setSelectedRunId(run.id)}
-                    className="cursor-pointer border-b hover:bg-slate-50"
+                    className="cursor-pointer border-b"
                     style={{
-                      borderColor: "var(--border-color)",
+                      borderColor: COLOR.gridBorder,
                       background:
-                        selectedRunId === run.id
-                          ? "rgba(59,130,246,0.08)"
-                          : undefined,
+                        selectedRunId === run.id ? COLOR.selectedBg : undefined,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (selectedRunId !== run.id) {
+                        (e.currentTarget as HTMLElement).style.background =
+                          COLOR.hoverBg;
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (selectedRunId !== run.id) {
+                        (e.currentTarget as HTMLElement).style.background = "";
+                      }
                     }}
                   >
-                    <td className="py-2 font-mono">{run.ticker}</td>
-                    <td className="py-2">{run.strategy}</td>
+                    <td className="py-2 font-mono" style={{ color: COLOR.primary }}>
+                      {run.ticker}
+                    </td>
+                    <td className="py-2" style={{ color: COLOR.primary }}>
+                      {run.strategy}
+                    </td>
                     <td
                       className="py-2 text-right font-mono"
                       style={{
                         color:
                           (run.total_return_pct ?? 0) >= 0
-                            ? "var(--green)"
-                            : "var(--red)",
+                            ? COLOR.green
+                            : COLOR.red,
                       }}
                     >
                       {formatPct(run.total_return_pct)}
                     </td>
-                    <td className="py-2 text-right font-mono" style={{ color: "var(--red)" }}>
+                    <td
+                      className="py-2 text-right font-mono"
+                      style={{ color: COLOR.red }}
+                    >
                       {formatPct(run.max_drawdown_pct)}
+                    </td>
+                    <td
+                      className="py-2 text-right font-mono"
+                      style={{ color: COLOR.primary }}
+                    >
+                      {run.total_trades ?? 0}
                     </td>
                   </tr>
                 ))}
@@ -457,51 +564,153 @@ function EquityCurvesTab() {
           </div>
         </div>
 
-        {/* 차트 */}
-        <div className="card">
-          <h3 className="text-sm font-bold mb-3" style={{ color: "var(--text-primary)" }}>
+        {/* 상세: 우측 metric card + 곡선 */}
+        <div className="card space-y-3">
+          <h3 className="text-sm font-bold" style={{ color: COLOR.primary }}>
             포트폴리오 가치 곡선
           </h3>
           {!selectedRunId ? (
-            <p className="text-sm" style={{ color: "var(--text-faint)" }}>
+            <p className="text-sm" style={{ color: COLOR.faint }}>
               좌측 리스트에서 백테스트를 선택하세요.
             </p>
-          ) : dailyLoading ? (
-            <div className="h-64 skeleton" />
-          ) : chartData.length === 0 ? (
-            <p className="text-sm" style={{ color: "var(--text-faint)" }}>
-              선택한 백테스트에 일별 데이터가 없습니다.
-            </p>
           ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid stroke="rgba(148,163,184,0.15)" />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={(value: string) => (value ? value.slice(5) : "")}
-                  tick={{ fontSize: 10 }}
-                />
-                <YAxis
-                  tick={{ fontSize: 10 }}
-                  tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "rgba(255,255,255,0.96)",
-                    border: "1px solid rgba(148,163,184,0.2)",
-                    borderRadius: "12px",
-                    fontSize: "12px",
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="portfolio_value"
-                  stroke="#3b82f6"
-                  dot={false}
-                  strokeWidth={2}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <>
+              {/* Metric card: 사용자가 리스트에서 원한 순서를 상세에서 완전판으로 표시 */}
+              {detail && (
+                <div className="grid grid-cols-4 gap-2">
+                  <MetricCell
+                    label="수익률"
+                    value={formatPct(detail.total_return_pct)}
+                    color={
+                      (detail.total_return_pct ?? 0) >= 0
+                        ? COLOR.green
+                        : COLOR.red
+                    }
+                  />
+                  <MetricCell
+                    label="냅뒀을 때 (baseline)"
+                    value={formatPct(detail.baseline_return_pct)}
+                    color={
+                      (detail.baseline_return_pct ?? 0) >= 0
+                        ? COLOR.green
+                        : COLOR.red
+                    }
+                  />
+                  <MetricCell
+                    label="MDD"
+                    value={formatPct(detail.max_drawdown_pct)}
+                    color={COLOR.red}
+                  />
+                  <MetricCell
+                    label="트레이딩 횟수"
+                    value={String(detail.total_trades ?? 0)}
+                    color={COLOR.primary}
+                  />
+                </div>
+              )}
+
+              {dailyLoading ? (
+                <div className="h-64 skeleton" />
+              ) : chartData.length === 0 ? (
+                <p className="text-sm" style={{ color: COLOR.faint }}>
+                  선택한 백테스트에 일별 데이터가 없습니다.
+                </p>
+              ) : (
+                <ResponsiveContainer width="100%" height={340}>
+                  <LineChart data={chartData}>
+                    <CartesianGrid stroke={COLOR.gridBorder} />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(value: string) =>
+                        value ? value.slice(5) : ""
+                      }
+                      tick={{ fontSize: 10, fill: COLOR.secondary }}
+                    />
+                    {/* 좌축: RL 포트폴리오 가치 (원화). k 단위 축약. */}
+                    <YAxis
+                      yAxisId="portfolio"
+                      tick={{ fontSize: 10, fill: COLOR.blue }}
+                      tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
+                    />
+                    {/* 우축: 종목 실제 종가 (원화). 규모가 달라 별도 축. */}
+                    <YAxis
+                      yAxisId="price"
+                      orientation="right"
+                      tick={{ fontSize: 10, fill: COLOR.secondary }}
+                      tickFormatter={(v: number) =>
+                        v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)
+                      }
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "rgba(255,255,255,0.98)",
+                        border: `1px solid ${COLOR.gridBorder}`,
+                        borderRadius: "12px",
+                        fontSize: "12px",
+                        color: COLOR.primary,
+                      }}
+                      labelStyle={{ color: COLOR.primary, fontWeight: 600 }}
+                      formatter={(v: number, name: string) => {
+                        const label =
+                          name === "portfolio_value"
+                            ? "포트폴리오 가치"
+                            : "종가";
+                        return [
+                          `${Math.round(v).toLocaleString()} 원`,
+                          label,
+                        ];
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="top"
+                      height={24}
+                      iconType="line"
+                      wrapperStyle={{ fontSize: 11, color: COLOR.secondary }}
+                      formatter={(value: string) =>
+                        value === "portfolio_value"
+                          ? "포트폴리오 가치 (RL)"
+                          : "종가 (실제 시장)"
+                      }
+                    />
+                    <Line
+                      yAxisId="portfolio"
+                      type="monotone"
+                      dataKey="portfolio_value"
+                      stroke={COLOR.blue}
+                      dot={false}
+                      strokeWidth={2}
+                    />
+                    <Line
+                      yAxisId="price"
+                      type="monotone"
+                      dataKey="close_price"
+                      stroke={COLOR.secondary}
+                      dot={false}
+                      strokeWidth={1.5}
+                      strokeDasharray="4 3"
+                    />
+                    {tradeMarkers.map((m, i) => (
+                      <ReferenceDot
+                        key={`${m.date}-${i}`}
+                        yAxisId="portfolio"
+                        x={m.date}
+                        y={m.portfolio_value}
+                        r={5}
+                        fill={m.side === "BUY" ? COLOR.green : COLOR.red}
+                        stroke="#ffffff"
+                        strokeWidth={1.5}
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+
+              {tradeMarkers.length > 0 && (
+                <p className="text-[11px]" style={{ color: COLOR.faint }}>
+                  매매 마커 {tradeMarkers.length}개 · 초록 = BUY / 빨강 = SELL
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>
