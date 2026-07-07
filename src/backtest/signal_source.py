@@ -1,14 +1,15 @@
 """src/backtest/signal_source.py — 백테스트 시그널 소스.
 
 SignalSource 프로토콜과 구현체:
-- RLSignalSource: 학습된 Q-table 기반 시그널 (V1/V2)
+- RLSignalSource: 학습된 Q-table 기반 시그널 (Tabular V1/V2 전용)
+- RLPolicySignalSource: RLPolicy 프로토콜 기반 (Dreamer/SB3 등 신경망 policy)
 - ReplaySignalSource: predictions DB 과거 시그널 재생
 """
 
 from __future__ import annotations
 
 from datetime import date
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class SignalSource(Protocol):
@@ -123,6 +124,27 @@ class RLSignalSource:
 
         # argmax: 최고 Q-value, 동점 시 알파벳 순 (기존 Trainer와 동일)
         return sorted(q_values.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+
+class RLPolicySignalSource:
+    """RLPolicy 프로토콜 기반 시그널 소스 (Dreamer / SB3 등 신경망 policy).
+
+    tabular Q 의 q_table 재구현 없이, 알고리즘 자체 어댑터(DreamerRLPolicy /
+    SB3RLPolicy)에 신호 판단을 위임한다. 재현성은 policy_id + seed +
+    market data snapshot 조합으로 유지되며, 백테스트 시점 policy.act() 는
+    결정론적으로 동작한다(deterministic=True 학습 아티팩트 기준).
+
+    Parameters:
+        policy: RLPolicy 인터페이스 구현체 (act(closes, position, features)).
+                policy_from_artifact() 팩토리로 얻는 것을 권장.
+    """
+
+    def __init__(self, policy: Any) -> None:
+        self._policy = policy
+
+    def get_signal(self, dt: date, prices: list[float], position: int) -> str:
+        decision = self._policy.act(prices, position=position, features=None)
+        return decision.action
 
 
 class ReplaySignalSource:
