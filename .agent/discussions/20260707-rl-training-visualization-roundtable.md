@@ -214,17 +214,67 @@ GET  /api/v1/rl/algorithms/{algorithm}/summary
 
 ---
 
+### Round 6 — 사용자 이의 제기와 스키마 결정 정정 (2026-07-07 후속)
+
+**사용자 이의 제기**:
+> "저장 스키마? 이미 기존에 있는 스키마를 그대로 사용하면 되는 거 아니야? 테이블을 왜 새로 만들어. 어차피 experiments 할 때 저장하는 스키마에 저장하면 상관없는데. 무차별적으로 스키마 만드는 것은 의미가 없어. 기존과 동일한 작업이면 그대로 사용해. 필터를 조정하면 되는 거라서."
+
+**🧭 매니저**: 정당한 지적. Round 3 결정은 조사 부족이었다. 기존 RL DB 마이그레이션 파일 세 개(`migrate_rl_registry.py` / `migrate_rl_targets.py` / `migrate_rl_training.py`) 를 R3 에서 확인하지 않고 "신규 테이블" 로 넘어갔다. 재검토한다.
+
+**🔧 Backend**: 사실 확인. `scripts/db/migrate_rl_training.py` 를 다시 읽어보니 이미 `rl_experiments` 테이블이 존재한다:
+
+```
+rl_experiments(
+  run_id, job_id, instrument_id, policy_id, profile_id, algorithm,
+  return_pct, baseline_return_pct, excess_return_pct, max_drawdown_pct,
+  trades, win_rate, holdout_steps,
+  walk_forward_passed, walk_forward_consistency,
+  approved, deployed, created_at
+)
+```
+
+즉 **experiments 자체의 스칼라 metric 은 이미 여기 다 있다**. `rl_experiments.approved`, `walk_forward_passed`, `algorithm` 로 필터도 이미 된다. 사용자 말대로 새 테이블 필요 없다. 다만 이 테이블에도 **시계열 컬럼은 없음** — `return_pct` 는 최종값 하나. 그러니 "그대로 사용"은 안 되고, **컬럼 하나 추가**가 필요.
+
+세 옵션:
+
+| 옵션 | 스키마 변경 | 조회 편의성 | 마이그레이션 부담 |
+|---|---|---|---|
+| A. `rl_experiments.equity_curve_json JSONB NULL` 컬럼 추가 | `ALTER TABLE ADD COLUMN` 하나 | 기존 row 는 NULL, 새 row 는 JSONB 조회 (1회 SELECT) | 최소 |
+| B. `rl_experiments` 에 배열 컬럼 3개 (`portfolio_series NUMERIC[]`, `baseline_series NUMERIC[]`, `drawdown_series NUMERIC[]`) | ALTER 3회 | 배열 index 접근 편함 | 최소 |
+| C. 자식 테이블 (R3 원안) | `CREATE TABLE` 하나 | 정규화, 조인 필요 | 중간 |
+
+**📊 금융**: 시계열 조회는 항상 "정책 하나" 기준 (판독 뷰). 즉 조인 필요 없음. A 가 조회 로직 가장 단순. 배열보다 JSONB 가 스키마 변경 유연성 있음 (나중에 필드 추가 편함). **필터는 기존 rl_experiments 컬럼 그대로**. 사용자 지적 정확히 반영.
+
+**🧭 매니저**: 트레이드오프. JSONB 는 SQL 로 세부 시계열 필터하기 어려움 (`WHERE curve.drawdown[100] < -15%` 같은 쿼리 어색). 하지만 우리는 그런 필터 요구가 없다 (필터는 정책 단위 스칼라로 하고, 시계열은 UI 렌더링만). A 로 간다.
+
+**🔧 Backend**: 확정. 마이그레이션 = 한 줄:
+```sql
+ALTER TABLE rl_experiments
+  ADD COLUMN equity_curve_json JSONB;
+```
+GIN index 는 필요 시 나중에 (지금은 read pattern 이 policy_id 로만 조회). 백필 여전히 안 함 — 기존 row 는 NULL, UI 는 "궤적 저장 전" 뱃지.
+
+**결론 (Round 6, R3 정정)**:
+- ❌ 신규 테이블 `rl_policy_equity_curves` 폐기.
+- ✅ 기존 `rl_experiments` 에 **`equity_curve_json JSONB NULL` 컬럼 하나** 추가.
+- 필터는 기존 `rl_experiments` 스칼라 컬럼(algorithm, instrument_id, walk_forward_passed, approved) 그대로 사용.
+- API/UI 결정 (R4)/실행 계획 (R5) 은 유효, 하지만 저장/조회 대상 테이블만 변경.
+- **정책 정합**: 무차별적 스키마 확장 금지 (사용자 원칙). 컬럼 추가 1건 = 마이그레이션 최소.
+
+---
+
 ## 5. 결정 사항
 
 ### 5.1 결정
 
-**RL 정책 학습 곡선 시각화 V0 를 위 5라운드 합의대로 구현**한다.
+**RL 정책 학습 곡선 시각화 V0 를 R1~R5 합의 + R6 정정대로 구현**한다.
 
-- **스키마**: Postgres 신규 테이블 `rl_policy_equity_curves` (옵션 A).
-- **저장 시점**: `rl_walk_forward.py` 의 holdout evaluation 스텝. 알고리즘 3종 공통 hook.
+- **스키마 (R6 정정)**: 기존 `rl_experiments` 테이블에 `equity_curve_json JSONB NULL` 컬럼 하나 추가. 신규 테이블 생성하지 않음.
+- **저장 시점**: `rl_walk_forward.py` 의 holdout evaluation 스텝. 알고리즘 3종 공통 hook 이 완료 시 JSONB 를 UPDATE.
+- **필터**: 기존 `rl_experiments` 스칼라 컬럼(algorithm, instrument_id, walk_forward_passed, approved, created_at) 그대로 사용.
 - **API**: `GET /api/v1/rl/policies` 확장, `GET /api/v1/rl/policies/{id}/equity_curve` 신규. Redis 5분 캐시. `metrics_derived` 서버 pre-compute.
 - **UI**: `RLPolicyDetail` 페이지 (V0). 파랑 portfolio + 회색 점선 baseline + 적색 drawdown band. recharts 재사용.
-- **백필 없음**: 기존 정책은 "궤적 없음" 뱃지. 재학습 시부터 자동 채움.
+- **백필 없음**: 기존 experiments row 는 `equity_curve_json = NULL`, UI 에서 "궤적 저장 전" 뱃지. 재학습 시부터 자동 채움.
 - **스코프 격리**: V1(히트맵), V1.5(알고리즘 비교) 는 별도 라운드테이블에서 결정.
 
 3축 평가:
@@ -244,9 +294,9 @@ GET  /api/v1/rl/algorithms/{algorithm}/summary
 
 | 순서 | 항목 | 변경 대상 파일 | 완료 기준 |
 |------|------|---------------|----------|
-| M1.1 | `rl_policy_equity_curves` 테이블 마이그레이션 | `scripts/db/migrate_rl_policy_equity_curves.py` (신규) | dev DB 에 테이블 생성 + PK/index 확인 |
-| M1.2 | Trainer/Evaluator 공통 curve emit hook | `src/agents/rl_trading.py`, `src/agents/rl_dreamer.py`, `src/agents/rl_walk_forward.py` | 3 알고리즘 모두 학습 시 curve INSERT |
-| M1.3 | rl_bootstrap 저장 연동 | `scripts/rl_bootstrap.py` | 새 학습 사이클 1건 실행 시 curve 채워짐 |
+| M1.1 | `rl_experiments.equity_curve_json JSONB NULL` 컬럼 추가 마이그레이션 (R6 정정) | `scripts/db/migrate_rl_experiments_equity_curve_column.py` (신규, ALTER TABLE 한 줄) | dev DB 에 컬럼 존재 확인, 기존 row NULL |
+| M1.2 | Trainer/Evaluator 공통 curve emit hook | `src/agents/rl_trading.py`, `src/agents/rl_dreamer.py`, `src/agents/rl_walk_forward.py` | 3 알고리즘 모두 학습 완료 시 `rl_experiments.equity_curve_json` UPDATE |
+| M1.3 | rl_bootstrap 저장 연동 | `scripts/rl_bootstrap.py` | 새 학습 사이클 1건 실행 시 `SELECT equity_curve_json FROM rl_experiments WHERE run_id=...` non-null |
 | M2.1 | `GET /rl/policies` 확장 (algorithm, ticker, approved 필터) | `src/api/routers/rl.py` | 필터별 응답 스키마 unit test 통과 |
 | M2.2 | `GET /rl/policies/{id}/equity_curve` 신규 + `metrics_derived` | `src/api/routers/rl.py`, `src/services/rl_curve_metrics.py` (신규) | 응답 스키마 검증 + Redis 캐시 hit 로그 확인 |
 | M3.1 | `EquityCurveChart`, `DrawdownBandChart`, `PolicyMetricsPanel` | `ui/web/src/pages/rl/components/*` | Storybook or 개발자 UI 에서 mock 데이터 렌더링 확인 |
@@ -271,9 +321,10 @@ GET  /api/v1/rl/algorithms/{algorithm}/summary
 - `docs/interests/projects/alpha-financial-pipeline.md` §1 (Investment Mandate — 감사 최우선, UX 대상 = 본인 전문) — 시각화 정책 정합 근거.
 - `docs/RL_EVALUATION.md` — 승격 게이트 정의. 시각화가 승격 판단 근거로 쓰이려면 여기 지표와 일치해야 함.
 
-### 7.3 영향받는 파일
+### 7.3 영향받는 파일 (R6 정정)
 
-- 신규: `scripts/db/migrate_rl_policy_equity_curves.py`
+- 신규: `scripts/db/migrate_rl_experiments_equity_curve_column.py` (ALTER TABLE 한 줄)
 - 신규: `src/services/rl_curve_metrics.py`
 - 신규: `ui/web/src/pages/rl/RLPolicyDetail.tsx`, `.../components/EquityCurveChart.tsx`, `.../DrawdownBandChart.tsx`, `.../PolicyMetricsPanel.tsx`
 - 확장: `src/agents/rl_walk_forward.py`, `src/agents/rl_trading.py`, `src/agents/rl_dreamer.py`, `scripts/rl_bootstrap.py`, `src/api/routers/rl.py`, `ui/web/src/App.tsx`
+- ~~폐기~~: `scripts/db/migrate_rl_policy_equity_curves.py` (R3 원안, R6 에서 폐기)
