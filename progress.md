@@ -221,22 +221,20 @@ ohlcv_minute 인프라 + S3 아카이브 + UnifiedMarketData 빌더 완성.
 
 ## 🔄 다음 작업
 
-### RL 정책 학습 곡선 시각화 V0 (2026-07-07 로드테이블, 캘린더 4주)
+### RL 정책 학습 곡선 시각화 V0 (2026-07-07 로드테이블 8라운드 최종)
 
 RL 정책의 시간축 수익률 궤적을 트레이더가 30초 안에 매매 가능/불가 판단할 수
-있게 시각화. 매니저·금융 전문가·Backend 3인 5라운드 토론으로 스코프/스키마/
-API/UI 확정.
+있게 시각화. 매니저·금융 전문가·Backend 3인이 8라운드 반복 재검토 (사용자
+이의 제기 3차 반영) 후 최종 결정.
 
-**결정 (R7 최종: 스키마 변경 0, 조회 시 재계산 + Redis 캐시)**:
-- 스키마 변경 **0**. 신규 테이블·컬럼 모두 만들지 않음.
-- 신규 서비스 `src/services/rl_curve_computer.py` — 정책 로드 + 시장 데이터 스냅샷으로
-  walk-forward 재실행 + Redis 무기한 캐시 (`policy_id` immutable → TTL 불필요).
-- 필터는 기존 `rl_experiments` 스칼라 컬럼(algorithm, instrument_id, walk_forward_passed, approved) 그대로.
-- `GET /api/v1/rl/policies/{id}/equity_curve` 신규 (내부적으로 curve_computer 호출) + `metrics_derived` 서버 pre-compute.
-- `RLPolicyDetail` 페이지 신설, recharts 재사용 (파랑 portfolio + 회색 점선 baseline + 적색 drawdown band).
-- 백필 문제 소멸 — 옛 정책도 재계산 대상. "궤적 저장 전" 뱃지 필요 없음.
-- 감사 정합 = 재현성(policy_id + seed + dataset snapshot). 저장 아님.
-- 학습 파이프라인 수정 **0**.
+**결정 (R8 최종: 기존 backtest 인프라 100% 재사용)**:
+- 스키마 변경 **0**. 신규 API **0**. 신규 UI **0**.
+- 기존 `backtest_runs` + `backtest_daily` 테이블 재사용. `strategy = 'RL'`, 알고리즘은 CLI 관례대로 `RL (dreamer_v3)` 형식 profile 문자열로 저장.
+- 기존 `src/api/routers/backtest.py` (`GET /backtest_runs?strategy=X`, `GET /backtest_daily?run_id=Y`) 재사용.
+- 기존 `ui/web/src/pages/Backtest.tsx` (`["All","RL","A","B","BLEND"]` 필터) + `BacktestDetail.tsx` (`recharts.LineChart` + `portfolio_value` equity curve + 일별 수익률 bar chart) 재사용.
+- 부족한 것 하나: `scripts/rl_bootstrap.py` + `src/agents/rl_walk_forward.py` 확장으로 학습 완료 시 `save_backtest_run` + `save_backtest_daily` 호출. **저장 연동 코드만 추가**.
+
+**R3→R6→R7→R8 재검토 이력**: 조사 부족 3연속 반복 (rl_* 접두어만 봄 → backtest_* 놓침). 룰 도출 = 스키마 결정 전 도메인 명사 최소 5개(backtest/experiment/trade/trajectory/curve/episode/run) grep 필수.
 
 **마일스톤**: M1 스키마·저장 (1주) → M2 API (1주) → M3 UI (2주).
 
