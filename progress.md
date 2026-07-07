@@ -7,6 +7,13 @@
 
 ---
 
+### RL Dreamer device 자동 감지 (2026-07-07, PR #244)
+
+`DreamerV3Trainer` / `DreamerRLPolicy` 의 `torch.device("cpu")` 하드코딩을
+keyword-only `device` 파라미터화. 기본값 `None` 은 CUDA 가용 시 자동 사용,
+아니면 CPU. 서버(GPU 없음) 동작은 그대로 유지되고, 로컬 CUDA 환경에서만
+새 동작. `torch.load` 의 `map_location` 도 동일하게 `self.device` 반영.
+
 ### k3s 마이그레이션 — Phase 5b 완료, Phase 5c 사용자 셋업 대기 (2026-06-30)
 
 Phase 1 ~ Phase 5b 모두 완료. Infisical 자체가 k3s 안에서 동작 (dual-run).
@@ -214,6 +221,23 @@ ohlcv_minute 인프라 + S3 아카이브 + UnifiedMarketData 빌더 완성.
 
 ## 🔄 다음 작업
 
+### RL 정책 학습 곡선 시각화 V0 (2026-07-07 로드테이블, 캘린더 4주)
+
+RL 정책의 시간축 수익률 궤적을 트레이더가 30초 안에 매매 가능/불가 판단할 수
+있게 시각화. 매니저·금융 전문가·Backend 3인 5라운드 토론으로 스코프/스키마/
+API/UI 확정.
+
+**결정**:
+- Postgres 신규 테이블 `rl_policy_equity_curves(policy_id, step_idx, ts, portfolio_value, baseline_value, drawdown_pct)`.
+- walk-forward 평가 시 공통 hook 으로 3 알고리즘(tabular Q / SB3 / Dreamer) 궤적 저장.
+- `GET /api/v1/rl/policies/{id}/equity_curve` 신규 + `metrics_derived` 서버 pre-compute + Redis 5분 캐시.
+- `RLPolicyDetail` 페이지 신설, recharts 재사용 (파랑 portfolio + 회색 점선 baseline + 적색 drawdown band).
+- 백필 없음 — 기존 정책은 UI 에 "궤적 저장 전" 뱃지, 재학습 시부터 자동 채움.
+
+**마일스톤**: M1 스키마·저장 (1주) → M2 API (1주) → M3 UI (2주).
+
+상세: `.agent/discussions/20260707-rl-training-visualization-roundtable.md`
+
 ### 로컬 데이터 축적 (진행 중)
 
 로컬 K3s에서 틱/분봉 데이터를 먼저 축적. 클라우드 비용 발생을 늦추면서 RL 선행 조건 충족.
@@ -262,4 +286,4 @@ Phase 0 완료 (PR #178~#180). 분봉 데이터 축적 시작.
 - DB 정리 크론 (7일 초과 틱 파티션 DROP) — 용량 > 5GB 시
 ---
 
-*Last updated: 2026-06-08 (OpenClaw 게이트웨이 토큰 회전 cron 복구)*
+*Last updated: 2026-07-07 (RL Dreamer device 자동 감지 PR #244 + RL 학습 곡선 시각화 V0 로드테이블)*
