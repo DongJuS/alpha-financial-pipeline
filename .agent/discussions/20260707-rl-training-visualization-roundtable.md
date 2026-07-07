@@ -263,18 +263,71 @@ GIN index 는 필요 시 나중에 (지금은 read pattern 이 policy_id 로만 
 
 ---
 
+### Round 7 — 컬럼 추가도 재검증, 스키마 변경 0 결정 (2026-07-07 후속 2차)
+
+**사용자 재이의 제기**:
+> "equity_curve_json JSONB NULL 이게 왜 필요한데?"
+
+즉 "컬럼 하나조차도 정말 필요한가"라는 근본 재점검 요청.
+
+**🧭 매니저**: R6 정정은 "무차별 스키마 확장 금지" 원칙을 한 단계만 적용했다 (신규 테이블 → 컬럼 하나). 사용자는 그 원칙을 **끝까지 적용**하라고 요청. 컬럼 자체가 정말 없어서는 안 되는지 다시 본다.
+
+**🔧 Backend**: 재계산 옵션을 진지하게 평가한다.
+- Tabular Q: 정책 파일 로드 + evaluate → **수십 ms**. 즉시.
+- DQN/PPO: 몇 백 ms. Redis 5분 캐시로 hit 이후 즉시.
+- Dreamer: world model 시뮬 → **초 단위**. 캐시 첫 요청만 대기.
+- 재계산 비용 = 학습 시 어차피 evaluate 하는 것을 UI 조회 때 반복. CPU 소비 있지만 조회 빈도 낮음(트레이더 수동 확인).
+- Redis 캐시 = `policy_id` 는 immutable → **캐시 정합성 위험 0**. TTL 없이 무기한 캐시 가능 (재시작 시만 소실).
+
+**📊 금융**: 감사 정합성 관점 재검토.
+- R6 근거: "Dreamer 는 stochastic 요소로 재계산 시 값이 살짝 다를 수 있음" → 감사 리스크.
+- 재확인: Dreamer 도 seed 고정하면 재현 가능. `policy_id` + `random_seed` + `dataset snapshot` 3자만 있으면 학습 시 evaluate 값과 동일. **감사 정합은 저장이 아니라 재현성으로 확보 가능**.
+- 스토캐스틱 추론 부분은 정책 로딩 후 evaluate 에서 explore_eps 를 0 으로 강제하면 결정론적. Dreamer 학습 궤적을 UI 에서 재현하려면 walk-forward 시점 config 그대로 사용하면 됨.
+
+**🔧 Backend**: 그럼 컬럼 아예 안 만든다. 서비스 하나 신설:
+
+```python
+# src/services/rl_curve_computer.py
+async def compute_equity_curve(policy_id: str, cache: RedisClient) -> EquityCurve:
+    cached = await cache.get(f"rl_curve:{policy_id}")
+    if cached:
+        return cached
+    exp = await fetch_rl_experiment(policy_id)  # rl_experiments 에서 로드
+    policy = load_policy(exp.policy_id)  # artifacts/rl/models/*
+    closes, ts = await fetch_market_data_snapshot(exp.instrument_id, exp.dataset_days)
+    curve = replay_walk_forward(policy, closes, ts)  # 결정론적 재실행
+    await cache.set(f"rl_curve:{policy_id}", curve)  # TTL 없음 (immutable)
+    return curve
+```
+
+**🧭 매니저**: R6 대비 이점 정리.
+- 스키마 변경 **0**. 마이그레이션 스크립트 0.
+- 학습 파이프라인 수정 **0** (walk-forward emit hook 필요 없음).
+- 옛 정책도 자동으로 렌더링됨 → **백필 문제 소멸**. R6 까지 결정한 "궤적 저장 전 뱃지" 도 필요 없음.
+- 유일 부담 = Dreamer 첫 조회 시 수 초 지연. 캐시 hit 후 즉시. 트레이더 조회 빈도상 실사용 부담 미미.
+
+**결론 (Round 7, R6 정정)**:
+- ❌ `rl_experiments.equity_curve_json JSONB` 컬럼 추가 폐기.
+- ✅ 스키마 변경 **0**. `src/services/rl_curve_computer.py` 신설로 조회 시 재계산 + Redis 무기한 캐시(`policy_id` immutable).
+- 백필 문제 자체 소멸 (기존 정책도 재계산 대상). UI 뱃지 불필요.
+- 감사 정합 = 재현성 (policy_id + seed + dataset snapshot) 로 확보.
+- 사용자 원칙 "무차별 스키마 확장 금지" 를 끝까지 적용한 결과.
+
+---
+
 ## 5. 결정 사항
 
 ### 5.1 결정
 
-**RL 정책 학습 곡선 시각화 V0 를 R1~R5 합의 + R6 정정대로 구현**한다.
+**RL 정책 학습 곡선 시각화 V0 를 R1~R5 합의 + R6/R7 정정대로 구현**한다.
 
-- **스키마 (R6 정정)**: 기존 `rl_experiments` 테이블에 `equity_curve_json JSONB NULL` 컬럼 하나 추가. 신규 테이블 생성하지 않음.
-- **저장 시점**: `rl_walk_forward.py` 의 holdout evaluation 스텝. 알고리즘 3종 공통 hook 이 완료 시 JSONB 를 UPDATE.
+- **스키마 (R7 최종)**: **변경 없음**. 신규 테이블 X, 신규 컬럼 X. 기존 `rl_experiments` 그대로.
+- **조회 로직 (R7 신규)**: `src/services/rl_curve_computer.py` 에서 정책 로드 + 시장 데이터 스냅샷으로 walk-forward 재실행하여 curve 계산. Redis 무기한 캐시 (`policy_id` immutable → TTL 불필요).
 - **필터**: 기존 `rl_experiments` 스칼라 컬럼(algorithm, instrument_id, walk_forward_passed, approved, created_at) 그대로 사용.
-- **API**: `GET /api/v1/rl/policies` 확장, `GET /api/v1/rl/policies/{id}/equity_curve` 신규. Redis 5분 캐시. `metrics_derived` 서버 pre-compute.
+- **API**: `GET /api/v1/rl/policies` 확장, `GET /api/v1/rl/policies/{id}/equity_curve` 신규 (내부적으로 rl_curve_computer 호출). `metrics_derived` 서버 pre-compute.
 - **UI**: `RLPolicyDetail` 페이지 (V0). 파랑 portfolio + 회색 점선 baseline + 적색 drawdown band. recharts 재사용.
-- **백필 없음**: 기존 experiments row 는 `equity_curve_json = NULL`, UI 에서 "궤적 저장 전" 뱃지. 재학습 시부터 자동 채움.
+- **백필 문제 소멸**: 옛 정책도 재계산 대상. "궤적 저장 전" 뱃지 필요 없음.
+- **감사 정합**: 재현성 (policy_id + seed + dataset snapshot) 로 확보. 저장 아님.
 - **스코프 격리**: V1(히트맵), V1.5(알고리즘 비교) 는 별도 라운드테이블에서 결정.
 
 3축 평가:
@@ -294,9 +347,9 @@ GIN index 는 필요 시 나중에 (지금은 read pattern 이 policy_id 로만 
 
 | 순서 | 항목 | 변경 대상 파일 | 완료 기준 |
 |------|------|---------------|----------|
-| M1.1 | `rl_experiments.equity_curve_json JSONB NULL` 컬럼 추가 마이그레이션 (R6 정정) | `scripts/db/migrate_rl_experiments_equity_curve_column.py` (신규, ALTER TABLE 한 줄) | dev DB 에 컬럼 존재 확인, 기존 row NULL |
-| M1.2 | Trainer/Evaluator 공통 curve emit hook | `src/agents/rl_trading.py`, `src/agents/rl_dreamer.py`, `src/agents/rl_walk_forward.py` | 3 알고리즘 모두 학습 완료 시 `rl_experiments.equity_curve_json` UPDATE |
-| M1.3 | rl_bootstrap 저장 연동 | `scripts/rl_bootstrap.py` | 새 학습 사이클 1건 실행 시 `SELECT equity_curve_json FROM rl_experiments WHERE run_id=...` non-null |
+| M1.1 (R7 정정) | `src/services/rl_curve_computer.py` 신설 — 정책 로드 + 시장 데이터 스냅샷 + walk-forward 재실행 + Redis 무기한 캐시 | 신규 파일 | 단위 테스트: 동일 policy_id 두 번 호출 시 값 동일 + 두 번째는 캐시 hit |
+| M1.2 (폐기) | ~~Trainer/Evaluator 공통 curve emit hook~~ | ~~학습 파이프라인 수정 필요~~ | 폐기 — R7 에서 학습 시 저장 안 하기로 |
+| M1.3 (폐기) | ~~rl_bootstrap 저장 연동~~ | ~~scripts/rl_bootstrap.py 수정~~ | 폐기 — R7 에서 학습 시 저장 안 하기로 |
 | M2.1 | `GET /rl/policies` 확장 (algorithm, ticker, approved 필터) | `src/api/routers/rl.py` | 필터별 응답 스키마 unit test 통과 |
 | M2.2 | `GET /rl/policies/{id}/equity_curve` 신규 + `metrics_derived` | `src/api/routers/rl.py`, `src/services/rl_curve_metrics.py` (신규) | 응답 스키마 검증 + Redis 캐시 hit 로그 확인 |
 | M3.1 | `EquityCurveChart`, `DrawdownBandChart`, `PolicyMetricsPanel` | `ui/web/src/pages/rl/components/*` | Storybook or 개발자 UI 에서 mock 데이터 렌더링 확인 |
@@ -321,10 +374,15 @@ GIN index 는 필요 시 나중에 (지금은 read pattern 이 policy_id 로만 
 - `docs/interests/projects/alpha-financial-pipeline.md` §1 (Investment Mandate — 감사 최우선, UX 대상 = 본인 전문) — 시각화 정책 정합 근거.
 - `docs/RL_EVALUATION.md` — 승격 게이트 정의. 시각화가 승격 판단 근거로 쓰이려면 여기 지표와 일치해야 함.
 
-### 7.3 영향받는 파일 (R6 정정)
+### 7.3 영향받는 파일 (R7 최종)
 
-- 신규: `scripts/db/migrate_rl_experiments_equity_curve_column.py` (ALTER TABLE 한 줄)
-- 신규: `src/services/rl_curve_metrics.py`
+- 신규: `src/services/rl_curve_computer.py` (정책 로드 + walk-forward 재계산 + Redis 캐시)
+- 신규: `src/services/rl_curve_metrics.py` (`metrics_derived` 계산)
 - 신규: `ui/web/src/pages/rl/RLPolicyDetail.tsx`, `.../components/EquityCurveChart.tsx`, `.../DrawdownBandChart.tsx`, `.../PolicyMetricsPanel.tsx`
-- 확장: `src/agents/rl_walk_forward.py`, `src/agents/rl_trading.py`, `src/agents/rl_dreamer.py`, `scripts/rl_bootstrap.py`, `src/api/routers/rl.py`, `ui/web/src/App.tsx`
-- ~~폐기~~: `scripts/db/migrate_rl_policy_equity_curves.py` (R3 원안, R6 에서 폐기)
+- 확장: `src/api/routers/rl.py`, `ui/web/src/App.tsx`
+- 학습 파이프라인 수정 **0** (R7 에서 저장 없이 재계산으로 결정)
+
+**폐기 이력**:
+- ~~`scripts/db/migrate_rl_policy_equity_curves.py`~~ (R3 원안, R6 에서 폐기)
+- ~~`scripts/db/migrate_rl_experiments_equity_curve_column.py`~~ (R6 정정안, R7 에서 폐기)
+- ~~`src/agents/rl_walk_forward.py`/`rl_trading.py`/`rl_dreamer.py`/`scripts/rl_bootstrap.py` 수정~~ (R6 까지 예정, R7 에서 폐기)
