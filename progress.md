@@ -227,14 +227,16 @@ RL 정책의 시간축 수익률 궤적을 트레이더가 30초 안에 매매 �
 있게 시각화. 매니저·금융 전문가·Backend 3인 5라운드 토론으로 스코프/스키마/
 API/UI 확정.
 
-**결정 (R6 정정: 신규 테이블 → 기존 컬럼 추가)**:
-- 기존 `rl_experiments` 테이블에 `equity_curve_json JSONB NULL` 컬럼 하나 추가.
-  신규 테이블 만들지 않음. 필터는 기존 `algorithm` / `walk_forward_passed` / `approved` 컬럼 그대로.
-- walk-forward 평가 시 공통 hook 으로 3 알고리즘(tabular Q / SB3 / Dreamer) 궤적을
-  `rl_experiments.equity_curve_json` 에 UPDATE.
-- `GET /api/v1/rl/policies/{id}/equity_curve` 신규 + `metrics_derived` 서버 pre-compute + Redis 5분 캐시.
+**결정 (R7 최종: 스키마 변경 0, 조회 시 재계산 + Redis 캐시)**:
+- 스키마 변경 **0**. 신규 테이블·컬럼 모두 만들지 않음.
+- 신규 서비스 `src/services/rl_curve_computer.py` — 정책 로드 + 시장 데이터 스냅샷으로
+  walk-forward 재실행 + Redis 무기한 캐시 (`policy_id` immutable → TTL 불필요).
+- 필터는 기존 `rl_experiments` 스칼라 컬럼(algorithm, instrument_id, walk_forward_passed, approved) 그대로.
+- `GET /api/v1/rl/policies/{id}/equity_curve` 신규 (내부적으로 curve_computer 호출) + `metrics_derived` 서버 pre-compute.
 - `RLPolicyDetail` 페이지 신설, recharts 재사용 (파랑 portfolio + 회색 점선 baseline + 적색 drawdown band).
-- 백필 없음 — 기존 experiments row 는 NULL, UI 에 "궤적 저장 전" 뱃지, 재학습 시부터 자동 채움.
+- 백필 문제 소멸 — 옛 정책도 재계산 대상. "궤적 저장 전" 뱃지 필요 없음.
+- 감사 정합 = 재현성(policy_id + seed + dataset snapshot). 저장 아님.
+- 학습 파이프라인 수정 **0**.
 
 **마일스톤**: M1 스키마·저장 (1주) → M2 API (1주) → M3 UI (2주).
 
