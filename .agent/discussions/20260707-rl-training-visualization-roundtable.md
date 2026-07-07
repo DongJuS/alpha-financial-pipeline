@@ -315,19 +315,86 @@ async def compute_equity_curve(policy_id: str, cache: RedisClient) -> EquityCurv
 
 ---
 
+### Round 8 — 다시 원점, 진짜 정답 발견 (2026-07-07 후속 3차)
+
+**사용자 재이의 제기 (3차)**:
+> "rl_experiments 가 있다는 의미는 아니고, 분명 비슷한 역할하는 그런 테이블은 있을텐데, 그것을 찾아봐. 정말로 없다면 [Figma] 참고. 그래도 없다면 그때는 만들어봐."
+
+즉 R3~R7 은 조사 부족이 세 번 반복됐다. `rl_experiments` 는 최종 metric 만 담는 실험 기록이지, **"equity curve 저장"이 정확히 매칭되는 스키마**는 아니다.
+
+**🧭 매니저**: 전체 프로젝트 스키마 스캔 재실행. `scripts/db/init_db.py` 27개 CREATE TABLE 을 훑은 결과:
+
+```
+backtest_runs   ← ticker, strategy, train/test 기간, sharpe/MDD/win_rate 등 스칼라 metric
+backtest_daily  ← run_id FK, date, portfolio_value, daily_return_pct  (equity curve 그 자체!)
+```
+
+**존재를 확인 못 한 것에 대한 책임 인정**. R3 에서 `rl_*` 접두어로만 검색해서 놓쳤다.
+
+**🔧 Backend**: 사실 확인. 게다가 조사 결과 인프라 전체가 이미 존재:
+
+| 계층 | 파일 | 상태 |
+|---|---|---|
+| DB 스키마 | `backtest_runs` + `backtest_daily` (`scripts/db/init_db.py:1099,1126`) | ✅ 이미 존재 |
+| 저장 함수 | `src/backtest/repository.py` — `save_backtest_run` / `save_backtest_daily` (트랜잭션) | ✅ 이미 존재 |
+| CLI | `src/backtest/cli.py` — `--strategy RL --profile-name X` 지원, `RL (dreamer_v3)` 형식 저장 | ✅ 이미 존재 |
+| API 라우터 | `src/api/routers/backtest.py` — `GET /backtest_runs?strategy=X`, `GET /backtest_daily?run_id=X` | ✅ 이미 존재 |
+| UI 리스트 | `ui/web/src/pages/Backtest.tsx` — 필터 `["All","RL","A","B","BLEND"]` | ✅ 이미 존재 |
+| UI 상세 | `ui/web/src/pages/BacktestDetail.tsx` — `recharts.LineChart` 로 `portfolio_value` equity curve + `daily_return_pct` bar chart | ✅ 이미 존재 |
+| React 훅 | `ui/web/src/hooks/useBacktest.ts` — `useBacktestRuns`, `useBacktestDetail`, `useBacktestDaily` | ✅ 이미 존재 |
+
+**즉 "x=시간, y=수익률, label=종목, 알고리즘별" 요구가 100% 이미 구현되어 있음**. 사용자 원래 요구는 "이 UI에서 RL 학습 결과가 보이게 하라"는 것과 등가.
+
+**📊 금융**: `strategy` 컬럼에 `RL (profile_name)` 이 이미 들어감. 즉 `RL (dreamer_v3)`, `RL (tabular_q_v2_momentum)` 같은 형식으로 알고리즘 구분 이미 정합. 필터·조회 로직 재작업 없음.
+
+**부족한 것 딱 하나**: `scripts/rl_bootstrap.py` 가 학습 완료 후 `save_backtest_run` / `save_backtest_daily` 를 **호출하지 않음**. 즉 학습은 되는데 백테스트 스토리지에 안 들어가서 UI 에서 안 보임.
+
+**🧭 매니저**: 스코프 재산정.
+
+| R7 예정 스코프 | R8 실제 스코프 |
+|---|---|
+| 신규 `src/services/rl_curve_computer.py` | ❌ 폐기 |
+| 신규 `src/services/rl_curve_metrics.py` | ❌ 폐기 |
+| 신규 `src/api/routers/rl.py` 확장 (equity_curve 엔드포인트) | ❌ 폐기 (`backtest.py` 재사용) |
+| 신규 `ui/web/src/pages/rl/RLPolicyDetail.tsx` + 3 컴포넌트 | ❌ 폐기 (`Backtest.tsx`/`BacktestDetail.tsx` 재사용) |
+| **연동만**: `scripts/rl_bootstrap.py` 확장 | ✅ 유일 남은 작업 |
+
+**연동 방식** (두 옵션):
+- **A. rl_bootstrap 직접 호출**: 학습 완료 시점에 `save_backtest_run(...)` + `save_backtest_daily(...)` 를 직접 호출. walk-forward evaluation 결과에서 daily portfolio value 시퀀스 추출.
+- **B. rl_bootstrap → backtest CLI 서브프로세스**: 학습 완료 시 `python -m src.backtest.cli run --strategy RL --profile-name <profile> --ticker ...` 호출. 이미 검증된 CLI 재사용.
+
+**🔧 Backend**: B 가 CLI 재사용으로 안전하지만 서브프로세스 오버헤드. A 가 더 직접적이고 트랜잭션 정합. **A 채택**. `walk_forward` 의 holdout evaluate 결과에서 `RLEvaluationMetrics` 옆에 daily portfolio value list 를 추가로 반환하도록 확장.
+
+**결론 (Round 8, 최종)**:
+- ❌ R7 의 `rl_curve_computer` / 신규 API / 신규 UI 페이지 **전부 폐기**.
+- ✅ **기존 `backtest_runs` / `backtest_daily` / `Backtest.tsx` / `BacktestDetail.tsx` / `src/backtest/*` / `src/api/routers/backtest.py` 재사용**.
+- ✅ 부족한 부분 = `scripts/rl_bootstrap.py` + `src/agents/rl_walk_forward.py` 에 백테스트 저장 연동 (옵션 A). 스코프 축소.
+- 스키마 변경 **0**. 신규 API **0**. 신규 UI **0**.
+- Figma 참고 불필요 — 프로덕션 UI 이미 완성.
+- **사용자 원칙 완전 정합**: "비슷한 역할하는 스키마 있을 것" → `backtest_runs` + `backtest_daily`. "그게 없으면 그때 만들어봐" → 만들 이유 없음.
+
+**R3→R6→R7→R8 조사 부족 반복 기록**:
+- R3: `rl_*` 접두어만 봄 → `backtest_*` 놓침
+- R6: `rl_experiments` 발견 후 컬럼 추가 결정 → 아직 `backtest_*` 미발견
+- R7: 재계산 방향 → `backtest_*` 여전히 미발견
+- R8: 사용자 3차 지적으로 `init_db.py` 전체 훑음 → 발견
+
+향후 룰 (이 discussion 이 evidence): **스키마 결정 시 관련 도메인 명사(backtest / experiment / trade / trajectory / curve / episode / run) 를 최소 5개 이상 grep 해서 기존 스키마 존재 여부 확인 후 결정**.
+
+---
+
 ## 5. 결정 사항
 
 ### 5.1 결정
 
-**RL 정책 학습 곡선 시각화 V0 를 R1~R5 합의 + R6/R7 정정대로 구현**한다.
+**RL 정책 학습 곡선 시각화 V0 를 R8 최종 결정대로 구현**한다.
 
-- **스키마 (R7 최종)**: **변경 없음**. 신규 테이블 X, 신규 컬럼 X. 기존 `rl_experiments` 그대로.
-- **조회 로직 (R7 신규)**: `src/services/rl_curve_computer.py` 에서 정책 로드 + 시장 데이터 스냅샷으로 walk-forward 재실행하여 curve 계산. Redis 무기한 캐시 (`policy_id` immutable → TTL 불필요).
-- **필터**: 기존 `rl_experiments` 스칼라 컬럼(algorithm, instrument_id, walk_forward_passed, approved, created_at) 그대로 사용.
-- **API**: `GET /api/v1/rl/policies` 확장, `GET /api/v1/rl/policies/{id}/equity_curve` 신규 (내부적으로 rl_curve_computer 호출). `metrics_derived` 서버 pre-compute.
-- **UI**: `RLPolicyDetail` 페이지 (V0). 파랑 portfolio + 회색 점선 baseline + 적색 drawdown band. recharts 재사용.
-- **백필 문제 소멸**: 옛 정책도 재계산 대상. "궤적 저장 전" 뱃지 필요 없음.
-- **감사 정합**: 재현성 (policy_id + seed + dataset snapshot) 로 확보. 저장 아님.
+- **스키마 (R8 최종)**: **변경 없음**. 기존 `backtest_runs` + `backtest_daily` 그대로 사용.
+- **저장 (R8 신규)**: `scripts/rl_bootstrap.py` + `src/agents/rl_walk_forward.py` 확장으로 학습 완료 시 `save_backtest_run` + `save_backtest_daily` 호출. `strategy = 'RL'`, 알고리즘은 CLI 관례대로 `RL (dreamer_v3)` 형식 profile 문자열로 구분.
+- **API**: 기존 `GET /backtest_runs?strategy=RL` + `GET /backtest_daily?run_id=X` 그대로. 신규 API 없음.
+- **UI**: 기존 `Backtest.tsx` (필터/리스트) + `BacktestDetail.tsx` (equity curve + 일별 수익률) 그대로. **신규 페이지 없음**.
+- **알고리즘/종목 필터**: 기존 UI 의 `strategy` 필터 + `ticker` 로 이미 지원.
+- **백필**: 옛 RL 정책은 backtest 없음. 필요 시 rl_bootstrap 을 `--tickers <opt> --profiles <opt>` 로 재실행하면 자동 채워짐 (재학습이 아닌 백테스트 재실행 옵션 검토 여지).
 - **스코프 격리**: V1(히트맵), V1.5(알고리즘 비교) 는 별도 라운드테이블에서 결정.
 
 3축 평가:
@@ -347,9 +414,9 @@ async def compute_equity_curve(policy_id: str, cache: RedisClient) -> EquityCurv
 
 | 순서 | 항목 | 변경 대상 파일 | 완료 기준 |
 |------|------|---------------|----------|
-| M1.1 (R7 정정) | `src/services/rl_curve_computer.py` 신설 — 정책 로드 + 시장 데이터 스냅샷 + walk-forward 재실행 + Redis 무기한 캐시 | 신규 파일 | 단위 테스트: 동일 policy_id 두 번 호출 시 값 동일 + 두 번째는 캐시 hit |
-| M1.2 (폐기) | ~~Trainer/Evaluator 공통 curve emit hook~~ | ~~학습 파이프라인 수정 필요~~ | 폐기 — R7 에서 학습 시 저장 안 하기로 |
-| M1.3 (폐기) | ~~rl_bootstrap 저장 연동~~ | ~~scripts/rl_bootstrap.py 수정~~ | 폐기 — R7 에서 학습 시 저장 안 하기로 |
+| M1 (R8 최종) | `rl_walk_forward` 의 holdout evaluate 가 daily portfolio value 시퀀스도 반환하도록 확장 | `src/agents/rl_walk_forward.py` | 단위 테스트: evaluate 결과에 `daily_portfolio_values: list[float]` 필드 존재 |
+| M2 (R8 최종) | `rl_bootstrap` 이 학습 완료 시 `save_backtest_run` + `save_backtest_daily` 호출 | `scripts/rl_bootstrap.py` | 실제 학습 사이클 후 `SELECT COUNT(*) FROM backtest_daily WHERE run_id IN (SELECT id FROM backtest_runs WHERE strategy LIKE 'RL%')` > 0 |
+| M3 (R8 최종) | 이 UI 에서 실제 사용자 (본인) dogfooding | 없음 | 브라우저 `/backtest` 진입 → RL 필터 → 상세 → equity curve 렌더 확인 |
 | M2.1 | `GET /rl/policies` 확장 (algorithm, ticker, approved 필터) | `src/api/routers/rl.py` | 필터별 응답 스키마 unit test 통과 |
 | M2.2 | `GET /rl/policies/{id}/equity_curve` 신규 + `metrics_derived` | `src/api/routers/rl.py`, `src/services/rl_curve_metrics.py` (신규) | 응답 스키마 검증 + Redis 캐시 hit 로그 확인 |
 | M3.1 | `EquityCurveChart`, `DrawdownBandChart`, `PolicyMetricsPanel` | `ui/web/src/pages/rl/components/*` | Storybook or 개발자 UI 에서 mock 데이터 렌더링 확인 |
@@ -374,15 +441,19 @@ async def compute_equity_curve(policy_id: str, cache: RedisClient) -> EquityCurv
 - `docs/interests/projects/alpha-financial-pipeline.md` §1 (Investment Mandate — 감사 최우선, UX 대상 = 본인 전문) — 시각화 정책 정합 근거.
 - `docs/RL_EVALUATION.md` — 승격 게이트 정의. 시각화가 승격 판단 근거로 쓰이려면 여기 지표와 일치해야 함.
 
-### 7.3 영향받는 파일 (R7 최종)
+### 7.3 영향받는 파일 (R8 최종)
 
-- 신규: `src/services/rl_curve_computer.py` (정책 로드 + walk-forward 재계산 + Redis 캐시)
-- 신규: `src/services/rl_curve_metrics.py` (`metrics_derived` 계산)
-- 신규: `ui/web/src/pages/rl/RLPolicyDetail.tsx`, `.../components/EquityCurveChart.tsx`, `.../DrawdownBandChart.tsx`, `.../PolicyMetricsPanel.tsx`
-- 확장: `src/api/routers/rl.py`, `ui/web/src/App.tsx`
-- 학습 파이프라인 수정 **0** (R7 에서 저장 없이 재계산으로 결정)
+- 확장: `src/agents/rl_walk_forward.py` — evaluate 결과에 daily portfolio value 시퀀스 추가.
+- 확장: `scripts/rl_bootstrap.py` — 학습 완료 시 `save_backtest_run` + `save_backtest_daily` 호출.
+- 신규: **없음**.
+- UI 변경: **없음** (기존 `Backtest.tsx` / `BacktestDetail.tsx` 재사용).
+- API 변경: **없음** (기존 `src/api/routers/backtest.py` 재사용).
+- 스키마 변경: **없음** (기존 `backtest_runs` / `backtest_daily` 재사용).
 
 **폐기 이력**:
 - ~~`scripts/db/migrate_rl_policy_equity_curves.py`~~ (R3 원안, R6 에서 폐기)
 - ~~`scripts/db/migrate_rl_experiments_equity_curve_column.py`~~ (R6 정정안, R7 에서 폐기)
-- ~~`src/agents/rl_walk_forward.py`/`rl_trading.py`/`rl_dreamer.py`/`scripts/rl_bootstrap.py` 수정~~ (R6 까지 예정, R7 에서 폐기)
+- ~~`src/services/rl_curve_computer.py`~~ (R7 신설안, R8 에서 폐기 — 기존 저장/조회 인프라 재사용)
+- ~~`src/services/rl_curve_metrics.py`~~ (R6 까지, R8 에서 폐기)
+- ~~`ui/web/src/pages/rl/RLPolicyDetail.tsx` + 3 컴포넌트~~ (R6/R7 예정, R8 에서 폐기 — `BacktestDetail.tsx` 재사용)
+- ~~`src/api/routers/rl.py` 확장 (equity_curve 엔드포인트)~~ (R6/R7 예정, R8 에서 폐기 — `backtest.py` 재사용)
