@@ -39,8 +39,33 @@ _RL_PROFILES = {
         "state_version": "qlearn_v2",
         "trainer_cls_path": "src.agents.rl_trading_v2.TabularQTrainerV2",
     },
+    # 신경망 계열 — CLI 에서는 --policy-id 지정 모드로만 지원.
+    # (신규 학습은 rl_bootstrap 파이프라인 담당, CLI 는 로드·평가만.)
+    "dreamer_v3": {
+        "algorithm": "dreamer_v3",
+        "state_version": "dreamer_v3",
+        "trainer_cls_path": "src.agents.rl_dreamer.DreamerV3Trainer",
+    },
+    "dqn_v1_baseline": {
+        "algorithm": "dqn",
+        "state_version": "sb3_dqn",
+        "trainer_cls_path": "src.agents.rl_trading_sb3.SB3Trainer",
+    },
+    "ppo_v1_baseline": {
+        "algorithm": "ppo",
+        "state_version": "sb3_ppo",
+        "trainer_cls_path": "src.agents.rl_trading_sb3.SB3Trainer",
+    },
+    "a2c_v1_baseline": {
+        "algorithm": "a2c",
+        "state_version": "sb3_a2c",
+        "trainer_cls_path": "src.agents.rl_trading_sb3.SB3Trainer",
+    },
 }
 DEFAULT_RL_PROFILE = "tabular_q_v2_momentum"
+
+# tabular 외 CLI 에서 재학습 불가한 프로파일 — --policy-id 필수.
+_TRAIN_UNSUPPORTED_STATE_VERSIONS = {"dreamer_v3", "sb3_dqn", "sb3_ppo", "sb3_a2c"}
 
 
 # ── 데이터 로딩 ──────────────────────────────────────────────────────
@@ -61,37 +86,64 @@ def _build_rl_signal_source(
     train_timestamps: list[str],
     profile_name: str,
     policy_id: Optional[str],
-) -> RLSignalSource:
-    """RL 정책을 학습하거나 로드하여 RLSignalSource를 생성합니다."""
+):
+    """RL 정책을 학습하거나 로드하여 SignalSource(RLSignalSource 또는 RLPolicySignalSource)를 반환합니다.
+
+    - tabular Q 계열 (qlearn_v1 / qlearn_v2): policy_id 있으면 로드, 없으면 학습.
+      기존 RLSignalSource(q_table) 반환.
+    - 신경망 계열 (dreamer_v3 / sb3_*): CLI 에서는 policy_id 지정 필수.
+      RLPolicyStoreV2.load_policy → policy_from_artifact → RLPolicySignalSource.
+      신규 학습은 rl_bootstrap 파이프라인 담당.
+    """
     from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
     from src.agents.rl_trading import RLDataset, TabularQTrainer
     from src.agents.rl_trading_v2 import TabularQTrainerV2
+    from src.backtest.signal_source import RLPolicySignalSource
 
     profile = _RL_PROFILES[profile_name]
+    state_version = profile["state_version"]
+    is_neural = state_version in _TRAIN_UNSUPPORTED_STATE_VERSIONS
+
+    if is_neural and not policy_id:
+        raise SystemExit(
+            f"프로파일 '{profile_name}' 는 CLI 에서 재학습을 지원하지 않습니다. "
+            f"--policy-id 로 rl_bootstrap 등에서 이미 학습된 정책을 지정하세요."
+        )
 
     if policy_id:
-        # 특정 정책 로드
         store = RLPolicyStoreV2()
         artifact = store.load_policy(policy_id, ticker=ticker)
         if artifact is None:
-            raise SystemExit(f"정책을 찾을 수 없습니다: policy_id={policy_id}, ticker={ticker}")
-    else:
-        # train 데이터로 학습
-        dataset = RLDataset(
-            ticker=ticker,
-            closes=train_prices,
-            timestamps=train_timestamps,
-        )
-        if profile["state_version"] == "qlearn_v1":
-            trainer = TabularQTrainer()
-            artifact = trainer.train(dataset, train_ratio=1.0)
-        else:
-            trainer = TabularQTrainerV2()
-            artifact = trainer.train(dataset, train_ratio=1.0)
+            raise SystemExit(
+                f"정책을 찾을 수 없습니다: policy_id={policy_id}, ticker={ticker}"
+            )
+        if is_neural:
+            # 신경망 정책 → 공통 어댑터로 감싸서 RLPolicySignalSource 반환.
+            from src.agents.rl_policy_interface import policy_from_artifact
 
+            policy = policy_from_artifact(artifact)
+            return RLPolicySignalSource(policy)
+        # tabular Q 정책 로드 케이스: 기존 q_table 기반 RLSignalSource 반환.
+        return RLSignalSource(
+            q_table=artifact.q_table,
+            algorithm=state_version,
+            lookback=artifact.lookback,
+        )
+
+    # tabular Q + policy_id 미지정 → 기존 학습 흐름 유지.
+    dataset = RLDataset(
+        ticker=ticker,
+        closes=train_prices,
+        timestamps=train_timestamps,
+    )
+    if state_version == "qlearn_v1":
+        trainer = TabularQTrainer()
+    else:
+        trainer = TabularQTrainerV2()
+    artifact = trainer.train(dataset, train_ratio=1.0)
     return RLSignalSource(
         q_table=artifact.q_table,
-        algorithm=profile["state_version"],
+        algorithm=state_version,
         lookback=artifact.lookback,
     )
 

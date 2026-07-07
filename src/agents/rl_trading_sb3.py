@@ -491,3 +491,57 @@ class SB3Trainer:
             test_start=test_timestamps[0] if test_timestamps else "",
             test_end=test_timestamps[-1] if test_timestamps else "",
         )
+
+
+class SB3RLPolicy:
+    """SB3 (DQN / A2C / PPO) 정책의 공통 인터페이스(RLPolicy) 어댑터.
+
+    저장된 SB3 zip 체크포인트를 로드해 그리디 행동을 낸다. features 인자는
+    무시(SB3 학습은 일봉 관측). backtest CLI 와 rl_runner 양쪽에서 재사용
+    가능하도록 얇은 wrapper 만 유지한다.
+
+    참조 패턴: src/agents/rl_dreamer.py DreamerRLPolicy (torch 어댑터).
+    """
+
+    def __init__(self, artifact: Any, *, lookback: int = 20) -> None:
+        if not getattr(artifact, "model_path", None):
+            raise ValueError(
+                f"SB3 정책에 model_path 가 없습니다: "
+                f"policy_id={getattr(artifact, 'policy_id', '?')}"
+            )
+        algo = (getattr(artifact, "algorithm", "") or "").lower()
+        if algo not in SUPPORTED_ALGORITHMS:
+            raise ValueError(
+                f"SB3RLPolicy 는 {SUPPORTED_ALGORITHMS} 만 지원. "
+                f"algorithm={artifact.algorithm!r}"
+            )
+        self._artifact = artifact
+        self.algorithm = algo
+        # SB3Trainer 는 lookback / trade cost 등 hyperparam 만 필요. 실제 모델
+        # 로드는 infer_action() 안에서 lazy 로 이루어짐.
+        artifact_lookback = getattr(artifact, "lookback", None)
+        self._trainer = SB3Trainer(
+            algorithm=algo,
+            lookback=int(artifact_lookback) if artifact_lookback else lookback,
+        )
+
+    def act(self, closes, *, position: int = 0, features=None):
+        # features 는 SB3 학습이 일봉만 쓰므로 무시. 시그니처는 RLPolicy
+        # 프로토콜과 일치시켜 policy_from_artifact 팩토리에서 균일 호출 가능.
+        from src.agents.rl_policy_interface import PolicyDecision
+
+        closes_list = list(closes) if not isinstance(closes, list) else closes
+        action_str, confidence, info_str, action_values = self._trainer.infer_action(
+            self._artifact,
+            closes_list,
+            current_position=position,
+        )
+        return PolicyDecision(
+            action=action_str,
+            confidence=float(confidence),
+            meta={
+                "algorithm": self.algorithm,
+                "info": info_str,
+                "action_values": action_values,
+            },
+        )
