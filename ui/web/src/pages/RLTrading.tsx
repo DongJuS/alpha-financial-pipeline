@@ -6,6 +6,7 @@ import { useState, useMemo } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
   ReferenceDot,
@@ -385,6 +386,7 @@ function EquityCurvesTab() {
     return (dailyData ?? []).map((d) => ({
       date: d.date,
       portfolio_value: d.portfolio_value,
+      close_price: d.close_price,
     }));
   }, [dailyData]);
 
@@ -614,7 +616,7 @@ function EquityCurvesTab() {
                   선택한 백테스트에 일별 데이터가 없습니다.
                 </p>
               ) : (
-                <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer width="100%" height={340}>
                   <LineChart data={chartData}>
                     <CartesianGrid stroke={COLOR.gridBorder} />
                     <XAxis
@@ -624,9 +626,20 @@ function EquityCurvesTab() {
                       }
                       tick={{ fontSize: 10, fill: COLOR.secondary }}
                     />
+                    {/* 좌축: RL 포트폴리오 가치 (원화). k 단위 축약. */}
                     <YAxis
-                      tick={{ fontSize: 10, fill: COLOR.secondary }}
+                      yAxisId="portfolio"
+                      tick={{ fontSize: 10, fill: COLOR.blue }}
                       tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
+                    />
+                    {/* 우축: 종목 실제 종가 (원화). 규모가 달라 별도 축. */}
+                    <YAxis
+                      yAxisId="price"
+                      orientation="right"
+                      tick={{ fontSize: 10, fill: COLOR.secondary }}
+                      tickFormatter={(v: number) =>
+                        v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)
+                      }
                     />
                     <Tooltip
                       contentStyle={{
@@ -637,17 +650,49 @@ function EquityCurvesTab() {
                         color: COLOR.primary,
                       }}
                       labelStyle={{ color: COLOR.primary, fontWeight: 600 }}
+                      formatter={(v: number, name: string) => {
+                        const label =
+                          name === "portfolio_value"
+                            ? "포트폴리오 가치"
+                            : "종가";
+                        return [
+                          `${Math.round(v).toLocaleString()} 원`,
+                          label,
+                        ];
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="top"
+                      height={24}
+                      iconType="line"
+                      wrapperStyle={{ fontSize: 11, color: COLOR.secondary }}
+                      formatter={(value: string) =>
+                        value === "portfolio_value"
+                          ? "포트폴리오 가치 (RL)"
+                          : "종가 (실제 시장)"
+                      }
                     />
                     <Line
+                      yAxisId="portfolio"
                       type="monotone"
                       dataKey="portfolio_value"
                       stroke={COLOR.blue}
                       dot={false}
                       strokeWidth={2}
                     />
+                    <Line
+                      yAxisId="price"
+                      type="monotone"
+                      dataKey="close_price"
+                      stroke={COLOR.secondary}
+                      dot={false}
+                      strokeWidth={1.5}
+                      strokeDasharray="4 3"
+                    />
                     {tradeMarkers.map((m, i) => (
                       <ReferenceDot
                         key={`${m.date}-${i}`}
+                        yAxisId="portfolio"
                         x={m.date}
                         y={m.portfolio_value}
                         r={5}
