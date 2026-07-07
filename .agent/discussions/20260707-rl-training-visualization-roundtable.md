@@ -373,6 +373,47 @@ backtest_daily  ← run_id FK, date, portfolio_value, daily_return_pct  (equity 
 - Figma 참고 불필요 — 프로덕션 UI 이미 완성.
 - **사용자 원칙 완전 정합**: "비슷한 역할하는 스키마 있을 것" → `backtest_runs` + `backtest_daily`. "그게 없으면 그때 만들어봐" → 만들 이유 없음.
 
+---
+
+### Round 9 — UI 배치 정정 (2026-07-07 후속 4차)
+
+**사용자 지침**:
+> "확인되는 UI 그래프가 없어. `https://.../rl-trading` 에 그래프를 넣어달라."
+> "RL 페이지에 여러 섹션들이 있을 것. 종목 관리, 정책 관리 등등. '그래프 조회' 라는 이름으로 종목 관리 다음에 해당 섹션을 넣어서 관리하면 좋겠어."
+
+**🧭 매니저**: R8 은 "UI = `BacktestDetail.tsx` 그대로 재사용" 이라 했지만, 사용자 원래 워크플로우는 `/rl-trading` 페이지 중심. `/backtest` 페이지가 별도로 있어도 사용자 관점의 진입점이 다름. R8 의 UI 부분만 정정.
+
+**🔧 Backend**: `ui/web/src/pages/RLTrading.tsx` 확인. **탭 기반 구조**:
+
+```typescript
+type Tab = "tickers" | "policies" | "experiments" | "shadow" | "promotion";
+const TABS = [
+  { key: "tickers",     label: "종목 관리",   desc: "RL 대상 종목 추가/제거" },
+  { key: "policies",    label: "정책 관리",   desc: "활성 정책 및 평가" },
+  { key: "experiments", label: "학습 실험",   desc: "트레이닝 잡 실행" },
+  { key: "shadow",      label: "섀도우 추론", desc: "가상 시그널 성과" },
+  { key: "promotion",   label: "승격 게이트", desc: "Shadow → Paper → Real" },
+];
+```
+
+recharts import 없음 — 확인된 그래프 없음 (사용자 관측 정확). 사용자 원래 요청은 이 탭 사이에 신규 탭을 배치하라는 것.
+
+**📊 금융**: 종목 관리 → 그래프 조회 → 정책 관리 순서는 트레이더 흐름에 정합. 종목을 정하고, 그 종목들의 학습된 정책 궤적을 훑은 뒤(그래프 조회), 활성 정책 선택(정책 관리) 으로 이어짐. UX 논리도 맞다.
+
+**결론 (Round 9)**:
+- ❌ R8 의 "`BacktestDetail.tsx` 그대로 재사용" 결정 → UI 진입점이 `/rl-trading` 로 변경.
+- ✅ **`RLTrading.tsx` 의 `TABS` 배열 2번째 위치**에 신규 탭 삽입:
+  ```typescript
+  { key: "curves", label: "그래프 조회", desc: "학습된 정책의 시간축 수익률 곡선" }
+  ```
+- ✅ 신규 컴포넌트 `EquityCurvesTab` — 알고리즘 필터(strategy `RL (dreamer_v3)` 등) + 종목별 line overlay + recharts LineChart. `useBacktestRuns` + `useBacktestDaily` 재사용.
+- 데이터 소스는 R8 그대로 (`backtest_runs` + `backtest_daily`). 스키마 여전히 변경 0.
+- `/backtest` 페이지의 `BacktestDetail.tsx` 는 그대로 유지 (다른 워크플로우 진입점).
+
+**PR 나누기 (사용자 원칙 "작게 자주")**:
+- **PR-A** `feat/rl-bootstrap-save-to-backtest`: 백엔드 저장 연동 (`rl_walk_forward.py` daily portfolio value 반환 + `rl_bootstrap.py` save_backtest_run/daily 호출).
+- **PR-B** `feat/rl-trading-equity-curves-tab`: UI 탭 추가 (`RLTrading.tsx` TABS 확장 + `EquityCurvesTab` 컴포넌트).
+
 **R3→R6→R7→R8 조사 부족 반복 기록**:
 - R3: `rl_*` 접두어만 봄 → `backtest_*` 놓침
 - R6: `rl_experiments` 발견 후 컬럼 추가 결정 → 아직 `backtest_*` 미발견
