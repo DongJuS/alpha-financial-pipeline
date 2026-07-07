@@ -310,7 +310,10 @@ function TickersTab() {
 function EquityCurvesTab() {
   // 전체 백테스트 리스트 조회 → strategy 가 "RL" 로 시작하는 것만 필터.
   // strategy 는 CLI 관례상 "RL (dreamer_v3)" 같은 형식으로 저장됨.
-  const { data, isLoading, isError } = useBacktestRuns(1, 200);
+  // per_page 는 backend Query validation 상한(100) 을 넘지 못한다
+  // (src/api/routers/backtest.py Query(..., le=100)). 정책 개수가 100 을 넘으면
+  // 페이지네이션 추가 필요.
+  const { data, isLoading, isError } = useBacktestRuns(1, 100);
   const rlRuns = useMemo(() => {
     return (data?.data ?? []).filter((r) => r.strategy.startsWith("RL"));
   }, [data]);
