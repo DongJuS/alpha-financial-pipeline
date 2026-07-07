@@ -5,6 +5,15 @@
 import { useState, useMemo } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   usePolicies,
   useActivePolicies,
   useExperiments,
@@ -27,6 +36,7 @@ import {
   type RLTickerInfo,
   type TrainingJob,
 } from "@/hooks/useRL";
+import { useBacktestRuns, useBacktestDaily } from "@/hooks/useBacktest";
 import { api, formatPct } from "@/utils/api";
 
 /** 특정 종목의 시장 데이터를 FDR로 즉시 수집 → DB 저장 */
@@ -44,9 +54,10 @@ function useCollectMarketData() {
 }
 
 /* ── 탭 정의 ───────────────────────────────────────────────────────────── */
-type Tab = "tickers" | "policies" | "experiments" | "shadow" | "promotion";
+type Tab = "tickers" | "curves" | "policies" | "experiments" | "shadow" | "promotion";
 const TABS: { key: Tab; label: string; desc: string }[] = [
   { key: "tickers", label: "종목 관리", desc: "RL 대상 종목 추가/제거" },
+  { key: "curves", label: "그래프 조회", desc: "학습된 정책의 시간축 수익률 곡선" },
   { key: "policies", label: "정책 관리", desc: "활성 정책 및 평가" },
   { key: "experiments", label: "학습 실험", desc: "트레이닝 잡 실행" },
   { key: "shadow", label: "섀도우 추론", desc: "가상 시그널 성과" },
@@ -294,6 +305,207 @@ function TickersTab() {
 }
 
 /* ── 정책 관리 탭 ──────────────────────────────────────────────────────── */
+/* ── 그래프 조회 탭 ─────────────────────────────────────────────────────── */
+
+function EquityCurvesTab() {
+  // 전체 백테스트 리스트 조회 → strategy 가 "RL" 로 시작하는 것만 필터.
+  // strategy 는 CLI 관례상 "RL (dreamer_v3)" 같은 형식으로 저장됨.
+  const { data, isLoading, isError } = useBacktestRuns(1, 200);
+  const rlRuns = useMemo(() => {
+    return (data?.data ?? []).filter((r) => r.strategy.startsWith("RL"));
+  }, [data]);
+
+  const algorithms = useMemo(() => {
+    const set = new Set<string>();
+    rlRuns.forEach((r) => set.add(r.strategy));
+    return Array.from(set).sort();
+  }, [rlRuns]);
+
+  const [selectedAlgo, setSelectedAlgo] = useState<string>("");
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
+
+  const filteredRuns = useMemo(() => {
+    if (!selectedAlgo) return rlRuns;
+    return rlRuns.filter((r) => r.strategy === selectedAlgo);
+  }, [rlRuns, selectedAlgo]);
+
+  const { data: dailyData, isLoading: dailyLoading } = useBacktestDaily(selectedRunId);
+  const chartData = useMemo(() => {
+    return (dailyData ?? []).map((d) => ({
+      date: d.date,
+      portfolio_value: d.portfolio_value,
+    }));
+  }, [dailyData]);
+
+  if (isLoading) {
+    return (
+      <div className="card">
+        <div className="h-40 skeleton" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="card">
+        <p className="text-sm" style={{ color: "var(--red)" }}>
+          백테스트 조회에 실패했습니다.
+        </p>
+      </div>
+    );
+  }
+
+  if (rlRuns.length === 0) {
+    return (
+      <div className="card space-y-2">
+        <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
+          학습 수익률 곡선
+        </h3>
+        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+          RL 학습 결과가 아직 <code>backtest_runs</code> 에 저장되어 있지 않습니다.
+        </p>
+        <p className="text-xs" style={{ color: "var(--text-faint)" }}>
+          <code>rl_bootstrap</code> 학습 파이프라인이 완료 시점에 백테스트를 자동
+          저장하도록 연동되면 이 탭에 종목별·알고리즘별 equity curve 가 표시됩니다.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* 필터 */}
+      <div className="card">
+        <h3 className="text-sm font-bold mb-3" style={{ color: "var(--text-primary)" }}>
+          알고리즘 필터
+        </h3>
+        <select
+          value={selectedAlgo}
+          onChange={(e) => {
+            setSelectedAlgo(e.target.value);
+            setSelectedRunId(null);
+          }}
+          className="w-full rounded-lg border px-3 py-2 text-sm"
+          style={{ borderColor: "var(--border-color)" }}
+        >
+          <option value="">전체 알고리즘</option>
+          {algorithms.map((a) => (
+            <option key={a} value={a}>
+              {a}
+            </option>
+          ))}
+        </select>
+        <p className="mt-2 text-xs" style={{ color: "var(--text-faint)" }}>
+          {filteredRuns.length}개 백테스트 결과 · 좌측 리스트에서 종목 선택 시 오른쪽에 곡선 표시.
+        </p>
+      </div>
+
+      {/* 리스트 + 차트 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* 리스트 */}
+        <div className="card">
+          <h3 className="text-sm font-bold mb-3" style={{ color: "var(--text-primary)" }}>
+            학습 결과 리스트
+          </h3>
+          <div className="overflow-auto max-h-96">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b" style={{ borderColor: "var(--border-color)" }}>
+                  <th className="text-left py-2 font-semibold">종목</th>
+                  <th className="text-left py-2 font-semibold">알고리즘</th>
+                  <th className="text-right py-2 font-semibold">수익률</th>
+                  <th className="text-right py-2 font-semibold">MDD</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRuns.map((run) => (
+                  <tr
+                    key={run.id}
+                    onClick={() => setSelectedRunId(run.id)}
+                    className="cursor-pointer border-b hover:bg-slate-50"
+                    style={{
+                      borderColor: "var(--border-color)",
+                      background:
+                        selectedRunId === run.id
+                          ? "rgba(59,130,246,0.08)"
+                          : undefined,
+                    }}
+                  >
+                    <td className="py-2 font-mono">{run.ticker}</td>
+                    <td className="py-2">{run.strategy}</td>
+                    <td
+                      className="py-2 text-right font-mono"
+                      style={{
+                        color:
+                          (run.total_return_pct ?? 0) >= 0
+                            ? "var(--green)"
+                            : "var(--red)",
+                      }}
+                    >
+                      {formatPct(run.total_return_pct)}
+                    </td>
+                    <td className="py-2 text-right font-mono" style={{ color: "var(--red)" }}>
+                      {formatPct(run.max_drawdown_pct)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 차트 */}
+        <div className="card">
+          <h3 className="text-sm font-bold mb-3" style={{ color: "var(--text-primary)" }}>
+            포트폴리오 가치 곡선
+          </h3>
+          {!selectedRunId ? (
+            <p className="text-sm" style={{ color: "var(--text-faint)" }}>
+              좌측 리스트에서 백테스트를 선택하세요.
+            </p>
+          ) : dailyLoading ? (
+            <div className="h-64 skeleton" />
+          ) : chartData.length === 0 ? (
+            <p className="text-sm" style={{ color: "var(--text-faint)" }}>
+              선택한 백테스트에 일별 데이터가 없습니다.
+            </p>
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={chartData}>
+                <CartesianGrid stroke="rgba(148,163,184,0.15)" />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={(value: string) => (value ? value.slice(5) : "")}
+                  tick={{ fontSize: 10 }}
+                />
+                <YAxis
+                  tick={{ fontSize: 10 }}
+                  tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "rgba(255,255,255,0.96)",
+                    border: "1px solid rgba(148,163,184,0.2)",
+                    borderRadius: "12px",
+                    fontSize: "12px",
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="portfolio_value"
+                  stroke="#3b82f6"
+                  dot={false}
+                  strokeWidth={2}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PoliciesTab() {
   const { data: policies, isLoading } = usePolicies();
   const { data: activePolicies } = useActivePolicies();
@@ -966,6 +1178,7 @@ export default function RLTrading() {
 
       {/* 탭 콘텐츠 */}
       {activeTab === "tickers" && <TickersTab />}
+      {activeTab === "curves" && <EquityCurvesTab />}
       {activeTab === "policies" && <PoliciesTab />}
       {activeTab === "experiments" && <ExperimentsTab />}
       {activeTab === "shadow" && <ShadowTab />}
