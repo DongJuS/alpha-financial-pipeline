@@ -79,7 +79,7 @@ async def _load_ohlcv(ticker: str, start: date, end: date) -> list[dict]:
 
 # ── RL 시그널 소스 구성 ───────────────────────────────────────────────
 
-def _build_rl_signal_source(
+async def _build_rl_signal_source(
     *,
     ticker: str,
     train_prices: list[float],
@@ -94,6 +94,9 @@ def _build_rl_signal_source(
     - 신경망 계열 (dreamer_v3 / sb3_*): CLI 에서는 policy_id 지정 필수.
       RLPolicyStoreV2.load_policy → policy_from_artifact → RLPolicySignalSource.
       신규 학습은 rl_bootstrap 파이프라인 담당.
+
+    `RLPolicyStoreV2.load_policy` 는 async 이므로 이 함수도 async. 호출부는
+    반드시 await 필요 (`_run_backtest` 안에서 사용).
     """
     from src.agents.rl_policy_store_v2 import RLPolicyStoreV2
     from src.agents.rl_trading import RLDataset, TabularQTrainer
@@ -112,7 +115,7 @@ def _build_rl_signal_source(
 
     if policy_id:
         store = RLPolicyStoreV2()
-        artifact = store.load_policy(policy_id, ticker=ticker)
+        artifact = await store.load_policy(policy_id, ticker=ticker)
         if artifact is None:
             raise SystemExit(
                 f"정책을 찾을 수 없습니다: policy_id={policy_id}, ticker={ticker}"
@@ -270,7 +273,7 @@ async def _run_backtest(args: argparse.Namespace) -> None:
     if config.strategy == "RL":
         train_prices = [float(r["close"]) for r in train_rows]
         train_timestamps = [str(r["traded_at"]) for r in train_rows]
-        signal_source = _build_rl_signal_source(
+        signal_source = await _build_rl_signal_source(
             ticker=config.ticker,
             train_prices=train_prices,
             train_timestamps=train_timestamps,
