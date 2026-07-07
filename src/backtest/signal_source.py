@@ -143,8 +143,15 @@ class RLPolicySignalSource:
         self._policy = policy
 
     def get_signal(self, dt: date, prices: list[float], position: int) -> str:
-        decision = self._policy.act(prices, position=position, features=None)
-        return decision.action
+        try:
+            decision = self._policy.act(prices, position=position, features=None)
+            return decision.action
+        except ValueError:
+            # 백테스트 첫 몇 스텝은 price_history 가 policy 요구 lookback 미달.
+            # tabular Q 는 default state 로 "HOLD" 를 자연스럽게 반환하지만,
+            # 신경망 policy 는 TradingEnv 초기화에서 ValueError 발생. 관례상
+            # warmup 기간은 신호 없음 == HOLD 로 처리한다.
+            return "HOLD"
 
 
 class ReplaySignalSource:
