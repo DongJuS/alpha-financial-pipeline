@@ -34,6 +34,7 @@ class BacktestRunSummary(BaseModel):
     max_drawdown_pct: float
     win_rate: float
     total_trades: int
+    baseline_return_pct: float  # buy-and-hold 벤치마크. UI 리스트에서 "냅뒀을 때 수익률" 컬럼.
     created_at: str
 
 
@@ -75,6 +76,7 @@ def _row_to_summary(row: dict) -> dict:
         max_drawdown_pct=float(row["max_drawdown_pct"] or 0),
         win_rate=float(row["win_rate"] or 0),
         total_trades=row["total_trades"] or 0,
+        baseline_return_pct=float(row["baseline_return_pct"] or 0),
         created_at=str(row["created_at"]),
     ).model_dump()
 

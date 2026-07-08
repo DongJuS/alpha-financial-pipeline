@@ -18,6 +18,7 @@ import argparse
 import asyncio
 import json
 import sys
+from dataclasses import replace as dataclass_replace
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -310,6 +311,17 @@ async def _run_backtest(args: argparse.Namespace) -> None:
 
     # DB 저장
     if args.save_db:
+        # RL 은 profile 세부를 strategy 필드에 포함시켜 저장한다.
+        # 예: "RL" → "RL (dreamer_v3)". A/B/BLEND 는 그대로.
+        # /rl-trading '그래프 조회' 탭 알고리즘 필터가 세부 알고리즘을 구분할 수
+        # 있도록 하기 위함. backtest_runs.strategy 는 VARCHAR(50) 로 확장됨
+        # (scripts/db/migrate_backtest_strategy_widen.py).
+        if result.config.strategy == "RL":
+            new_config = dataclass_replace(
+                result.config, strategy=f"RL ({profile_name})"
+            )
+            result = dataclass_replace(result, config=new_config)
+
         from src.backtest.repository import save_backtest
         run_id = await save_backtest(result)
         print(f"\nDB 저장 완료: run_id={run_id}")
