@@ -357,6 +357,21 @@ CREATE_TABLES: list[str] = [
         'Take profit 임계 %. _check_rule_based_exits (Phase A) + Phase B 부분 매도가 소비. Mandate default 5.';
     COMMENT ON COLUMN portfolio_config.portfolio_drawdown_limit_pct IS
         'Phase A Layer 2 포트폴리오 drawdown 임계 %. _check_portfolio_drawdown 이 소비. Mandate default 8.';
+    -- RL/LLM signal confidence gate (사용자 mandate "최대한 hold" 반영)
+    ALTER TABLE portfolio_config
+        ADD COLUMN IF NOT EXISTS buy_confidence_threshold NUMERIC(4,3) NOT NULL DEFAULT 0.600
+            CHECK (buy_confidence_threshold BETWEEN 0 AND 1);
+    ALTER TABLE portfolio_config
+        ADD COLUMN IF NOT EXISTS sell_confidence_threshold NUMERIC(4,3) NOT NULL DEFAULT 0.600
+            CHECK (sell_confidence_threshold BETWEEN 0 AND 1);
+    ALTER TABLE portfolio_config
+        ADD COLUMN IF NOT EXISTS hold_bias_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+    COMMENT ON COLUMN portfolio_config.buy_confidence_threshold IS
+        'BUY 실행 최소 confidence (0~1). RL/LLM PolicyDecision.confidence 가 이 이상일 때만 broker 로 전달.';
+    COMMENT ON COLUMN portfolio_config.sell_confidence_threshold IS
+        'SELL 실행 최소 confidence (0~1). Phase A rule-based exit (trigger_source 있음) 은 예외.';
+    COMMENT ON COLUMN portfolio_config.hold_bias_enabled IS
+        'Confidence gate on/off 스위치. FALSE 면 기존 동작 (gate 없음).';
     -- 단일 행 보장용 초기값 삽입 (이미 있으면 무시)
     INSERT INTO portfolio_config
         (
