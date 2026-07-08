@@ -171,6 +171,15 @@ async def verify() -> None:
         )
 
 
+async def _run(dry_run: bool) -> None:
+    # migrate + verify 를 하나의 event loop 에서 실행. 별도 asyncio.run 으로
+    # 분리하면 get_pool() 이 첫 loop 에서 만든 pool 을 두 번째 loop 에서 재
+    # 사용해 ConnectionDoesNotExistError 발생.
+    await migrate(dry_run=dry_run)
+    if not dry_run:
+        await verify()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -179,9 +188,7 @@ def main() -> None:
         help="실제 실행하지 않고 계획만 표시",
     )
     args = parser.parse_args()
-    asyncio.run(migrate(dry_run=args.dry_run))
-    if not args.dry_run:
-        asyncio.run(verify())
+    asyncio.run(_run(dry_run=args.dry_run))
 
 
 if __name__ == "__main__":
