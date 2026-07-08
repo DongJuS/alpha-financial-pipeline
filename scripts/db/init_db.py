@@ -1127,7 +1127,7 @@ CREATE_TABLES: list[str] = [
         annual_return_pct    NUMERIC(10,4),
         sharpe_ratio         NUMERIC(10,4),
         max_drawdown_pct     NUMERIC(10,4),
-        win_rate             NUMERIC(6,4),
+        win_rate             NUMERIC(7,4),
         total_trades         INTEGER,
         avg_holding_days     NUMERIC(8,2),
         baseline_return_pct  NUMERIC(10,4),
