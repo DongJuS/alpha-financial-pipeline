@@ -235,6 +235,30 @@ class PortfolioManagerAgent:
 
         signal_source = signal_source_override or signal.strategy
         cfg = risk_config or {}
+
+        # ── Confidence gate (사용자 mandate "최대한 hold") ───────────────
+        # RL/LLM 이 낸 signal 이 임계 confidence 미만이면 매매를 건너뛴다.
+        # Phase A rule-based exit (손절/take-profit 등, trigger_source 있음) 은
+        # confidence 무관하게 실행 → 낙폭 보호는 유지.
+        # 임계값은 portfolio_config.buy_confidence_threshold /
+        # sell_confidence_threshold (기본 0.60). hold_bias_enabled=false 로
+        # 언제든 gate 를 끌 수 있음. Legacy signal 로 confidence=None 이면
+        # gate 를 통과시켜 backward compatibility 유지.
+        if bool(cfg.get("hold_bias_enabled", True)) and signal.trigger_source is None:
+            if signal.confidence is not None:
+                if signal.signal == "BUY":
+                    threshold = float(cfg.get("buy_confidence_threshold", 0.60))
+                else:  # SELL
+                    threshold = float(cfg.get("sell_confidence_threshold", 0.60))
+                if signal.confidence < threshold:
+                    logger.info(
+                        "signal gate: %s %s 스킵 (confidence=%.3f < %.3f) — hold-bias 유지",
+                        signal.signal,
+                        signal.ticker,
+                        signal.confidence,
+                        threshold,
+                    )
+                    return None
         account_scope = normalize_account_scope(
             account_scope_override
             or self._primary_account_scope_from_config(cfg)
