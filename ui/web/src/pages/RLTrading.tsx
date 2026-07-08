@@ -498,6 +498,9 @@ function EquityCurvesTab() {
                     수익률
                   </th>
                   <th className="text-right py-2 font-semibold" style={{ color: COLOR.secondary }}>
+                    냅뒀을 때
+                  </th>
+                  <th className="text-right py-2 font-semibold" style={{ color: COLOR.secondary }}>
                     MDD
                   </th>
                   <th className="text-right py-2 font-semibold" style={{ color: COLOR.secondary }}>
@@ -544,6 +547,17 @@ function EquityCurvesTab() {
                       }}
                     >
                       {formatPct(run.total_return_pct)}
+                    </td>
+                    <td
+                      className="py-2 text-right font-mono"
+                      style={{
+                        color:
+                          (run.baseline_return_pct ?? 0) >= 0
+                            ? COLOR.green
+                            : COLOR.red,
+                      }}
+                    >
+                      {formatPct(run.baseline_return_pct)}
                     </td>
                     <td
                       className="py-2 text-right font-mono"
