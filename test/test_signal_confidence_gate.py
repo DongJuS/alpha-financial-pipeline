@@ -55,15 +55,13 @@ def _signal(
 
 
 def _make_agent() -> PortfolioManagerAgent:
-    # process_signal 은 broker 를 호출하기 전에 gate 를 판정. gate 로 잘리면
-    # 아래 mock 호출은 발생 안 함 (return None). gate 통과 시나리오는 다른 mock
-    # 이 필요하나 이 단위 테스트는 gate 판정만 검증하므로 broker mock 생략 가능.
-    return PortfolioManagerAgent(
-        agent_id="test-pm",
-        paper_broker=AsyncMock(),
-        real_broker=AsyncMock(),
-        virtual_broker=AsyncMock(),
-    )
+    # PortfolioManagerAgent 는 broker 를 내부 build 함수로 자동 세팅 (인자 X).
+    # test 에서는 attribute 재할당으로 mock 대체 — gate 판정만 검증.
+    agent = PortfolioManagerAgent(agent_id="test-pm")
+    agent.paper_broker = AsyncMock()
+    agent.real_broker = AsyncMock()
+    agent.virtual_broker = AsyncMock()
+    return agent
 
 
 # ── gate ON: 임계값 미만이면 return None ─────────────────────────
