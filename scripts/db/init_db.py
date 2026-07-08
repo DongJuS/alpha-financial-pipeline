@@ -1099,7 +1099,7 @@ CREATE_TABLES: list[str] = [
     CREATE TABLE IF NOT EXISTS backtest_runs (
         id                   BIGSERIAL PRIMARY KEY,
         ticker               VARCHAR(10) NOT NULL,
-        strategy             VARCHAR(10) NOT NULL,
+        strategy             VARCHAR(50) NOT NULL,
         train_start          DATE NOT NULL,
         train_end            DATE NOT NULL,
         test_start           DATE NOT NULL,

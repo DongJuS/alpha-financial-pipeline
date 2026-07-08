@@ -17,6 +17,8 @@ export interface BacktestRunSummary {
   max_drawdown_pct: number;
   win_rate: number;
   total_trades: number;
+  /** buy-and-hold 벤치마크 (냅뒀을 때 수익률). */
+  baseline_return_pct: number;
   created_at: string;
 }
 
@@ -29,7 +31,7 @@ export interface BacktestRunDetail extends BacktestRunSummary {
   slippage_bps: number;
   annual_return_pct: number;
   avg_holding_days: number;
-  baseline_return_pct: number;
+  // baseline_return_pct 는 Summary 로 이관됨 (리스트에서도 노출 필요).
   excess_return_pct: number;
 }
 
