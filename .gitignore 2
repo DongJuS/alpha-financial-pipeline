@@ -1,0 +1,66 @@
+.env
+.env.*
+!.env.example
+.secret
+
+# 인프라 메타데이터 (Public IP, OCID 등) — git 노출 금지
+cloud_env.md
+*.local.md
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Office (Word/Excel/PowerPoint) lock/temp files
+~$*
+
+k8s/base/.secrets/
+
+.agent/
+.mcp/
+
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+node_modules/
+ui/node_modules/
+
+dist/
+ui/dist/
+
+# Local UI debug and cache artifacts
+.playwright-cli/
+artifacts/*
+!artifacts/rl/
+artifacts/rl/*
+!artifacts/rl/profiles/
+!artifacts/rl/models/
+artifacts/rl/models/*
+!artifacts/rl/models/README.md
+!artifacts/rl/models/registry.json
+!artifacts/rl/models/dqn/
+artifacts/rl/models/dqn/*
+!artifacts/rl/models/dqn/samples/
+!artifacts/rl/models/dqn/samples/**
+!artifacts/rl/models/ppo/
+artifacts/rl/models/ppo/*
+!artifacts/rl/models/ppo/samples/
+!artifacts/rl/models/ppo/samples/**
+.vite/
+
+test/archive/
+.claude/
+
+# SOPS / age
+# age private key 는 ~/.config/sops/age/keys.txt 에만 존재해야 한다.
+# 노트북 외부에 떨어진 임시 키 파일 보호를 위한 패턴:
+age-key*.txt
+*.age
+keys.txt
+
+# Public repo carve-out (PR-public-prep)
+.claude/
+troubleshooting/oci-server-report-*/
