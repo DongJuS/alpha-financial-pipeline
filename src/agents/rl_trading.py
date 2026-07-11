@@ -52,6 +52,19 @@ class RLEvaluationMetrics:
     holdout_steps: int
     approved: bool
 
+    def __post_init__(self) -> None:
+        # SB3/Dreamer 학습 결과는 numpy/torch 스칼라 (`np.bool_`, `np.float64` 등) 로
+        # 넘어오는데, `json.dumps` 는 그 타입들을 거부한다. dataclass field 타입만
+        # 선언돼있고 실제 값 강제는 안 되므로 여기서 native Python 타입으로 캐스팅.
+        self.approved = bool(self.approved)
+        self.total_return_pct = float(self.total_return_pct)
+        self.baseline_return_pct = float(self.baseline_return_pct)
+        self.excess_return_pct = float(self.excess_return_pct)
+        self.max_drawdown_pct = float(self.max_drawdown_pct)
+        self.win_rate = float(self.win_rate)
+        self.trades = int(self.trades)
+        self.holdout_steps = int(self.holdout_steps)
+
 
 @dataclass
 class RLSplitMetadata:
