@@ -68,7 +68,7 @@ worker:
   rlDataStorage: 5Gi
   resources:
     requests: { cpu: 500m, memory: 1Gi }
-    limits:   { cpu: 2,    memory: 10Gi }
+    limits:   { cpu: 3,    memory: 10Gi }
   hostPathMounts:
     enabled: true
     mounts:
