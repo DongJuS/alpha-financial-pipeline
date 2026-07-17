@@ -237,9 +237,14 @@ async def _fetch_tickers_from_db() -> list[str]:
     """instruments 테이블에서 활성 종목의 instrument_id 목록을 조회합니다."""
     try:
         from src.db.queries import list_tickers
+        from src.utils.ticker import to_raw
 
         rows = await list_tickers(mode="paper")
-        ids = [row["instrument_id"] for row in rows]
+        # KIS 실시간(H0STCNT0) 구독은 raw 6자리 코드를 요구한다. list_tickers 는
+        # instrument_id(예: 005930.KS) 를 반환하므로 raw 코드(005930)로 변환한다.
+        # (변환하지 않으면 _resolve_tickers 가 FDR raw Code 와 매칭 실패 → KIS 가
+        #  SUBSCRIBE SUCCESS 만 주고 체결 데이터를 push 하지 않는다.)
+        ids = [to_raw(row["instrument_id"]) for row in rows]
         if ids:
             logger.info("DB에서 종목 %d개 로드: %s", len(ids), ids[:5])
         return ids
