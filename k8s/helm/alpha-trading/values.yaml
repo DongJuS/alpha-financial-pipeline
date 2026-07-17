@@ -96,7 +96,7 @@ tickCollector:
   replicas: 1
   resources:
     requests: { cpu: 100m, memory: 256Mi }
-    limits:   { cpu: 500m, memory: 1Gi }
+    limits:   { cpu: 1,    memory: 5Gi }
   env:
     TICK_MARKET_HOURS_ONLY: "true"
     TICK_RECONNECT_MAX: "10"
