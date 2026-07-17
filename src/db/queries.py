@@ -209,7 +209,7 @@ async def fetch_minute_bars(
     return [dict(row) for row in rows]
 
 
-async def list_tickers(mode: str = "paper", limit: int = 30) -> list[dict]:
+async def list_tickers(mode: str = "paper", limit: int = 50) -> list[dict]:
     rows = await fetch(
         """
         SELECT i.instrument_id, i.ticker, sm.name, i.market_id AS market,
