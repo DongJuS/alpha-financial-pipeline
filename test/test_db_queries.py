@@ -202,9 +202,9 @@ class TestListTickers:
 
         sql = mock_f.call_args.args[0]
         assert "LIMIT" in sql
-        # args[1] = mode ("paper"), args[2] = limit (30)
+        # args[1] = mode ("paper"), args[2] = limit (50, 유니버스 40 대응 #260)
         assert mock_f.call_args.args[1] == "paper"
-        assert mock_f.call_args.args[2] == 30
+        assert mock_f.call_args.args[2] == 50
 
 
 # ── latest_close_price ──────────────────────────────────────────────────────
