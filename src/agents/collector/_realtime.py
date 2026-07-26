@@ -507,22 +507,32 @@ class _RealtimeMixin:
                     except Exception as bf_err:
                         logger.warning("gap backfill 실패: %s", bf_err)
 
+                # 장 마감/주말에는 틱이 없는 것이 정상이므로 gap 경고를 억제한다.
+                # (주말 WS 재연결마다 금요일 마지막 틱 대비 gap 이 30분+ 로 잡혀
+                #  Telegram 오탐이 반복 발행되던 문제 — 유니버스 40 대응 #260 후속)
                 if gap_seconds >= 1800:  # 30분
-                    try:
-                        from src.utils.redis_client import publish_message as _pub
-                        import json as _json
-                        await _pub(
-                            "alpha:alerts",
-                            _json.dumps({
-                                "type": "gap_warning",
-                                "agent_id": self.agent_id,
-                                "gap_seconds": int(gap_seconds),
-                                "message": f"WebSocket 틱 수집 {int(gap_seconds // 60)}분 중단",
-                            }, ensure_ascii=False),
+                    from src.utils.market_hours import is_market_open_now
+                    if not await is_market_open_now():
+                        logger.info(
+                            "틱 gap %.0f초 감지됐으나 장 마감/장외 구간이라 경고 억제",
+                            gap_seconds,
                         )
-                        logger.error("30분+ 틱 gap → Telegram 경고 발행")
-                    except Exception:
-                        pass
+                    else:
+                        try:
+                            from src.utils.redis_client import publish_message as _pub
+                            import json as _json
+                            await _pub(
+                                "alpha:alerts",
+                                _json.dumps({
+                                    "type": "gap_warning",
+                                    "agent_id": self.agent_id,
+                                    "gap_seconds": int(gap_seconds),
+                                    "message": f"WebSocket 틱 수집 {int(gap_seconds // 60)}분 중단",
+                                }, ensure_ascii=False),
+                            )
+                            logger.error("30분+ 틱 gap → Telegram 경고 발행")
+                        except Exception:
+                            pass
 
                 await asyncio.sleep(min(reconnects * 2, 30) + random.uniform(0, 1))
 
