@@ -75,6 +75,15 @@ class TradingEnvConfig:
     opportunity_cost_factor: float = 0.5
     long_loss_penalty: float = 0.9
 
+    # 보상 모드
+    #   "step_pnl"           — (기본) 매 스텝 position-weighted 수익률 기반 연속 보상
+    #   "windowed_direction" — N일 단위로 포트폴리오 수익률의 "방향"만 보상.
+    #                          창이 끝날 때 창 수익률>0 → +1, <0 → -1, ==0 → 0.
+    #                          창 중간 스텝은 0. 전체 누적 수익률이 아니라
+    #                          "이틀 단위로 올랐는지 아닌지"로 판단하기 위한 모드.
+    reward_mode: str = "step_pnl"
+    reward_window: int = 2  # windowed_direction 모드의 창 크기(거래일)
+
 
 # ── Action / Position 정의 ────────────────────────────────────────────────
 
@@ -191,6 +200,10 @@ class TradingEnv:
         self._total_trades = 0
         self._trade_log = []
 
+        # windowed_direction 보상용 창 상태
+        self._window_start_value = 1.0  # 현재 창 시작 시점의 포트폴리오 가치
+        self._window_step = 0  # 현재 창 안에서 진행한 스텝 수
+
         obs = self._get_observation()
         info = self._get_info()
         return obs, info
@@ -231,12 +244,7 @@ class TradingEnv:
                 }
             )
 
-        # 보상 계산
-        reward = self._compute_reward(
-            new_position, daily_return, trade_cost, prev_position
-        )
-
-        # 포트폴리오 가치 업데이트
+        # 포트폴리오 가치 업데이트 (거래 비용 포함)
         position_pnl = new_position * daily_return - trade_cost
         self._portfolio_value *= 1 + position_pnl
         self._peak_value = max(self._peak_value, self._portfolio_value)
@@ -244,6 +252,15 @@ class TradingEnv:
 
         if new_position != 0:
             self._entry_price = next_price
+
+        # 보상 계산 (모드 분기)
+        is_last_step = self._step_idx >= len(self.closes) - 1
+        if self.config.reward_mode == "windowed_direction":
+            reward = self._compute_windowed_reward(is_last_step)
+        else:
+            reward = self._compute_reward(
+                new_position, daily_return, trade_cost, prev_position
+            )
 
         # 종료 조건
         drawdown_pct = (
@@ -304,6 +321,33 @@ class TradingEnv:
 
         reward = position_return + opp + loss_penalty - trade_cost
         return float(reward)
+
+    def _compute_windowed_reward(self, is_last_step: bool) -> float:
+        """N일(reward_window) 단위 방향성 보상.
+
+        전체 누적 수익률 대신 "이틀 단위로 (샀든 아니든) 내 수익률이
+        올랐는지 아닌지"만 본다. 창이 채워지거나 에피소드 마지막이면 창
+        수익률의 부호(+1/-1/0)를 보상으로 내고 창을 리셋한다. 창 중간
+        스텝은 0.
+
+        창 수익률은 포트폴리오 가치 변화(포지션·거래비용 반영)로 계산하므로
+        포지션을 잡지 않았으면 값이 그대로여서 0(안 떨어짐)이 된다.
+        """
+        self._window_step += 1
+        window_full = self._window_step >= max(1, self.config.reward_window)
+        if not (window_full or is_last_step):
+            return 0.0
+
+        window_return = self._portfolio_value / self._window_start_value - 1.0
+        # 다음 창 시작
+        self._window_start_value = self._portfolio_value
+        self._window_step = 0
+
+        if window_return > 0:
+            return 1.0
+        if window_return < 0:
+            return -1.0
+        return 0.0
 
     def _get_observation(self) -> np.ndarray:
         """현재 관측값 벡터."""

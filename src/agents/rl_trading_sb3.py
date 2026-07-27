@@ -51,6 +51,8 @@ class SB3Trainer:
         trade_penalty_bps: int = 2,
         opportunity_cost_factor: float = 0.5,
         long_loss_penalty: float = 0.9,
+        reward_mode: str = "step_pnl",
+        reward_window: int = 2,
         net_arch: list[int] | None = None,
         # Common SB3 params
         learning_rate: float = 5e-4,
@@ -88,6 +90,8 @@ class SB3Trainer:
         self.trade_penalty_bps = trade_penalty_bps
         self.opportunity_cost_factor = opportunity_cost_factor
         self.long_loss_penalty = long_loss_penalty
+        self.reward_mode = reward_mode
+        self.reward_window = reward_window
         self.net_arch = net_arch or [64, 64]
 
         # Common
@@ -255,6 +259,8 @@ class SB3Trainer:
             trade_penalty_bps=self.trade_penalty_bps,
             opportunity_cost_factor=self.opportunity_cost_factor,
             long_loss_penalty=self.long_loss_penalty,
+            reward_mode=self.reward_mode,
+            reward_window=self.reward_window,
         )
         env = GymTradingEnv(config)
         obs, _ = env.reset()
@@ -289,6 +295,8 @@ class SB3Trainer:
             trade_penalty_bps=self.trade_penalty_bps,
             opportunity_cost_factor=self.opportunity_cost_factor,
             long_loss_penalty=self.long_loss_penalty,
+            reward_mode=self.reward_mode,
+            reward_window=self.reward_window,
         )
         env = GymTradingEnv(config)
 
@@ -328,6 +336,8 @@ class SB3Trainer:
             trade_penalty_bps=self.trade_penalty_bps,
             opportunity_cost_factor=self.opportunity_cost_factor,
             long_loss_penalty=self.long_loss_penalty,
+            reward_mode=self.reward_mode,
+            reward_window=self.reward_window,
         )
         env = GymTradingEnv(config)
         obs, info = env.reset()
