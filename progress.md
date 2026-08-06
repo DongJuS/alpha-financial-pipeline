@@ -7,6 +7,13 @@
 
 ---
 
+### RL Dreamer device 자동 감지 (2026-07-07, PR #244)
+
+`DreamerV3Trainer` / `DreamerRLPolicy` 의 `torch.device("cpu")` 하드코딩을
+keyword-only `device` 파라미터화. 기본값 `None` 은 CUDA 가용 시 자동 사용,
+아니면 CPU. 서버(GPU 없음) 동작은 그대로 유지되고, 로컬 CUDA 환경에서만
+새 동작. `torch.load` 의 `map_location` 도 동일하게 `self.device` 반영.
+
 ### k3s 마이그레이션 — Phase 5b 완료, Phase 5c 사용자 셋업 대기 (2026-06-30)
 
 Phase 1 ~ Phase 5b 모두 완료. Infisical 자체가 k3s 안에서 동작 (dual-run).
@@ -214,6 +221,29 @@ ohlcv_minute 인프라 + S3 아카이브 + UnifiedMarketData 빌더 완성.
 
 ## 🔄 다음 작업
 
+### RL 정책 학습 곡선 시각화 V0 (2026-07-07 로드테이블 8라운드 최종)
+
+RL 정책의 시간축 수익률 궤적을 트레이더가 30초 안에 매매 가능/불가 판단할 수
+있게 시각화. 매니저·금융 전문가·Backend 3인이 8라운드 반복 재검토 (사용자
+이의 제기 3차 반영) 후 최종 결정.
+
+**결정 (R8 최종: 기존 backtest 인프라 100% 재사용)**:
+- 스키마 변경 **0**. 신규 API **0**. 신규 UI **0**.
+- 기존 `backtest_runs` + `backtest_daily` 테이블 재사용. `strategy = 'RL'`, 알고리즘은 CLI 관례대로 `RL (dreamer_v3)` 형식 profile 문자열로 저장.
+- 기존 `src/api/routers/backtest.py` (`GET /backtest_runs?strategy=X`, `GET /backtest_daily?run_id=Y`) 재사용.
+- 기존 `ui/web/src/pages/Backtest.tsx` (`["All","RL","A","B","BLEND"]` 필터) + `BacktestDetail.tsx` (`recharts.LineChart` + `portfolio_value` equity curve + 일별 수익률 bar chart) 재사용.
+- 부족한 것 하나: `scripts/rl_bootstrap.py` + `src/agents/rl_walk_forward.py` 확장으로 학습 완료 시 `save_backtest_run` + `save_backtest_daily` 호출. **저장 연동 코드만 추가**.
+
+**R3→R6→R7→R8 재검토 이력**: 조사 부족 3연속 반복 (rl_* 접두어만 봄 → backtest_* 놓침). 룰 도출 = 스키마 결정 전 도메인 명사 최소 5개(backtest/experiment/trade/trajectory/curve/episode/run) grep 필수.
+
+**R9 UI 배치 정정 (2026-07-07 사용자 4차 지침)**: `/rl-trading` (`RLTrading.tsx`) 탭 기반 페이지. 사용자 원칙적 UX 진입점. `TABS` 2번째 위치에 신규 탭 "그래프 조회" 삽입. `EquityCurvesTab` 컴포넌트 신설 (recharts LineChart + 알고리즘 필터 + 종목별 line overlay). 스키마·API·데이터 소스는 R8 유효.
+
+**PR 나누기**: PR-A(`feat/rl-bootstrap-save-to-backtest`, 백엔드 저장 연동) → PR-B(`feat/rl-trading-equity-curves-tab`, UI 탭).
+
+**마일스톤**: M1 스키마·저장 (1주) → M2 API (1주) → M3 UI (2주).
+
+상세: `.agent/discussions/20260707-rl-training-visualization-roundtable.md`
+
 ### 로컬 데이터 축적 (진행 중)
 
 로컬 K3s에서 틱/분봉 데이터를 먼저 축적. 클라우드 비용 발생을 늦추면서 RL 선행 조건 충족.
@@ -262,4 +292,4 @@ Phase 0 완료 (PR #178~#180). 분봉 데이터 축적 시작.
 - DB 정리 크론 (7일 초과 틱 파티션 DROP) — 용량 > 5GB 시
 ---
 
-*Last updated: 2026-06-08 (OpenClaw 게이트웨이 토큰 회전 cron 복구)*
+*Last updated: 2026-07-07 (RL Dreamer device 자동 감지 PR #244 + RL 학습 곡선 시각화 V0 로드테이블)*
