@@ -588,3 +588,75 @@ class TestGymTradingEnvWrapper:
         """HAS_GYMNASIUM 플래그 존재 확인."""
         from src.agents.rl_environment import HAS_GYMNASIUM
         assert isinstance(HAS_GYMNASIUM, bool)
+
+
+# ── Windowed Direction Reward (2일 단위 방향성 보상) ──────────────────────────
+
+
+@pytest.mark.rl
+@pytest.mark.unit
+class TestWindowedDirectionReward:
+    """reward_mode='windowed_direction' — N일 단위로 수익률이 올랐/떨어졌만 보상.
+
+    전체 누적 수익률이 아니라 창(기본 2일) 단위 방향(+1/-1/0)만 준다.
+    창 중간 스텝은 0.
+    """
+
+    def _run(self, closes, action, *, window=2, lookback=2, **cfg):
+        config = _make_config(
+            closes,
+            reward_mode="windowed_direction",
+            reward_window=window,
+            lookback=lookback,
+            **cfg,
+        )
+        env = TradingEnv(config)
+        env.reset()
+        rewards = []
+        done = False
+        while not done:
+            _, r, terminated, truncated, _ = env.step(action)
+            rewards.append(r)
+            done = terminated or truncated
+        return rewards
+
+    def test_intermediate_steps_are_zero(self):
+        """창(2일)이 채워지기 전 스텝의 보상은 0이다."""
+        rewards = self._run(_uptrend_closes(20), ACTION_BUY, window=2, lookback=2)
+        # 창 크기 2 → 홀수번째(첫 스텝)는 0, 짝수번째에서 부호 방출
+        assert rewards[0] == 0.0
+        assert rewards[1] != 0.0
+
+    def test_uptrend_long_positive(self):
+        """상승장에서 매수 유지 → 창마다 +1."""
+        rewards = self._run(_uptrend_closes(20), ACTION_BUY, window=2, lookback=2)
+        nonzero = [r for r in rewards if r != 0.0]
+        assert nonzero, "창 종료마다 보상이 나와야 한다"
+        assert all(r == 1.0 for r in nonzero)
+
+    def test_downtrend_long_negative(self):
+        """하락장에서 매수 유지 → 창마다 -1."""
+        rewards = self._run(_downtrend_closes(20), ACTION_BUY, window=2, lookback=2)
+        nonzero = [r for r in rewards if r != 0.0]
+        assert nonzero
+        assert all(r == -1.0 for r in nonzero)
+
+    def test_flat_position_no_reward(self):
+        """포지션을 잡지 않으면(HOLD, 초기 flat) 수익률 불변 → 방향 0."""
+        rewards = self._run(_flat_closes(20), ACTION_HOLD, window=2, lookback=2)
+        assert all(r == 0.0 for r in rewards)
+
+    def test_reward_is_only_sign_not_magnitude(self):
+        """보상은 크기가 아니라 부호(±1/0)만 갖는다 — 누적 수익률과 분리."""
+        rewards = self._run(_uptrend_closes(30), ACTION_BUY, window=2, lookback=2)
+        assert set(rewards) <= {-1.0, 0.0, 1.0}
+
+    def test_default_mode_unchanged(self):
+        """기본 모드(step_pnl)는 방향성 보상을 쓰지 않는다 (비파괴)."""
+        config = _make_config(_uptrend_closes(20), lookback=2)
+        assert config.reward_mode == "step_pnl"
+        env = TradingEnv(config)
+        env.reset()
+        _, r, *_ = env.step(ACTION_BUY)
+        # step_pnl 은 연속 PnL 값 — 상승장 매수 첫 스텝이면 0<r<1 의 소수 보상
+        assert 0.0 < r < 1.0
